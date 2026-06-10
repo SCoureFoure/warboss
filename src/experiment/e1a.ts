@@ -11,6 +11,7 @@ import { type ArmId, E1A_SYSTEM, armSpec, buildPrompt } from "./arms.ts";
 import {
   type RunRecord,
   analyzeArm,
+  applyViabilityGate,
   evaluateCriteria,
   splits,
 } from "./analysis.ts";
@@ -27,6 +28,11 @@ export interface RunE1aOptions {
   out?: string;
   client?: MessagesClient;
   tasksDir?: string;
+  live?: boolean;
+}
+
+export interface RunE1aResult {
+  readonly deadRun: boolean;
 }
 
 async function dispatchOne(
@@ -74,7 +80,7 @@ async function runWithConcurrency<T>(
   return results;
 }
 
-export async function runE1a(opts: RunE1aOptions = {}): Promise<void> {
+export async function runE1a(opts: RunE1aOptions = {}): Promise<RunE1aResult> {
   const n = opts.n ?? 30;
   const armIds: ArmId[] = opts.arms ?? ["A", "B", "C", "D"];
   const taskName = opts.task ?? "duration-parse";
@@ -136,6 +142,7 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<void> {
             model: TIERS[spec.tier].id,
             code: gen?.code,
             generationFailed: true,
+            viable: false,
             vector: new Array(task.hidden.length).fill(false) as boolean[],
             score: 0,
             coveredScore: 0,
@@ -150,8 +157,18 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<void> {
           expectedHash: task.grader.hash,
         });
 
+        const { viable, vector: gatedVector } = applyViabilityGate(
+          judged.vector,
+          task.hidden,
+        );
+
+        const score =
+          gatedVector.length > 0
+            ? gatedVector.filter(Boolean).length / gatedVector.length
+            : 0;
+
         const covPassing = split.coveredIndices.filter(
-          (i) => judged.vector[i],
+          (i) => gatedVector[i],
         ).length;
         const coveredScore =
           split.coveredIndices.length > 0
@@ -159,7 +176,7 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<void> {
             : 1;
 
         const uncovPassing = split.uncoveredIndices.filter(
-          (i) => judged.vector[i],
+          (i) => gatedVector[i],
         ).length;
         const uncoveredScore =
           split.uncoveredIndices.length > 0
@@ -172,8 +189,9 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<void> {
           model: TIERS[spec.tier].id,
           code: gen.code,
           generationFailed: false,
-          vector: judged.vector,
-          score: judged.score,
+          viable,
+          vector: gatedVector,
+          score,
           coveredScore,
           uncoveredScore,
           costUsd: gen.costUsd,
@@ -215,6 +233,10 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<void> {
   const totals = ledger.totals();
   const fileName = `e1a-${ts}.json`;
 
+  const deadRun =
+    opts.live === true &&
+    (totals.costUsd === 0 || runs.every((r) => r.score === 0));
+
   const artifact = {
     config: { n, arms: armIds, task: taskName },
     taskName,
@@ -224,6 +246,7 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<void> {
     criteria,
     ledger: ledger.toJSON(),
     totalCostUsd: totals.costUsd,
+    deadRun,
   };
 
   await writeFile(join(outDir, fileName), JSON.stringify(artifact, null, 2));
@@ -252,6 +275,14 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<void> {
   console.log(`\nArtifact:   ${join(outDir, fileName)}`);
   console.log(`Cost log:   ${join(outDir, `cost-ledger-${ts}.jsonl`)}`);
   console.log(`Total cost: $${totals.costUsd.toFixed(6)}`);
+
+  if (deadRun) {
+    console.error(
+      "\n!!! DEAD RUN — harness defect suspected: live run with zero cost or all-zero scores. Artifact written as evidence.",
+    );
+  }
+
+  return { deadRun };
 }
 
 // CLI entry
@@ -272,10 +303,15 @@ if (
       .map((s) => s.trim() as ArmId),
     task: getArg("--task", "duration-parse"),
     out: getArg("--out", "runs"),
+    live: true,
   };
 
-  runE1a(opts).catch((err: unknown) => {
-    console.error(err);
-    process.exit(1);
-  });
+  runE1a(opts)
+    .then(({ deadRun }) => {
+      if (deadRun) process.exit(1);
+    })
+    .catch((err: unknown) => {
+      console.error(err);
+      process.exit(1);
+    });
 }

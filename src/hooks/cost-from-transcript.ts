@@ -96,6 +96,9 @@ export function extractCostRows(
 ): CostRow[] {
   const rows: CostRow[] = [];
   const seen = new Set(seenUuids);
+  // Within a single pass, deduplicate by requestId too: one API call can
+  // produce N transcript records with different uuids but identical usage.
+  const seenRequestIds = new Set<string>();
 
   // Strip a leading UTF-8 BOM so an editor-saved transcript still parses.
   const text = transcriptText.charCodeAt(0) === 0xfeff ? transcriptText.slice(1) : transcriptText;
@@ -113,6 +116,7 @@ export function extractCostRows(
 
     const uuid = rec.uuid ?? msg.id;
     if (uuid === undefined || seen.has(uuid)) continue;
+    if (rec.requestId !== undefined && seenRequestIds.has(rec.requestId)) continue;
 
     const usage = toUsage(msg.usage);
     const spec = priceModel(msg.model ?? "unknown");
@@ -131,6 +135,7 @@ export function extractCostRows(
       at: rec.timestamp ?? new Date().toISOString(),
     });
     seen.add(uuid);
+    if (rec.requestId !== undefined) seenRequestIds.add(rec.requestId);
   }
 
   return rows;

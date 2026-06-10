@@ -6,6 +6,7 @@ export interface RunRecord {
   readonly model: string;
   readonly code: string | undefined;
   readonly generationFailed: boolean;
+  readonly viable: boolean;
   readonly vector: readonly boolean[];
   readonly score: number;
   readonly coveredScore: number;
@@ -45,6 +46,18 @@ export interface CriteriaResult {
   readonly criterion2: CriterionVerdict;
   readonly criterion3: CriterionVerdict;
   readonly criterion4: CriterionVerdict;
+}
+
+export function applyViabilityGate(
+  vector: readonly boolean[],
+  hidden: readonly HiddenCase[],
+): { viable: boolean; vector: readonly boolean[] } {
+  const passesAnyNonThrows = hidden.some((c, i) => !c.throws && vector[i] === true);
+  if (passesAnyNonThrows) {
+    return { viable: true, vector };
+  }
+  const gated = vector.map((v, i) => (hidden[i]?.throws ? false : v));
+  return { viable: false, vector: gated };
 }
 
 export function cluster(records: readonly RunRecord[]): ClusterResult {

@@ -71,5 +71,9 @@ Run the loop with the **`/spec`** skill (`.claude/skills/spec/SKILL.md`):
 | Spec | Feature | Maps to | Status |
 | ------ | ------- | ------- | ------ |
 | [membrane-core](membrane-core.spec.md) | Hash-frozen contract + sandbox + runner + cost ledger + agent layer | Phase 1 + agent layer | active |
-| [e1a-harness](e1a-harness.spec.md) | E1a variance experiment runner + duration-parse task assets | Phase 2a (E1a) | active |
-| [e1b-harness](e1b-harness.spec.md) | E1b retry-in-place loop + feedback-granularity sub-arms | Phase 2b (E1b) | active |
+| [e1a-harness](e1a-harness.spec.md) | E1a variance experiment runner + duration-parse task assets (rev 3: modal-share C1 + rescore) | Phase 2a (E1a) | active |
+| [e1b-harness](e1b-harness.spec.md) | E1b feedback-granularity sub-arms (rev 2: loop delegated to loop-core, dead-run guard) | Phase 2b (E1b) | active |
+| [loop-core](loop-core.spec.md) | Retry-in-place loop: generate → judge → feedback → retry, budget, stall, cost-to-green | Phase 2b (core loop) | active |
+| [readiness-gate](readiness-gate.spec.md) | Admission check: grunt judge (READY/NOT READY) + K-impl convergence probe | Lever 1 (grunt-readiness gate) | active |
+| [sandbox-hardening](sandbox-hardening.spec.md) | Process-isolated execution (`node --permission` child) + `judgeAsync` | Phase 4 precondition | active |
+| [warboss-decomposition](warboss-decomposition.spec.md) | Intent → requirements → frozen contracts + gate admission; error-coverage mandate | Phase 4 (E2 substrate) | active |

@@ -1,10 +1,18 @@
 # Spec — E1b harness (retry-in-place loop + feedback-granularity sub-arms)
 
-> Status: active · Feature: e1b-harness · Added: 2026-06-10 · Maps to: PLAN Phase 2b (E1b)
+> Status: active · Feature: e1b-harness · Added: 2026-06-10 · Rev 2: 2026-06-10 · Maps to: PLAN Phase 2b (E1b)
 > Source of truth for the second falsifier: the retry-in-place loop that tests
 > whether cheap-model + frozen-contract + retry beats high-model one-shot on
 > correctness-per-dollar. Closes out criterion 4 of the pre-registered E1
 > success criteria.
+> Rev 2 (feature-leg review): the inline session loop is superseded —
+> **loop semantics are now owned by [loop-core](loop-core.spec.md)** and
+> `e1b.ts` refactors onto `runLoop` (H-6). The experiment must measure the
+> PRODUCT loop, not a divergent sibling: a criterion-4 verdict earned on a
+> private loop would not validate the loop we ship. Also adds the dead-run
+> guard (e1a rev-2 lesson) — E1b's live dispatch gets the same protection.
+> Supersessions: retry-prompt template and stall rule below are replaced by
+> loop-core's pinned forms; AC2/AC4/AC5 amended; AC13 added.
 
 ## Requirement
 
@@ -47,25 +55,34 @@ success criteria — both persisted as a timestamped results artifact.
   and escalate undecided.
 - **Initial prompt:** `buildPrompt("B", task)` from `arms.ts` — prose +
   full canonical contract. Identical to E1a Arm B to isolate the retry variable.
-- **Retry prompt (attempt k ≥ 2):**
-  ```
-  {original prompt (prose + frozen contract)}
-
-  Your previous attempt failed. Feedback:
-  {feedback string from judging attempt k-1}
-  ```
-  If attempt k-1 produced no extractable code block, the feedback line is
-  replaced with:
-  ```
-  Your previous attempt produced no extractable code block. Output ONLY a
-  single fenced code block.
-  ```
+- **Retry prompt (attempt k ≥ 2)** *(rev 2 — superseded)*: the exact template
+  pinned in [loop-core](loop-core.spec.md) ("Retry prompt template"), which
+  INCLUDES the previous attempt's code block — the grunt sees what it wrote.
+  The rev-1 form (feedback only, no previous code) is retired. The no-code
+  case uses loop-core's fixed string
+  `Your previous response contained no code block.` (previous-implementation
+  block omitted).
 - **`maxTokens: 2048`** per generation.
-- **`MAX_BUDGET = 5`** attempts per session.
-- **Stall detection:** if attempt k's extracted code equals attempt k-1's
-  extracted code (including both `undefined`), the session is immediately
-  terminated with `stalled: true` without spending another API call. Stall is
-  checked AFTER extracting code, BEFORE judging.
+- **`MAX_BUDGET = 5`** attempts per session (passed as `runLoop`'s `budget`).
+- **Stall detection** *(rev 2 — superseded)*: loop-core's pinned rule —
+  `.trim()`-equal extracted code on two CONSECUTIVE code-producing attempts;
+  `generationFailed` attempts never participate (two no-code attempts in a
+  row is NOT a stall, unlike rev 1). The duplicate attempt is recorded, then
+  the session stops `stalled: true`.
+- **Session execution** *(rev 2)*: one session = one `runLoop` call
+  (`agent, contract: grader, prompt: buildPrompt("B", task), granularity:
+  feedbackArm, budget: MAX_BUDGET, system: GRUNT_DOGMA, kind:
+  "grunt.generate", tags: { feedbackArm, task, sessionIndex }`) followed by
+  the hidden-battery post-scoring below. `e1b.ts` keeps NO loop logic of its
+  own. `SessionRecord` is derived from `LoopResult` (`attempts` =
+  `attemptsUsed`, `stalled`/`green` from `status`, `finalCode`,
+  `totalCostUsd` = `costUsd`).
+- **Dead-run guard** *(rev 2, from e1a rev 2)*: `runE1b(opts)` takes
+  `live: boolean` (CLI passes `true`, tests `false`). After analysis, if
+  `live` AND (total ledger cost is `0` OR every session in every arm has
+  `finalScore === 0`), the artifact is stamped `deadRun: true`, a loud
+  `DEAD RUN` warning prints, and the CLI exits nonzero. `runE1b` returns
+  `{ deadRun: boolean }`.
 - **N default 30 per feedback arm**, overridable via CLI `--n`.
 - **Concurrency: 4** sessions in flight at once (across all arms).
 - **Transient-failure policy (per attempt):** an API call that throws is retried
@@ -187,22 +204,26 @@ Add to `package.json`: `"e1b": "tsx src/experiment/e1b.ts"`.
    `green=true`, `stalled=false`, ledger has exactly 2 entries tagged
    `{feedbackArm, task, sessionIndex, attempt}`.
 
-2. **AC2 — stall detection.** Given a fake client that always returns the same
-   code: session records `stalled=true`, `green=false`, `attempts=2` (attempt 1
-   + first repeat = stall), no third API call is made.
+2. **AC2 — stall detection** *(amended rev 2)*. Given a fake client that always
+   returns the same failing code: session records `stalled=true`,
+   `green=false`, `attempts=2` (attempt 1 + first repeat = stall), no third
+   API call is made. Two consecutive NO-CODE attempts do NOT stall (loop-core
+   rule) — they consume budget with the no-code feedback.
 
 3. **AC3 — budget exhaustion.** Given a fake client that cycles through distinct
    failing impls for MAX_BUDGET attempts: session records `attempts=5`,
    `green=false`, `stalled=false`.
 
-4. **AC4 — feedback injected into retry prompt.** Given a fake client that
-   captures its prompt on attempt 2: the captured prompt contains the original
-   prompt AND the phrase `"Your previous attempt failed. Feedback:"` followed by
-   the judge feedback from attempt 1.
+4. **AC4 — feedback injected into retry prompt** *(amended rev 2)*. Given a
+   fake client that captures its prompt on attempt 2: the captured prompt
+   matches the loop-core template — it contains the original prompt, attempt
+   1's code under `Your previous implementation:`, and attempt 1's judge
+   feedback under `Judge feedback:`.
 
-5. **AC5 — no-code retry prompt.** Given a fake client that returns empty text
-   on attempt 1 then passing code on attempt 2: the attempt-2 prompt contains
-   `"produced no extractable code block"`. Session records `green=true`,
+5. **AC5 — no-code retry prompt** *(amended rev 2)*. Given a fake client that
+   returns empty text on attempt 1 then passing code on attempt 2: the
+   attempt-2 prompt contains `Your previous response contained no code block.`
+   and NO `Your previous implementation:` block. Session records `green=true`,
    `attempts=2`.
 
 6. **AC6 — feedback granularity arms differ.** Run `runE1b` with
@@ -242,9 +263,14 @@ Add to `package.json`: `"e1b": "tsx src/experiment/e1b.ts"`.
     calls use `TIERS.LOW.id`; system is `GRUNT_DOGMA`; `maxTokens` is 2048.
     Ledger entries are tagged `{feedbackArm, task, sessionIndex, attempt}`.
 
+13. **AC13 — dead-run guard** *(rev 2)*. `runE1b` with `live: true` and a fake
+    client yielding all-zero final scores → artifact stamped `deadRun: true`
+    and `{ deadRun: true }` returned. Same fixture `live: false` → no dead-run
+    failure. `live: true` with nonzero scores and cost → `deadRun: false`.
+
 ## Verifies-with
 
-- Tests: `test/e1b.test.ts` — AC1–AC12 (offline, fake `MessagesClient`).
+- Tests: `test/e1b.test.ts` — AC1–AC13 (offline, fake `MessagesClient`).
 - Integration: `npm run e1b -- --n 2 --arms full` with live key dispatches real
   sessions end-to-end and writes a `runs/` artifact (manual, not CI).
 - Falsifies: E1 pre-registered criterion 4. Supply `--e1a-arm-d` path from a

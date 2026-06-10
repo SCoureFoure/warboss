@@ -13,6 +13,7 @@ import {
   cluster,
   splits,
   analyzeArm,
+  applyViabilityGate,
   evaluateCriteria,
   type RunRecord,
   type ArmAnalysis,
@@ -305,6 +306,7 @@ test("AC5 single-run record: fenced correct impl → 12-length vector, score 1, 
   assert.equal(r.arm, "A");
   assert.equal(r.index, 0);
   assert.equal(r.generationFailed, false);
+  assert.equal(r.viable, true);
   assert.equal(r.vector.length, 12);
   assert.ok((r.vector as boolean[]).every((v) => v === true));
   assert.equal(r.score, 1);
@@ -345,6 +347,7 @@ test("AC7 cluster: 3 distinct vectors sized 3/2/1", () => {
     model: TIERS.LOW.id,
     code: undefined,
     generationFailed: false,
+    viable: true,
     vector: vec,
     score: 0,
     coveredScore: 0,
@@ -395,7 +398,7 @@ test("AC8 splits: pass rates compute correctly over synthetic vectors", () => {
   // All-pass record
   const allPass: RunRecord = {
     arm: "A", index: 0, model: TIERS.LOW.id, code: undefined,
-    generationFailed: false,
+    generationFailed: false, viable: true,
     vector: new Array(12).fill(true) as boolean[],
     score: 1, coveredScore: 1, uncoveredScore: 1, costUsd: 0, wallMs: 0,
   };
@@ -406,6 +409,7 @@ test("AC8 splits: pass rates compute correctly over synthetic vectors", () => {
   // All-fail record
   const allFail: RunRecord = {
     ...allPass,
+    viable: false,
     vector: new Array(12).fill(false) as boolean[],
     score: 0, coveredScore: 0, uncoveredScore: 0,
   };
@@ -541,6 +545,7 @@ test("AC11 results artifact has correct structure and cost consistency", async (
     assert.equal(r.index, 0);
     assert.equal(typeof r.model, "string");
     assert.equal(typeof r.generationFailed, "boolean");
+    assert.equal(typeof r.viable, "boolean");
     assert.equal(r.vector.length, 12);
     assert.equal(typeof r.score, "number");
     assert.equal(typeof r.coveredScore, "number");
@@ -672,4 +677,111 @@ test("AC14 runE1a emits a cost-ledger JSONL, one parseable line per successful c
     assert.ok(entry.cost && typeof entry.cost.totalCost === "number");
     assert.equal(entry.cost.totalCost, entry.costUsd);
   }
+});
+
+// ── AC14 (viability gating, rev 2) ──────────────────────────────────────────
+
+test("AC14-viability: raw vector with only throws-case passes → viable:false, all-false gated vector", () => {
+  const task = loadTask(DURATION_DIR);
+  // hidden indices 10 (negative, throws) and 11 (garbage-unit, throws)
+  const raw = new Array(12).fill(false) as boolean[];
+  raw[10] = true;
+  raw[11] = true;
+
+  const { viable, vector: gated } = applyViabilityGate(raw, task.hidden);
+  assert.equal(viable, false);
+  assert.ok((gated as boolean[]).every((v) => !v));
+});
+
+test("AC14-viability: raw vector with ≥1 non-throws pass → viable:true, throws pass kept", () => {
+  const task = loadTask(DURATION_DIR);
+  // index 0 = plain-hours (not throws), index 11 = garbage-unit (throws)
+  const raw = new Array(12).fill(false) as boolean[];
+  raw[0] = true;
+  raw[11] = true;
+
+  const { viable, vector: gated } = applyViabilityGate(raw, task.hidden);
+  assert.equal(viable, true);
+  assert.equal((gated as boolean[])[0], true);
+  assert.equal((gated as boolean[])[11], true);
+});
+
+test("AC14-viability: generationFailed run record carries viable:false", async () => {
+  const { artifact } = await runAndReadArtifact({
+    n: 1,
+    arms: ["A"],
+    client: fakeClient(""),
+  });
+  const runs = artifact["runs"] as Array<{ generationFailed: boolean; viable: boolean }>;
+  assert.equal(runs[0]!.generationFailed, true);
+  assert.equal(runs[0]!.viable, false);
+});
+
+test("AC14-viability: correct impl run record carries viable:true", async () => {
+  const fencedImpl = "```js\n" + CORRECT_IMPL + "\n```";
+  const { artifact } = await runAndReadArtifact({
+    n: 1,
+    arms: ["A"],
+    client: fakeClient(fencedImpl),
+  });
+  const runs = artifact["runs"] as Array<{ viable: boolean }>;
+  assert.equal(runs[0]!.viable, true);
+});
+
+// ── AC15 (dead-run guard, rev 2) ─────────────────────────────────────────────
+
+test("AC15 dead-run guard: live=true + all-zero scores → runE1a returns deadRun:true, artifact stamped", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e1a-dr-"));
+  const result = await runE1a({
+    n: 1,
+    arms: ["A"],
+    client: fakeClient(""),
+    live: true,
+    out: outDir,
+    tasksDir: TASKS_DIR,
+  });
+  assert.equal(result.deadRun, true);
+
+  const files = await readdir(outDir);
+  const artifactName = files.find((f) => f.startsWith("e1a-") && f.endsWith(".json"));
+  assert.ok(artifactName);
+  const artifact = JSON.parse(
+    await readFile(join(outDir, artifactName!), "utf8"),
+  ) as Record<string, unknown>;
+  assert.equal(artifact["deadRun"], true);
+});
+
+test("AC15 dead-run guard: live=false + zero scores → deadRun:false (offline is legitimately zero)", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e1a-dr-"));
+  const result = await runE1a({
+    n: 1,
+    arms: ["A"],
+    client: fakeClient(""),
+    live: false,
+    out: outDir,
+    tasksDir: TASKS_DIR,
+  });
+  assert.equal(result.deadRun, false);
+
+  const files = await readdir(outDir);
+  const artifactName = files.find((f) => f.startsWith("e1a-") && f.endsWith(".json"));
+  assert.ok(artifactName);
+  const artifact = JSON.parse(
+    await readFile(join(outDir, artifactName!), "utf8"),
+  ) as Record<string, unknown>;
+  assert.equal(artifact["deadRun"], false);
+});
+
+test("AC15 dead-run guard: live=true + nonzero scores → deadRun:false", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e1a-dr-"));
+  const fencedImpl = "```js\n" + CORRECT_IMPL + "\n```";
+  const result = await runE1a({
+    n: 1,
+    arms: ["A"],
+    client: fakeClient(fencedImpl),
+    live: true,
+    out: outDir,
+    tasksDir: TASKS_DIR,
+  });
+  assert.equal(result.deadRun, false);
 });

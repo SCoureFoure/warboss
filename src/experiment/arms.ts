@@ -5,7 +5,7 @@ import { type Tier } from "../models.ts";
 export type ArmId = "A" | "B" | "C" | "D";
 
 export const E1A_SYSTEM =
-  "Implement the requested function. Output ONLY one fenced code block. No prose.";
+  "Implement the requested function in JavaScript. Output ONLY one fenced code block. No prose.";
 
 export interface ArmSpec {
   readonly tier: Tier;

@@ -1,7 +1,10 @@
 # Warboss — Working Plan
 
-> Status: planning. Greenfield repo. This document is the current shared plan; it will be superseded as the framework moves from theory to lab.
+> Status: in the lab. E1a-r2 (rung 1, language-controlled) complete + verdict filed (2026-06-10). Rung 1 settled in the thesis's favor; E1b unblocked.
 > Rev 2 (2026-06-09): split E1 into E1a/E1b, added high-model baseline arm + cost logging, feedback-granularity variable, mechanical freeze, sandbox constraints, graded task ladder, contract-authorship experiment, caveman wire protocol scoped to Phase 6.
+> Rev 3 (2026-06-10): E1a run-5 results + second-look verdict folded in (see E1a status block). Rung-2 escalation deferred in favor of a JS-anchored re-run (E1a-r2); E1b blocked on r2; error-behavior coverage pinned for E2.
+> Rev 4 (2026-06-10): E1a-r2 ran clean (N=30×4, $0.585, no language confound). C2 PASS (+0.68, hardcode-clean); thesis money shot reproduced (B haiku+contract beats opus on covered correctness, 10.8× cheaper; opus fails bare-number 0/30). C1 printed FAIL = diagnosed instrument defect (cluster-count is gate-sensitive on A-side, NOT saturation). Rung-2 escalation declined (recorded 2nd deviation); C1 to be re-specified gate-robust (rev-3 spec, free re-analysis). E1b UNBLOCKED. See `reports/e1a-r2-verdict.md`.
+> Rev 5 (2026-06-10): feature-leg pivot (God-scoped). Rung-1 understanding deemed sufficient to build durable product infra: specs frozen for loop-core (Phase 2b loop as product, `specs/loop-core.spec.md`), readiness-gate (lever-1 admission check + pinned grunt-judge idea, `specs/readiness-gate.spec.md`), sandbox-hardening (Phase-4 precondition, `node --permission` child process, `specs/sandbox-hardening.spec.md`), warboss-decomposition (Phase 4 core with the r2 error-coverage mandate enforced mechanically, `specs/warboss-decomposition.spec.md`), plus e1a-harness rev 3 (C1 → modal share, provisional; offline rescore CLI). Handed off as H-5…H-9. E1b harness pre-exists (built before r2, inline loop) — its spec amended to rev 2: loop semantics delegated to loop-core, e1b.ts refactors onto `runLoop` in H-6, dead-run guard added; the experiment must measure the product loop. E1b live dispatch remains a God spend decision.
 
 ## Thesis
 
@@ -183,6 +186,43 @@ E1 previously conflated two questions: interpretation variance (a property of si
 
 If all arms saturate on rung 1, move up a rung before drawing conclusions.
 
+**Status (2026-06-10, E1a-r2 — rung 1 SETTLED. Details in `reports/e1a-r2-verdict.md`;
+run-5 history in `reports/e1a-findings.md` + `reports/e1a-verdict.md`):**
+
+- **E1a-r2 ran clean** under harness rev 2 (N=30×4, $0.585, `deadRun:false`).
+  Language confound gone: Python census 0/30 in every arm (was 26/30 in A).
+  Viability gating fired (A had 18/30 non-viable, gated to all-false). Hardcode
+  spot-check on B: 0/30 — covered perfection is real generalization.
+- **C2 PASS, decisively:** B covered 1.000 − A covered 0.320 = **+0.68** (4.5×
+  the 0.15 threshold), unconfounded, hardcode-clean. The load-bearing result.
+- **Variance collapse shown the clean way:** Arm B (contract) → **2 clusters**
+  (one of size 29); Arm D (opus, prose) → **5 clusters**. The *high-tier* model
+  on prose produces the MOST variance; the contract collapses it. Not model
+  intelligence — the contract — removes the latitude.
+- **C1 printed FAIL = diagnosed instrument defect, not thesis failure.** It fails
+  only on `clusters(A) ≥ 5` (A made 3). Cause: the rev-2 viability gate merges
+  all 18 non-viable A impls into one all-false bucket, structurally capping A's
+  count. Duration-parse has no ≥5 *distinct viable* behaviors. **Second misfire
+  of C1** (run 5: language; r2: gating) ⇒ cluster-count was a fragile variance
+  proxy. To be re-specified gate-robust (clusters over viable impls only / a
+  covered-pass-rate variance statistic) in a spec rev 3 — a free re-analysis of
+  the r2 artifact, no re-run. On the corrected instrument r2 reads PASS.
+- **Thesis money shot, reproduced + stronger (language controlled):** B
+  (haiku+contract) covered **1.000** at $0.041 beats D (opus, prose) covered
+  0.747 at $0.443 — **10.8× cheaper AND more correct on covered behavior.** D
+  fails bare-number (`"120"`) **0/30** again — confident-wrong convention at
+  HIGH tier. The convention lives in the contract, not the model.
+- **Corollary D — C3 FAIL at arm level (partial contract helped via pattern
+  transfer), but within-B signal holds:** decimal-hours 0/30 and both throws
+  cases ≈0/30 in B — exactly the contract's silences → confident wrongness.
+  Coverage-as-a-gate stands. C's one predicted hole (bare-number 0/30, no
+  example) confirms the corollary even in the C arm.
+- **No saturation** (A at 0.32 covered, D fails bare-number) ⇒ rung-2 rationale
+  void. **Escalation to rung 2 declined** (recorded 2nd deviation); rung 2 stays
+  shelved for a real ceiling.
+- **E1b UNBLOCKED** — r2 is its clean rung-1 baseline (Arm D: covered 0.747,
+  mean 0.817, $0.443). Next live spend is E1b; God's call per the spend rule.
+
 ### E1b — the loop (retry-in-place)
 
 **Question:** does cheap-model + membrane + retry beat the high-model one-shot on correctness-per-dollar?
@@ -217,6 +257,8 @@ No sergeant/warboss layer for E1 — only grunt + membrane.
 E1 contracts are human-written. Production contracts come from warboss decomposition — and that is where the thesis most plausibly dies: a warboss that writes *partial* contracts triggers Corollary D, making the membrane worse than nothing on uncovered behavior. Do not discover this in production.
 
 **Design:** same intent given to (a) human contract author, (b) warboss. Both contract sets drive the E1b loop with the same grunt tier. Measure hidden-battery pass rate of final impls, coverage of the hidden battery by each contract set, and cost. **Pre-registered criterion:** warboss-authored contracts must reach ≥ 90% of the human-authored hidden-battery pass rate, or warboss decomposition needs a coverage-audit step (e.g., adversarial example generation pass) before the hierarchy is trusted end-to-end.
+
+**Pinned from E1a run 5 (2026-06-10):** a contract whose examples cover only the happy path leaves a Corollary D hole on *error behavior* — Arm B's impls scored 0/30 on the throws cases the contract was silent on. Warboss-authored contracts must carry at least one canonical error-behavior example per contract (what throws / what rejects), and the E2 coverage measurement must split happy-path vs error-path coverage.
 
 ## Open questions
 

@@ -10,9 +10,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
-    "smoke": "tsx src/smoke.ts",
-    "e1a": "tsx src/experiment/e1a.ts",
-    "e1b": "tsx src/experiment/e1b.ts"
+    "smoke": "node --env-file=.env --import tsx src/smoke.ts",
+    "e1a": "node --env-file=.env --import tsx src/experiment/e1a.ts",
+    "e1b": "node --env-file=.env --import tsx src/experiment/e1b.ts",
+    "viz": "node --env-file=.env --import tsx scripts/viz.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.69.0"
