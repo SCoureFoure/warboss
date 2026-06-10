@@ -30,5 +30,31 @@
       "Bash(rm -rf *)",
       "Bash(Remove-Item -Recurse*)"
     ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx tsx \"c:/Users/SCora/Documents/Repositories/warboss/src/hooks/record-cost.ts\" --kind claudecode.main",
+            "async": true,
+            "statusMessage": "Metering main-turn cost"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx tsx \"c:/Users/SCora/Documents/Repositories/warboss/src/hooks/record-cost.ts\" --kind claudecode.subagent",
+            "async": true,
+            "statusMessage": "Metering subagent cost"
+          }
+        ]
+      }
+    ]
   }
 }

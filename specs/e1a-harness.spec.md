@@ -31,6 +31,14 @@ requires `ANTHROPIC_API_KEY`.
   AC4) before any dispatch. E1a is single-shot so no feedback exists, but the
   audit guards the prompt path. The results artifact may contain hidden cases —
   it is a post-hoc analyst artifact no grunt ever receives.
+  - **Audit checks hidden INPUTS only, not expected values** *(amended
+    2026-06-10, H-1 review).* Expected values are shared by design — a covered
+    hidden case shares its expected with the canonical example that covers it,
+    so that example legitimately puts the value in arm B's prompt. The
+    actionable leak vector is a grunt seeing a hidden *input* (which lets it
+    hardcode the case); an expected value without its input is not actionable.
+    Substring-checking expected would false-positive on every real run.
+    Input-only is the correct and complete check.
 - **`node:vm` is not a security sandbox.** E1a tasks are pure synchronous
   functions; the existing sandbox suffices. No new execution surface.
 - **Grunt is a doer, not a planner.** One `Agent.generate` call per run. No
@@ -208,8 +216,9 @@ tasks/duration-parse/       the three asset files above
    every canonical example and the grader hash; arm C contains exactly the
    subset examples (and the partial hash), none of the others.
 4. **AC4 — contamination audit.** Given prompts where one contains a hidden
-   case's input (or expected) substring, the audit throws naming the arm and
-   case; given the real built prompts for duration-parse, the audit passes.
+   case's input substring, the audit throws naming the offending prompt index
+   and case (expected values are NOT checked — see constraint); given the real
+   built prompts for duration-parse, the audit passes.
 5. **AC5 — single-run record.** With a fake client returning a fenced correct
    impl, the run record carries the judged 12-length vector, score 1,
    `generationFailed: false`, the call's cost, and a ledger entry tagged

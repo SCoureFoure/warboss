@@ -1,4 +1,4 @@
-/** AC13–AC15 — see specs/membrane-core.spec.md */
+/** AC13–AC15, AC19 — see specs/membrane-core.spec.md */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -10,6 +10,7 @@ import { TIERS } from "../src/models.ts";
 function fakeClient(
   text: string,
   capture?: (body: Anthropic.MessageCreateParamsNonStreaming) => void,
+  requestId?: string,
 ): MessagesClient {
   return {
     messages: {
@@ -18,6 +19,7 @@ function fakeClient(
         return {
           content: [{ type: "text", text }],
           usage: { input_tokens: 100, output_tokens: 50 },
+          ...(requestId !== undefined ? { _request_id: requestId } : {}),
         } as unknown as Anthropic.Message;
       },
     },
@@ -50,6 +52,20 @@ test("AC14 extractCode: fenced (tagged/untagged), unfenced fallback, empty", () 
   assert.equal(extractCode("hello"), "hello");
   assert.equal(extractCode(""), undefined);
   assert.equal(extractCode("   "), undefined);
+});
+
+test("AC19 generate captures the response _request_id into the ledger entry", async () => {
+  const ledger = new Ledger();
+
+  // Response carries a request id → captured.
+  const a1 = new Agent(TIERS.LOW, ledger, { client: fakeClient("ok", undefined, "req_abc") });
+  await a1.generate({ prompt: "p" });
+  assert.equal(ledger.all()[0]?.requestId, "req_abc");
+
+  // Response has none → requestId absent (offline/fake calls).
+  const a2 = new Agent(TIERS.LOW, ledger, { client: fakeClient("ok") });
+  await a2.generate({ prompt: "p" });
+  assert.equal(ledger.all()[1]?.requestId, undefined);
 });
 
 test("AC15 system defaults to GRUNT_DOGMA; thinking forwarded only when set", async () => {

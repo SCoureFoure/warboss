@@ -128,11 +128,16 @@ export class Agent {
         : {}),
     };
 
+    // The SDK attaches `_request_id` (the console-log join key) to the response
+    // object; read it defensively so we don't depend on the SDK's type surface.
+    const requestId = (res as { _request_id?: string | null })._request_id;
+
     const entry = this.ledger.record({
       kind: opts.kind ?? "agent.generate",
       model: this.model,
       usage,
       wallMs,
+      ...(requestId != null ? { requestId } : {}),
       ...(opts.tags ? { tags: opts.tags } : {}),
     });
 

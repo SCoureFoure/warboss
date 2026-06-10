@@ -3,6 +3,7 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent, type MessagesClient } from "../agent.ts";
 import { Ledger } from "../cost.ts";
+import { jsonlFileSink } from "../ledger-sink.ts";
 import { judge } from "../runner.ts";
 import { TIERS } from "../models.ts";
 import { loadTask, auditNoContamination } from "./task.ts";
@@ -81,7 +82,17 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<void> {
   const tasksDir = opts.tasksDir ?? DEFAULT_TASKS_DIR;
 
   const task = loadTask(join(tasksDir, taskName));
-  const ledger = new Ledger();
+
+  // Timestamp pairs the durable cost log with the results artifact written below.
+  const ts = new Date()
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
+
+  // Durable cost log: one JSON line per model call, appended as it completes, so
+  // a long run that dies mid-way still leaves an account-reconcilable record.
+  await mkdir(outDir, { recursive: true });
+  const ledger = new Ledger(jsonlFileSink(join(outDir, `cost-ledger-${ts}.jsonl`)));
 
   const agentMap = new Map<ArmId, Agent>(
     armIds.map((arm) => {
@@ -202,10 +213,6 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<void> {
   );
 
   const totals = ledger.totals();
-  const ts = new Date()
-    .toISOString()
-    .replace(/[-:]/g, "")
-    .replace(/\.\d{3}Z$/, "Z");
   const fileName = `e1a-${ts}.json`;
 
   const artifact = {
@@ -219,7 +226,6 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<void> {
     totalCostUsd: totals.costUsd,
   };
 
-  await mkdir(outDir, { recursive: true });
   await writeFile(join(outDir, fileName), JSON.stringify(artifact, null, 2));
 
   console.log(`\n=== E1a Results — ${taskName} (N=${n} per arm) ===\n`);
@@ -243,7 +249,8 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<void> {
     `  3 (corollary D): ${criteria.criterion3.pass ? "PASS" : "FAIL"} — ${criteria.criterion3.detail}`,
   );
   console.log(`  4 (economics):   deferred (E1b)`);
-  console.log(`\nArtifact: ${join(outDir, fileName)}`);
+  console.log(`\nArtifact:   ${join(outDir, fileName)}`);
+  console.log(`Cost log:   ${join(outDir, `cost-ledger-${ts}.jsonl`)}`);
   console.log(`Total cost: $${totals.costUsd.toFixed(6)}`);
 }
 

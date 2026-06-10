@@ -39,7 +39,7 @@
 
 ## Active items
 
-### H-1 · Build the E1a harness — `built (report filed)`
+### H-1 · Build the E1a harness — `accepted`
 
 **Spec:** [specs/e1a-harness.spec.md](specs/e1a-harness.spec.md) (governing) +
 [specs/membrane-core.spec.md](specs/membrane-core.spec.md) AC16 (amendment to
@@ -133,8 +133,67 @@ implement first).
 
 - Cost/time: ~5 min wall time. No model API calls made; offline only.
 
+**Planner verdict (2026-06-10): ACCEPTED.** Independently re-ran
+`npm run typecheck` (clean) + `npm test` (42/42). Reviewed all four experiment
+modules + AC16 edits line by line against the spec; hand-checked the canon
+arithmetic (10921 / 9000 / 3600 / 5400-decimal) — self-consistent, and the
+test's reference impl passing all 12 hidden cases proves the battery is
+satisfiable. Rulings on the two report items:
+
+1. *Decomposition deviation* (`analyzeArm` split out of `splits`) — accepted as
+   an improvement; exported surface satisfies every AC.
+2. *Contamination gap* (input-only audit) — **grunt was correct; this was a
+   spec bug, not an impl defect.** Expected values are shared by design between
+   covered hidden cases and their canonical examples, so substring-checking
+   expected would false-positive on every real run. The actionable leak vector
+   is a hidden *input*. Grunt escalated instead of shipping a broken check —
+   textbook fail-up. Spec amended (constraint + AC4) to pin input-only as the
+   correct, complete check. No code change required.
+
 ---
 
 ## Log (accepted items)
 
-*(none yet)*
+- **H-1 · E1a harness** — accepted 2026-06-10. AC16 (`throws` cases) + duration-parse
+  assets + `src/experiment/{task,arms,analysis,e1a}.ts` + `test/e1a.test.ts`.
+  42/42 tests green. One spec bug surfaced by the grunt and fixed in review
+  (contamination audit is input-only by design). Full item above.
+
+- **H-3 · Dev-loop cost hooks (both ranks)** — planner-built + accepted 2026-06-10.
+  The thesis ("meter every worker, warbosses included") applied to our own build
+  loop — the framework self-builds with its own metering. Two `.claude/settings.json`
+  hooks run one role-tagged script `src/hooks/record-cost.ts`:
+  - **`Stop` → `--kind claudecode.main`** — the main turn = the deciding layer
+    (warboss/warchief/sergeant collapsed into the driving agent).
+  - **`SubagentStop` → `--kind claudecode.subagent`** — a dispatched grunt.
+
+  Both append to ONE stream, `runs/dev-cost-ledger.jsonl` — uniform format,
+  `kind` is the role discriminator and `model` is on every row (so a tier-switch
+  on the main thread is sliceable too). This is the substrate a later effort/cost
+  dashboard tallies against. Each row: parses the transcript, prices every
+  not-yet-recorded assistant turn (dev-model table in `cost-from-transcript.ts`,
+  cost math via shared `costBreakdown`), dedup by message uuid (idempotent — Stop
+  fires every turn against a growing transcript, only new messages append),
+  requestId carried for account reconciliation. Hooks are `async: true` (never
+  block the agent) + exit 0 on all paths. Pure core tested (`test/hooks.test.ts`,
+  4 tests incl. kind-tagging); both kinds smoke-tested end-to-end into one ledger.
+  Hardened against a stdin/transcript UTF-8 BOM. 51/51 green. Note: new hooks may
+  need `/hooks` (reload) or a restart before first fire.
+
+  *Caveat for later:* a grunt run as a tier-switch on the MAIN thread (how H-1
+  ran) tags `claudecode.main`, not `subagent` — the `model` field still shows it
+  was cheap. Cleanest separation comes once grunts are dispatched as real Task
+  subagents (then SubagentStop isolates doing-cost; Stop stays pure deciding-cost).
+
+- **H-2 · Cost reconciliation logging** — planner-built + accepted 2026-06-10.
+  Addresses the grunt's H-1 cost note. Membrane-core amended AC17–AC20:
+  `costBreakdown` (itemized input/output/cache costs + rates), ledger entries
+  now carry `requestId` (the Anthropic `request-id` join key to console usage
+  logs) + `modelLabel` + the full breakdown, an injectable `LedgerSink`, and
+  `src/ledger-sink.ts` `jsonlFileSink`. `Agent.generate` captures `_request_id`;
+  `runE1a` writes a durable append-only `cost-ledger-<ts>.jsonl` (one line per
+  call, crash-safe) alongside the results artifact. Built directly (not handed
+  off) — it's the thesis's load-bearing metric (correctness-per-dollar), so by
+  our own model-power-follows-entropy rule it stays on the planner tier.
+  Confirmed via `claude-api` skill that `_request_id` is the SDK's reconciliation
+  key. 47/47 tests green; typecheck clean. `costOf`/`costUsd` unchanged.

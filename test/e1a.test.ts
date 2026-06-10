@@ -100,16 +100,18 @@ function alwaysThrowsClient(): MessagesClient {
   };
 }
 
-// Helper: run e1a and read the single artifact from the out dir.
+// Helper: run e1a and read the results artifact from the out dir. The out dir
+// also holds the durable cost-ledger JSONL, so select the artifact explicitly.
 async function runAndReadArtifact(
   opts: Parameters<typeof runE1a>[0],
-): Promise<Record<string, unknown>> {
+): Promise<{ artifact: Record<string, unknown>; outDir: string; files: string[] }> {
   const outDir = await mkdtemp(join(tmpdir(), "e1a-test-"));
   await runE1a({ ...opts, out: outDir, tasksDir: TASKS_DIR });
   const files = await readdir(outDir);
-  assert.equal(files.length, 1);
-  const raw = await readFile(join(outDir, files[0]!), "utf8");
-  return JSON.parse(raw) as Record<string, unknown>;
+  const artifactName = files.find((f) => f.startsWith("e1a-") && f.endsWith(".json"));
+  assert.ok(artifactName, "results artifact written");
+  const raw = await readFile(join(outDir, artifactName), "utf8");
+  return { artifact: JSON.parse(raw) as Record<string, unknown>, outDir, files };
 }
 
 // ── AC1 ─────────────────────────────────────────────────────────────────────
@@ -291,7 +293,7 @@ test("AC4 contamination audit passes for real duration-parse prompts", () => {
 
 test("AC5 single-run record: fenced correct impl → 12-length vector, score 1, cost metered", async () => {
   const fencedImpl = "```js\n" + CORRECT_IMPL + "\n```";
-  const artifact = await runAndReadArtifact({
+  const { artifact } = await runAndReadArtifact({
     n: 1,
     arms: ["A"],
     client: fakeClient(fencedImpl),
@@ -319,7 +321,7 @@ test("AC5 single-run record: fenced correct impl → 12-length vector, score 1, 
 // ── AC6 ─────────────────────────────────────────────────────────────────────
 
 test("AC6 generation failure: empty response → generationFailed, all-false 12-length vector", async () => {
-  const artifact = await runAndReadArtifact({
+  const { artifact } = await runAndReadArtifact({
     n: 1,
     arms: ["A"],
     client: fakeClient(""),
@@ -516,7 +518,7 @@ test("AC10 arm/model mapping: correct model ids, system=E1A_SYSTEM, max_tokens=2
 
 test("AC11 results artifact has correct structure and cost consistency", async () => {
   const fencedImpl = "```js\n" + CORRECT_IMPL + "\n```";
-  const artifact = await runAndReadArtifact({
+  const { artifact } = await runAndReadArtifact({
     n: 1,
     arms: ["A", "B", "C", "D"],
     client: fakeClient(fencedImpl),
@@ -577,7 +579,7 @@ test("AC12 transient retry: throws once then succeeds → exactly one ledger ent
   const fencedImpl = "```js\nfunction parseDuration(s){return 0;}\n```";
   const { client } = fakeClientThrowsThenSucceeds(fencedImpl);
 
-  const artifact = await runAndReadArtifact({ n: 1, arms: ["A"], client });
+  const { artifact } = await runAndReadArtifact({ n: 1, arms: ["A"], client });
   const runs = artifact["runs"] as RunRecord[];
   assert.equal(runs.length, 1);
   assert.equal(runs[0]!.generationFailed, false);
@@ -587,7 +589,7 @@ test("AC12 transient retry: throws once then succeeds → exactly one ledger ent
 });
 
 test("AC12 transient retry: always throws → generationFailed, experiment completes", async () => {
-  const artifact = await runAndReadArtifact({
+  const { artifact } = await runAndReadArtifact({
     n: 1,
     arms: ["A"],
     client: alwaysThrowsClient(),
@@ -624,4 +626,50 @@ test("AC13 mechanical freeze on grading path: own hash executes, wrong hash thro
       }),
     ContractHashMismatch,
   );
+});
+
+// ── AC14 (cost-ledger JSONL) ─────────────────────────────────────────────────
+
+test("AC14 runE1a emits a cost-ledger JSONL, one parseable line per successful call", async () => {
+  const fencedImpl = "```js\nfunction parseDuration(s){return 0;}\n```";
+  // Fake client that also carries a request id, so the durable log is reconcilable.
+  const client: MessagesClient = {
+    messages: {
+      create: async (body) => {
+        void body;
+        return {
+          content: [{ type: "text", text: fencedImpl }],
+          usage: { input_tokens: 100, output_tokens: 50 },
+          _request_id: "req_e1a",
+        } as unknown as Anthropic.Message;
+      },
+    },
+  };
+
+  const { outDir, files } = await runAndReadArtifact({
+    n: 1,
+    arms: ["A", "B"],
+    client,
+  });
+
+  const ledgerName = files.find((f) => f.startsWith("cost-ledger-") && f.endsWith(".jsonl"));
+  assert.ok(ledgerName, "cost-ledger JSONL written");
+
+  const raw = await readFile(join(outDir, ledgerName), "utf8");
+  const lines = raw.split("\n").filter((l) => l.length > 0);
+  // 2 arms × N=1 = 2 successful calls → 2 lines.
+  assert.equal(lines.length, 2);
+
+  for (const line of lines) {
+    const entry = JSON.parse(line) as {
+      requestId?: string;
+      modelLabel?: string;
+      cost?: { totalCost: number };
+      costUsd?: number;
+    };
+    assert.equal(entry.requestId, "req_e1a");
+    assert.equal(typeof entry.modelLabel, "string");
+    assert.ok(entry.cost && typeof entry.cost.totalCost === "number");
+    assert.equal(entry.cost.totalCost, entry.costUsd);
+  }
 });

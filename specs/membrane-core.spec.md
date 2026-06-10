@@ -38,6 +38,16 @@ orchestration on top of them.
 - **Code extraction:** first fenced block (optional lang tag); fall back to the
   whole trimmed response so a bare-code reply still runs; `undefined` when empty.
 - **Agent client is injectable** so the agent layer is unit-testable offline.
+- **Cost reconciliation (amended 2026-06-10).** Every ledger entry carries the
+  Anthropic `request-id` (the join key to the account's console usage logs), the
+  model label, and an itemized `CostBreakdown` (input / output / cache-read /
+  cache-write cost components plus the input/output $/Mtok rates applied) — not
+  just an opaque `costUsd`. The ledger accepts an injectable **sink** called once
+  per recorded entry; the experiment runner wires a `jsonlFileSink` that appends
+  one JSON line per model call to a durable `cost-ledger-<ts>.jsonl`, written the
+  moment each call completes so a long run that dies mid-way still leaves a
+  parseable, account-reconcilable record. `costOf` and `costUsd` are unchanged
+  (the breakdown's `totalCost` equals them).
 
 ## Acceptance criteria (Given / When / Then)
 1. **AC1 — cost math.** Given a model price and a usage record, `costOf` returns
@@ -89,10 +99,27 @@ orchestration on top of them.
     order `input, expected, throws`, included only when present), so adding or
     removing it changes the hash. Known accepted limitation: timeout or
     missing-entry also passes a `throws` case.
+17. **AC17 — cost breakdown** *(amended 2026-06-10).* `costBreakdown(model, usage)`
+    returns the four cost components (`inputCost`, `outputCost`, `cacheReadCost`
+    at 0.1× input rate, `cacheWriteCost` at 1.25× input rate), the
+    `inputPerMTok`/`outputPerMTok` rates applied, and a `totalCost` that equals
+    `costOf(model, usage)`.
+18. **AC18 — ledger entry enrichment + sink** *(amended 2026-06-10).* A recorded
+    entry carries `modelLabel`, the full `cost` breakdown, and `requestId` when
+    one is supplied (omitted otherwise); `costUsd` still equals
+    `cost.totalCost` and `totals()` still sums it. A `LedgerSink` passed to the
+    `Ledger` is invoked exactly once per `record`, with the entry just stored.
+19. **AC19 — request-id capture** *(amended 2026-06-10).* `Agent.generate`
+    forwards the response's `_request_id` into the recorded ledger entry's
+    `requestId`; when the response has none, `requestId` is absent.
+20. **AC20 — jsonl sink** *(amended 2026-06-10).* `jsonlFileSink(path)` ensures
+    the parent directory exists and returns a sink that appends exactly one
+    `JSON.parse`-able line per entry to `path` (append-only; N records → N lines).
 
 ## Verifies-with
-- Tests: `test/cost.test.ts` (AC1–2), `test/contract.test.ts` (AC3–4, AC16 hash),
-  `test/sandbox.test.ts` (AC5–7), `test/runner.test.ts` (AC8–12, AC16 judging),
-  `test/agent.test.ts` (AC13–15).
+- Tests: `test/cost.test.ts` (AC1–2, AC17–18), `test/contract.test.ts`
+  (AC3–4, AC16 hash), `test/sandbox.test.ts` (AC5–7), `test/runner.test.ts`
+  (AC8–12, AC16 judging), `test/agent.test.ts` (AC13–15, AC19),
+  `test/ledger-sink.test.ts` (AC20).
 - Integration: `npm run smoke` exercises freeze → judge → (live grunt) → meter.
 - Falsifies / experiment link: n/a (foundational; E1a/E1b are the falsifiers).
