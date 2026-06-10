@@ -82,10 +82,17 @@ orchestration on top of them.
 15. **AC15 — system + thinking plumbing.** `generate` defaults `system` to
     `GRUNT_DOGMA` when unset and forwards a `thinking` config to the client only
     when one is provided.
+16. **AC16 — throws-expected cases** *(amended 2026-06-10 for e1a-harness).*
+    A `ContractCase` with `throws: true` passes iff `runImpl` reports
+    `{ok: false}` (the impl threw); `expected` is ignored for such cases. The
+    case's `throws` flag participates in `computeHash` canonical form (key
+    order `input, expected, throws`, included only when present), so adding or
+    removing it changes the hash. Known accepted limitation: timeout or
+    missing-entry also passes a `throws` case.
 
 ## Verifies-with
-- Tests: `test/cost.test.ts` (AC1–2), `test/contract.test.ts` (AC3–4),
-  `test/sandbox.test.ts` (AC5–7), `test/runner.test.ts` (AC8–12),
+- Tests: `test/cost.test.ts` (AC1–2), `test/contract.test.ts` (AC3–4, AC16 hash),
+  `test/sandbox.test.ts` (AC5–7), `test/runner.test.ts` (AC8–12, AC16 judging),
   `test/agent.test.ts` (AC13–15).
 - Integration: `npm run smoke` exercises freeze → judge → (live grunt) → meter.
 - Falsifies / experiment link: n/a (foundational; E1a/E1b are the falsifiers).

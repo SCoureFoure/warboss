@@ -30,11 +30,11 @@ either passes or it doesn't — it can't be misread, argued with, or drifted awa
 from. We call that frozen, executable layer the **membrane**.
 
 ```text
-        intent  ──▶  WARBOSS decomposes it  ──▶  ╔═══════════════╗
-     (the human)     into requirements +         ║   MEMBRANE    ║
-                     acceptance examples          ║ frozen,        ║
-                                                   ║ executable     ║
-                                                   ║ contracts      ║
+        intent  ──▶  WARBOSS decomposes it  ──▶   ╔═══════════════╗
+     (the human)     into requirements +           ║   MEMBRANE    ║
+                     acceptance examples           ║ frozen,       ║
+                                                   ║ executable    ║
+                                                   ║ contracts     ║
                                                    ╚═══════╤═══════╝
                                                            │ injected down the chain
                                               cheap workers ▼ grind against it
@@ -130,6 +130,7 @@ npm run smoke          # full stack; dispatches one real grunt if a key is set
 | Where | What |
 | --- | --- |
 | [duh_plan.md](duh_plan.md) | Thesis, architecture, experiment design — the living plan. |
+| [HANDOFF.md](HANDOFF.md) | The relay: planner writes work items down, implementer reports back. |
 | [specs/](specs/) | Durable source of truth per harness feature, paired with tests. |
 | [src/](src/) | The core layers — contract, sandbox, runner, cost ledger, agent. |
 | [references/](references/) | The source ideas the machine is assembled from. |
