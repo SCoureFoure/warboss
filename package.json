@@ -1,0 +1,25 @@
+{
+  "name": "warboss",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "High-model judge/architect that freezes intent into an executable contract membrane, then dispatches cheap dogmatic grunts to grind against it until green.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "smoke": "tsx src/smoke.ts",
+    "e1a": "tsx src/experiment/e1a.ts",
+    "e1b": "tsx src/experiment/e1b.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.69.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.2"
+  }
+}

@@ -23,33 +23,63 @@ Each reference contributes one piece of the harness (see `references/`):
 | **AlphaProof Nexus** | The loop. Reliable output from an unreliable generator + an honest judge + retry. Intelligence in the loop, not the model. The judge's *why* (feedback signal) is part of the loop, not an afterthought. *(The ELO tournament is **not** core — see below.)* |
 | **Fractal Views** | Constant-size context per agent (reroot at focus, prune by fractal value) → small context → small model viable. |
 | **Shannon / compression** | Why immutable contracts work. A frozen contract is the lowest-entropy encoding of intent — a solved variable removed from the entropy budget. Compression = prediction = intelligence. |
-| **Hive image + Orc lore** | Topology and role names: Warboss → Sergeant → Grunt. |
+| **Hive image + Orc lore** | Topology and role names: God → Warboss → Warchief → Sergeant → Grunt. Adjacent-rank comms only; God speaks solely to champions (Warbosses). |
 | **Intention-decay protocols** | Transmission rules: dense intent, bounded context, continuous injection into agent buffers, stigmergy (shape the environment, don't micro-instruct), redundant role specialization. |
 | **Caveman** | The wire protocol — compressed instruction format = the info-density principle made concrete for inter-layer messages. Scoped to **Phase 6** (was previously unscoped — references with no phase invite creep). |
 
 ## Architecture
 
+**Communication is adjacent-rank only.** No rank speaks to a non-neighbor; none
+skips a layer. This is the noise-isolation mechanism: interpretation latitude is
+collapsed one hop at a time, and corruption at any layer cannot propagate past
+its immediate neighbor. The chain is a fractal — insert more ranks, or widen the
+horde at a rank, as scale demands. The named ranks below are the *minimum* useful
+chain; the fractal can grow arbitrarily long.
+
+**Model tier is chosen by residual task entropy, not by rank.** Each rank absorbs
+more entropy than the one below it — but it absorbs by *decomposing* the
+complexity into smaller, lower-entropy chunks and delegating them down, not by
+being the one that finally satisfies a dense contract. As work descends, residual
+entropy falls and a cheaper tier becomes viable; the bet is to push entropy down
+to where the LOW tier can satisfy the contract. So a Sergeant on a gnarly slice
+may run a high tier while another Sergeant on a trivial slice runs LOW. (Tiers:
+LOW=haiku, MID=sonnet, HIGH=opus — a capability ladder, see `src/models.ts`.)
+
 ```
-            HUMAN INTENT  (below membrane — human only)
-                 │
+            GOD  (the human — below the membrane)
+                 │  speaks ONLY to chosen champions; never to the horde
    ┌─────────────▼──────────────┐
-   │ WARBOSS (high model)        │  decompose intent → requirements
-   │  - sets the contract        │  → acceptance examples → CONTRACTS
-   │  - owns nothing it grinds   │
+   │ WARBOSS                     │  the champion. Absorbs the most entropy.
+   │  - sets the contract        │  Interprets God's goal → requirements →
+   │  - never touches grunts      │  acceptance examples → CONTRACTS. Talks
+   │                             │  down only to Warchiefs.
    └─────────────┬──────────────┘
    ═══ MEMBRANE: frozen executable contracts (immutable, low-entropy) ═══
-                 │  injected directly into grunt buffers
    ┌─────────────▼──────────────┐
-   │ SERGEANTS (mid model)       │  own a contract slice, dispatch grunts,
-   │  - orchestrate the loop     │  fractal-prune context per grunt
+   │ WARCHIEF                    │  carries a frozen slice down the chain;
+   │  - relays, never re-interprets │ insulates the Warboss from horde noise.
    └─────────────┬──────────────┘
    ┌─────────────▼──────────────┐
-   │ GRUNTS (lowest model)       │  generate impl → judged vs membrane
-   │  - dogmatic, base behavior  │  → retry until green
-   │    embedded, cannot touch   │
-   │    contracts                │
+   │ SERGEANTS                   │  own a contract slice, decompose it,
+   │  - orchestrate the loop     │  dispatch grunts, fractal-prune context
+   └─────────────┬──────────────┘
+   ┌─────────────▼──────────────┐
+   │ GRUNTS                      │  generate impl → judged vs membrane
+   │  - dogmatic, base behavior  │  → retry until green. Receive a decided,
+   │    embedded, cannot touch   │  lowest-entropy environment — never an
+   │    contracts                │  order from above the Sergeant.
    └────────────────────────────┘
 ```
+
+**Who talks to whom (the only legal edges):** God → Warboss → Warchief →
+Sergeant → Grunt, and judge results back up the same edges. God never instructs a
+grunt; a Warboss never instructs a grunt. Flavor: *I am God — I speak only to my
+chosen champions. The champions interpret my goals and lead the horde devoted to
+realizing them.*
+
+For E1 only the Grunt + membrane are exercised; the ranks above collapse to a
+single human-authored contract. They light up in Phase 4 (Warboss decomposition)
+and Phase 5 (Warchief/Sergeant orchestration).
 
 **Core loop (no tournament):**
 
@@ -81,6 +111,8 @@ A grunt **shouldn't have to interpret** — not because it is incapable, but bec
 Three levers enforce this, in order of power:
 
 1. **Grunt-readiness gate (admission check).** No task is dispatched to a grunt until its contract's residual latitude is proven low. Cheap probe: generate K diverse impls at high temperature → keep the ones that pass the frozen contract → run survivors against held-out probes. If survivors **disagree** on any plausible input, the contract is underspecified → **block dispatch, kick back to the contract author.** This is the membrane applied to ourselves: we do not trust a contract until we have shown that impls satisfying it converge. **E1a is the calibration instrument for this gate** — it turns "interpretation latitude" into a number we can threshold on.
+
+   **Idea pinned (2026-06-09): a grunt-tier readiness judge.** A cheaper, complementary admission signal — hand the candidate contract to a *grunt-like judge* (the LOW tier itself) and ask "can you do this work as specified?" If the lowest tier confidently says yes, the task is grunt-ready and does **not** need to be passed back up for more decomposition; if it balks or asks questions, that *is* the underspecification signal — kick it up. This makes readiness self-referential at the cheapest tier (the model that will do the work judges whether the work is decided enough), and it's a single cheap call vs. the K-impl convergence probe. Open: is the LOW tier's "yes" a reliable readiness signal, or does it over-claim? Calibrate against the E1a convergence number — does grunt-judge "yes" correlate with low behavioral variance? If yes, it's a cheap front-line gate with the K-impl probe as the expensive backstop.
 2. **Mechanical surface-narrowing.** Each removes a dimension of choice before the grunt sees anything: a frozen **type signature** (pins input/output shape), the **pure-function** constraint (no I/O = no behavioral choices), and **acceptance examples** as canonical anchors.
 3. **Fail-up dogma (behavioral embed).** The grunt's base behavior: *when the contract does not decide something, do not guess — report the gap.* A grunt that hits an undecided fork **escalates underspecification upward**; it never resolves ambiguity itself. This is what keeps grunts simple creatures.
 

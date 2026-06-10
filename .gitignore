@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Secrets / local env
+.env
+.env.local
+.env.*.local
+
+# Personal/local Claude settings (project settings.json is shared, .local is not)
+.claude/settings.local.json
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Experiment + run artifacts (cost ledgers, generated impls, logs)
+runs/
+*.log
+npm-debug.log*
+
+# Test / coverage
+coverage/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
