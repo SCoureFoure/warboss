@@ -69,6 +69,7 @@ Run the loop with the **`/spec`** skill (`.claude/skills/spec/SKILL.md`):
 ## Index
 
 | Spec | Feature | Maps to | Status |
-|------|---------|---------|--------|
+| ------ | ------- | ------- | ------ |
 | [membrane-core](membrane-core.spec.md) | Hash-frozen contract + sandbox + runner + cost ledger + agent layer | Phase 1 + agent layer | active |
 | [e1a-harness](e1a-harness.spec.md) | E1a variance experiment runner + duration-parse task assets | Phase 2a (E1a) | active |
+| [e1b-harness](e1b-harness.spec.md) | E1b retry-in-place loop + feedback-granularity sub-arms | Phase 2b (E1b) | active |
