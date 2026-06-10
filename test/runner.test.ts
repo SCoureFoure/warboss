@@ -66,6 +66,28 @@ test("AC11 mechanical freeze: wrong hash throws, own hash executes", () => {
   assert.ok(v.pass);
 });
 
+test("AC16 throws case: passes when impl throws, fails when impl returns a value", () => {
+  const throwsContract = Contract.freeze({
+    requirement: "noNeg throws on negative input",
+    entry: "noNeg",
+    version: "1",
+    examples: [{ name: "ok", input: [1], expected: 1 }],
+  });
+  const battery = [
+    { name: "neg", input: [-1], expected: "<throws>" as unknown, throws: true as const },
+  ];
+
+  const throwingImpl = "function noNeg(x) { if (x < 0) throw new Error('neg'); return x; }";
+  const v1 = judge(throwsContract, throwingImpl, { battery, revealInFeedback: true });
+  assert.ok(v1.pass);
+  assert.deepEqual(v1.vector, [true]);
+
+  const notThrowingImpl = "function noNeg(x) { return x; }";
+  const v2 = judge(throwsContract, notThrowingImpl, { battery, revealInFeedback: true });
+  assert.ok(!v2.pass);
+  assert.deepEqual(v2.vector, [false]);
+});
+
 test("AC12 deepEqual is structural and treats NaN as equal", () => {
   assert.ok(deepEqual([1, [2, 3]], [1, [2, 3]]));
   assert.ok(!deepEqual([1, 2], [1, 2, 3]));

@@ -1,0 +1,14 @@
+[
+  { "name": "plain-hours",    "input": ["2h"],        "expected": 7200,       "coveredBy": ["basic-hm"] },
+  { "name": "plain-minutes",  "input": ["10m"],       "expected": 600,        "coveredBy": ["basic-hm", "bare-minutes"] },
+  { "name": "zero-seconds",   "input": ["0s"],        "expected": 0,          "coveredBy": ["seconds-only"] },
+  { "name": "three-units",    "input": ["3h2m1s"],    "expected": 10921,      "coveredBy": ["full-hms"] },
+  { "name": "bare-number-2",  "input": ["120"],       "expected": 120,        "coveredBy": ["bare-number"] },
+  { "name": "carry-minutes",  "input": ["1h90m"],     "expected": 9000,       "coveredBy": [] },
+  { "name": "repeat-units",   "input": ["30m30m"],    "expected": 3600,       "coveredBy": [] },
+  { "name": "decimal-hours",  "input": ["1.5h"],      "expected": 5400,       "coveredBy": [] },
+  { "name": "reversed-order", "input": ["30m1h"],     "expected": 5400,       "coveredBy": [] },
+  { "name": "whitespace",     "input": [" 1h 30m "],  "expected": 5400,       "coveredBy": [] },
+  { "name": "negative",       "input": ["-1h"],       "expected": "<throws>", "throws": true, "coveredBy": [] },
+  { "name": "garbage-unit",   "input": ["1x"],        "expected": "<throws>", "throws": true, "coveredBy": [] }
+]

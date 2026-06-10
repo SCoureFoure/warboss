@@ -85,6 +85,11 @@ export function judge(
     const run = runImpl(code, contract.entry, c.input, {
       ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
     });
+    if (c.throws) {
+      // Case passes iff the impl threw (any error, including timeout/missing-entry).
+      const pass = !run.ok;
+      return { ...labelOf(c), pass, ...(run.ok ? { actual: run.value } : {}) };
+    }
     if (!run.ok) {
       return { ...labelOf(c), pass: false, error: run.error };
     }

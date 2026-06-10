@@ -29,3 +29,13 @@ test("AC4 frozen contract is immutable and verifies only its own hash", () => {
   assert.ok(c.verify(c.hash));
   assert.ok(!c.verify("deadbeef"));
 });
+
+test("AC16 throws flag participates in hash — adding it changes the hash", () => {
+  const withThrows: ContractInput = {
+    ...base,
+    examples: [{ input: [1, 2], expected: 3, throws: true }],
+  };
+  assert.notEqual(Contract.computeHash(base), Contract.computeHash(withThrows));
+  // Two contracts with throws: true should agree with each other.
+  assert.equal(Contract.computeHash(withThrows), Contract.computeHash(withThrows));
+});

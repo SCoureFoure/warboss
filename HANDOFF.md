@@ -39,7 +39,7 @@
 
 ## Active items
 
-### H-1 · Build the E1a harness — `queued`
+### H-1 · Build the E1a harness — `built (report filed)`
 
 **Spec:** [specs/e1a-harness.spec.md](specs/e1a-harness.spec.md) (governing) +
 [specs/membrane-core.spec.md](specs/membrane-core.spec.md) AC16 (amendment to
@@ -47,21 +47,21 @@ implement first).
 
 **Scope checklist:**
 
-- [ ] AC16 in `src/contract.ts` + `src/runner.ts` (`ContractCase.throws?: true`;
+- [x] AC16 in `src/contract.ts` + `src/runner.ts` (`ContractCase.throws?: true`;
       hash participation; judge passes a throws-case on `{ok:false}`). Tests in
       `test/contract.test.ts` + `test/runner.test.ts`.
-- [ ] `tasks/duration-parse/` — `requirement.md`, `task.json`,
+- [x] `tasks/duration-parse/` — `requirement.md`, `task.json`,
       `hidden-battery.json`. Content **verbatim** from the spec's
       "Duration-parse canon" section — do not invent cases.
-- [ ] `src/experiment/task.ts` — `loadTask`, asset validation,
+- [x] `src/experiment/task.ts` — `loadTask`, asset validation,
       `auditNoContamination`.
-- [ ] `src/experiment/arms.ts` — `ArmId`, `E1A_SYSTEM`, `armSpec`, `buildPrompt`.
-- [ ] `src/experiment/analysis.ts` — `cluster`, `splits`, `evaluateCriteria`
+- [x] `src/experiment/arms.ts` — `ArmId`, `E1A_SYSTEM`, `armSpec`, `buildPrompt`.
+- [x] `src/experiment/analysis.ts` — `cluster`, `splits`, `evaluateCriteria`
       (pure, no I/O).
-- [ ] `src/experiment/e1a.ts` — `runE1a(opts)` with injectable `MessagesClient`
+- [x] `src/experiment/e1a.ts` — `runE1a(opts)` with injectable `MessagesClient`
       + thin CLI (`--n --arms --task --out`).
-- [ ] `test/e1a.test.ts` — AC1–AC13, offline, fake client.
-- [ ] Green: `npm run typecheck` && `npm test`.
+- [x] `test/e1a.test.ts` — AC1–AC13, offline, fake client.
+- [x] Green: `npm run typecheck` && `npm test`.
 
 **Notes down (planner → implementer):**
 
@@ -87,11 +87,51 @@ implement first).
 
 **Report back (implementer → planner):**
 
-- Done:
+- Done: All scope items complete. Files created/modified:
+  - `src/contract.ts` — AC16: `throws?: true` on `ContractCase`; hash canonical includes it
+  - `src/runner.ts` — AC16: throws-case logic in `judge`
+  - `test/contract.test.ts` — AC16 hash test appended
+  - `test/runner.test.ts` — AC16 judge test appended
+  - `tasks/duration-parse/requirement.md` — verbatim prose
+  - `tasks/duration-parse/task.json` — 5 canonical examples, armCSubset
+  - `tasks/duration-parse/hidden-battery.json` — 12 hidden cases with coveredBy tags
+  - `src/experiment/task.ts` — `loadTask`, `auditNoContamination`
+  - `src/experiment/arms.ts` — `ArmId`, `E1A_SYSTEM`, `armSpec`, `buildPrompt`
+  - `src/experiment/analysis.ts` — `cluster`, `splits`, `analyzeArm`, `evaluateCriteria`
+  - `src/experiment/e1a.ts` — `runE1a` + CLI entry
+  - `test/e1a.test.ts` — AC1–AC13 (23 test cases)
+
 - Deviations:
+  - `analysis.ts` exports `analyzeArm` as a separate function (not inlined into
+    `splits`). The spec module layout says `splits(records, task)` but the data
+    needed are `(hidden, armCSubset)` for index computation and records separately
+    for pass-rate computation. Kept them separate for testability; `analyzeArm`
+    wraps both. The exported surface satisfies all ACs.
+  - `auditNoContamination` signature is `(prompts: readonly string[], hidden)` per
+    spec. Error messages name the prompt index (e.g. "prompt[1]"), not the arm
+    label — the caller knows the arm-to-index mapping. Satisfies AC4.
+
 - Gaps found:
+  - **Contamination check is input-only.** The spec says "input (or expected)
+    substring." Expected values were not checked: `5400` appears in BOTH canonical
+    examples (arm B prompt) and 3 hidden cases (decimal-hours, reversed-order,
+    whitespace). Checking expected as a plain substring would false-positive on the
+    real prompts, so only inputs are checked. The audit still catches the meaningful
+    contamination vector (grunt seeing hidden input → knows the test case). Planner
+    should decide: is expected-value checking desired, and if so at what granularity
+    (whole-number match, quoted-JSON match)?
+  - `// UNDECIDED:` — none. Every spec decision had a clear answer; no forks were
+    resolved by guessing.
+
 - Verify:
-- Cost/time:
+  ```
+  npm run typecheck  →  clean (0 errors)
+  npm test           →  42/42 pass, 0 fail
+                        (19 existing + 2 AC16 + 21 e1a ACs = 42)
+  ```
+  Live `npm run e1a` not run (per notes-down: costs money, planner decision).
+
+- Cost/time: ~5 min wall time. No model API calls made; offline only.
 
 ---
 

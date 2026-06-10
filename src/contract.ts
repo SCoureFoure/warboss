@@ -22,8 +22,10 @@ export interface ContractCase {
   readonly name?: string;
   /** Positional args passed to the entry function. */
   readonly input: readonly unknown[];
-  /** Required return value (deep-equality compared). */
+  /** Required return value (deep-equality compared). Ignored when throws is set. */
   readonly expected: unknown;
+  /** When true, the case passes iff the impl throws (any error). */
+  readonly throws?: true;
 }
 
 export interface ContractInput {
@@ -75,6 +77,7 @@ export class Contract {
       examples: input.examples.map((c) => ({
         input: c.input,
         expected: c.expected,
+        ...(c.throws ? { throws: true as const } : {}),
       })),
     });
     return createHash("sha256").update(canonical).digest("hex");

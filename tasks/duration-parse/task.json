@@ -1,0 +1,13 @@
+{
+  "name": "duration-parse",
+  "entry": "parseDuration",
+  "version": "1",
+  "examples": [
+    { "name": "basic-hm",      "input": ["1h30m"],    "expected": 5400 },
+    { "name": "bare-minutes",  "input": ["90m"],      "expected": 5400 },
+    { "name": "seconds-only",  "input": ["45s"],      "expected": 45   },
+    { "name": "bare-number",   "input": ["90"],       "expected": 90   },
+    { "name": "full-hms",      "input": ["2h15m30s"], "expected": 8130 }
+  ],
+  "armCSubset": ["basic-hm", "seconds-only"]
+}
