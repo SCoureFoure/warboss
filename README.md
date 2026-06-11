@@ -60,7 +60,7 @@ GOD (you) ─▶ WARBOSS ─▶ WARCHIEF ─▶ SERGEANT ─▶ GRUNT
 - **Grunts** are the cheapest models. Dogmatic doers, not planners — they receive
   a fully decided environment and execute it.
 
-Two rules make this more than flavor:
+Three rules make this more than flavor:
 
 1. **Talk to your neighbor only.** No rank speaks across or skips a layer. That's
    the noise-isolation mechanism: interpretation latitude collapses one hop at a
@@ -72,6 +72,13 @@ Two rules make this more than flavor:
    below. As work descends, less is left to interpret, so a cheaper model becomes
    viable — until the cheapest tier can satisfy the contract outright. The
    hierarchy is a **fractal**: add ranks or widen the horde as the work demands.
+3. **Entropy is reduced at authoring time, never at implementation time.** All
+   discipline lands on the rank that *writes* — every rule stated as a
+   mechanical input → output, every sentence falsifiable by an example, every
+   second reading killed by a case that fails under it. Grunts are left as
+   simple machines; you control the author's prompt, not the worker's mind. (A
+   worker that implements a coherent misreading of an ambiguous sentence is the
+   author's defect — we learned this one the empirical way.)
 
 ## How the parts earn their place
 
@@ -95,35 +102,53 @@ ones most able to kill the thesis. Full detail in [duh_plan.md](duh_plan.md).
 1. **Membrane primitive** *(done)* — a contract that freezes by content hash and
    a runner that refuses to execute against anything but its registered hash.
    Plus the cheap-model worker layer and a cost ledger on every call.
-2. **E1a — does the contract collapse interpretation?** Run the same task many
-   times with and without a frozen contract; measure how much the outputs fan
-   out. The contract should crush the variance.
-3. **E1b — does cheap + honest + retry beat one expensive shot?** Add the
-   retry-against-the-membrane loop and settle the correctness-per-dollar bet
-   head-to-head against a high-model one-shot.
-4. **Warboss decomposition** — let the high model author the contracts, and prove
-   it doesn't poison the membrane by under-specifying.
+2. **E1a — does the contract collapse interpretation?** *(run live — settled.)*
+   Same task, many runs, with and without a frozen contract. The contract
+   crushed the fan-out: modal agreement 0.97 with the contract vs 0.60 without
+   (E1a-r2, N=30×4, $0.59). Bonus finding: without a contract, 18/30 cheap-model
+   outputs weren't even viable implementations.
+3. **E1b — does cheap + honest + retry beat one expensive shot?** *(harness
+   built on the product loop; live dispatch is a spend decision.)* The
+   retry-against-the-membrane loop now lives in `src/loop.ts` as durable
+   infrastructure — generate → judge → retry until green, stall, or budget,
+   every attempt metered.
+4. **Warboss decomposition** *(built offline; first live run pending)* — the
+   high model authors the contracts (`src/warboss.ts`: decompose → mechanical
+   validation → self-audit → one amend → freeze), with an error-coverage
+   mandate enforced mechanically so it can't poison the membrane by
+   under-specifying. Hardened process sandbox (`node --permission`, vm-in-child)
+   is in place for when tasks gain I/O.
 5. **Scale the horde** — fractal context + the Sergeant/Warchief layers, so many
    contracts can run at once with constant-size context per worker.
 
-A question already pinned for the readiness gate: before dispatching work, ask
-the cheap tier itself *"can you do this as specified?"* If it can, the task is
-grunt-ready and needs no further decomposition; if it balks, that's the
-under-specification signal. The model that does the work judges whether the work
-is decided enough.
+The readiness-gate idea is now built (`src/gate.ts`): before dispatching work,
+ask the cheap tier itself *"can you do this as specified?"* — a one-call
+READY/NOT-READY judge that fails closed, backstopped by a convergence probe
+(K independent generations; if survivors don't agree on held-out cases, the
+contract isn't decided enough). The model that does the work judges whether
+the work is decided enough; admission (`admit`) wires both in front of the
+horde. Calibration against live data is pending.
 
 ## Where it stands
 
-Phase 1 is built and covered by tests. The repo runs spec-driven: every harness
-feature deposits a durable spec in [`specs/`](specs/) plus a regression test, via
-the [`/spec`](.claude/skills/spec/SKILL.md) loop.
+The machine's organs are built and covered by 133 offline tests: membrane core,
+retry loop, readiness gate, process sandbox, and the warboss decomposition
+pipeline. E1a ran live and settled rung 1 of the thesis (the contract collapses
+interpretation). Three live spends are queued behind a God decision: the E1b
+economics run, gate calibration, and the first live decomposition.
+
+The repo runs spec-driven and eats its own cooking: every harness feature
+deposits a durable spec in [`specs/`](specs/) plus a regression test (via the
+[`/spec`](.claude/skills/spec/SKILL.md) loop), work moves between ranks only
+through [HANDOFF.md](HANDOFF.md) frozen-spec work items, and every model call —
+including our own build loop's — lands in a cost ledger.
 
 ```sh
 npm install
 cp .env.example .env   # add ANTHROPIC_API_KEY (only needed for live runs)
 
 npm run typecheck      # strict tsc
-npm test               # node:test — the membrane core, offline
+npm test               # node:test — the whole machine, offline (133 tests)
 npm run smoke          # full stack; dispatches one real grunt if a key is set
 ```
 
@@ -132,10 +157,10 @@ npm run smoke          # full stack; dispatches one real grunt if a key is set
 | [duh_plan.md](duh_plan.md) | Thesis, architecture, experiment design — the living plan. |
 | [HANDOFF.md](HANDOFF.md) | The relay: planner writes work items down, implementer reports back. |
 | [specs/](specs/) | Durable source of truth per harness feature, paired with tests. |
-| [src/](src/) | The core layers — contract, sandbox, runner, cost ledger, agent. |
+| [src/](src/) | The core layers — contract, sandbox, runner, cost ledger, agent, loop, gate, warboss. |
 | [references/](references/) | The source ideas the machine is assembled from. |
 
 ---
 
-*Status: planning → lab. Greenfield. Duh Plan supersedes this README where they
-disagree.*
+*Status: lab — rung 1 settled, economics rung next. Duh Plan supersedes this
+README where they disagree.*
