@@ -12,6 +12,8 @@
 
 import { Contract, type ContractCase } from "./contract.ts";
 import { runImpl } from "./sandbox.ts";
+import type { SandboxResult } from "./sandbox.ts";
+import { runImplProc, type ProcRunOptions } from "./sandbox-proc.ts";
 
 /**
  * Feedback granularity. The AlphaProof loop works because the judge says *why*;
@@ -155,6 +157,55 @@ function fmt(v: unknown): string {
   } catch {
     return String(v);
   }
+}
+
+export type ImplRunner = (code: string, entry: string, args: readonly unknown[], opts?: ProcRunOptions) => Promise<SandboxResult>;
+
+export interface JudgeAsyncOptions extends JudgeOptions {
+  runner?: ImplRunner;  // default: runImplProc
+  procOpts?: ProcRunOptions;
+}
+
+export async function judgeAsync(
+  contract: Contract,
+  code: string,
+  opts: JudgeAsyncOptions = {},
+): Promise<JudgeResult> {
+  if (opts.expectedHash !== undefined && !contract.verify(opts.expectedHash)) {
+    throw new ContractHashMismatch(opts.expectedHash, contract.hash);
+  }
+
+  const battery = opts.battery ?? contract.examples;
+  const granularity = opts.granularity ?? "full";
+  const reveal = opts.revealInFeedback ?? opts.battery === undefined;
+  const runner = opts.runner ?? runImplProc;
+
+  const results: CaseResult[] = await Promise.all(
+    battery.map(async (c) => {
+      const run = await runner(code, contract.entry, c.input, opts.procOpts);
+      if (c.throws) {
+        const pass = !run.ok;
+        return { ...labelOf(c), pass, ...(run.ok ? { actual: run.value } : {}) };
+      }
+      if (!run.ok) {
+        return { ...labelOf(c), pass: false, error: run.error };
+      }
+      const pass = deepEqual(run.value, c.expected);
+      return { ...labelOf(c), pass, actual: run.value };
+    }),
+  );
+
+  const vector = results.map((r) => r.pass);
+  const passed = vector.filter(Boolean).length;
+  const allPass = passed === vector.length;
+
+  return {
+    pass: allPass,
+    vector,
+    results,
+    score: vector.length === 0 ? 1 : passed / vector.length,
+    feedback: allPass ? "" : buildFeedback(results, granularity, reveal),
+  };
 }
 
 /** Structural deep-equality. Handles primitives (incl. NaN), arrays, plain objects. */
