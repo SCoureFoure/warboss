@@ -10,6 +10,8 @@ import { loadTask, auditNoContamination, type HiddenCase } from "./task.ts";
 import { buildPrompt } from "./arms.ts";
 import { type CriterionVerdict } from "./analysis.ts";
 import type { Contract } from "../contract.ts";
+import { runLoop } from "../loop.ts";
+import type { LoopResult } from "../loop.ts";
 
 export type FeedbackArm = "passfail" | "input" | "full";
 export const MAX_BUDGET = 5;
@@ -17,7 +19,6 @@ export const MAX_BUDGET = 5;
 const _thisDir = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_TASKS_DIR = join(_thisDir, "..", "..", "tasks");
 const MAX_CONCURRENCY = 4;
-const MAX_API_ATTEMPTS = 3;
 
 export interface SessionRecord {
   readonly feedbackArm: FeedbackArm;
@@ -56,40 +57,11 @@ export interface RunE1bOptions {
   client?: MessagesClient;
   tasksDir?: string;
   e1aArmD?: E1aArmDStats;
+  live?: boolean;
 }
 
-function buildRetryPrompt(initialPrompt: string, feedback: string | null): string {
-  if (feedback === null) {
-    return (
-      initialPrompt +
-      "\n\nYour previous attempt produced no extractable code block. Output ONLY a single fenced code block."
-    );
-  }
-  return initialPrompt + "\n\nYour previous attempt failed. Feedback:\n" + feedback;
-}
-
-async function dispatchOne(
-  agent: Agent,
-  prompt: string,
-  feedbackArm: FeedbackArm,
-  sessionIndex: number,
-  attempt: number,
-  taskName: string,
-): Promise<{ code: string | undefined; costUsd: number; wallMs: number } | null> {
-  for (let apiAttempt = 0; apiAttempt < MAX_API_ATTEMPTS; apiAttempt++) {
-    try {
-      return await agent.generate({
-        prompt,
-        system: GRUNT_DOGMA,
-        maxTokens: 2048,
-        kind: "grunt.generate",
-        tags: { feedbackArm, task: taskName, sessionIndex, attempt },
-      });
-    } catch {
-      if (apiAttempt === MAX_API_ATTEMPTS - 1) return null;
-    }
-  }
-  return null;
+export interface RunE1bResult {
+  readonly deadRun: boolean;
 }
 
 async function runSession(
@@ -101,66 +73,23 @@ async function runSession(
   grader: Contract,
   hidden: readonly HiddenCase[],
 ): Promise<SessionRecord> {
-  let prevCode: string | undefined = undefined;
-  let hasPrev = false;
-  let lastCode: string | undefined = undefined;
-  let totalCostUsd = 0;
-  let totalWallMs = 0;
-  let attempts = 0;
-  let green = false;
-  let stalled = false;
-  let currentPrompt = initialPrompt;
+  const loopResult: LoopResult = await runLoop({
+    agent,
+    contract: grader,
+    prompt: initialPrompt,
+    granularity: feedbackArm,
+    budget: MAX_BUDGET,
+    system: GRUNT_DOGMA,
+    kind: "grunt.generate",
+    tags: { feedbackArm, task: taskName, sessionIndex },
+  });
 
-  for (let attempt = 1; attempt <= MAX_BUDGET; attempt++) {
-    const gen = await dispatchOne(agent, currentPrompt, feedbackArm, sessionIndex, attempt, taskName);
-    attempts = attempt;
-    totalCostUsd += gen?.costUsd ?? 0;
-    totalWallMs += gen?.wallMs ?? 0;
-
-    const code = gen?.code;
-
-    // Stall detection: same code (or both undefined) on consecutive attempts
-    if (hasPrev && code === prevCode) {
-      stalled = true;
-      lastCode = code;
-      break;
-    }
-    prevCode = code;
-    hasPrev = true;
-    lastCode = code;
-
-    // No extractable code: inject no-code feedback and continue
-    if (code === undefined) {
-      if (attempt < MAX_BUDGET) {
-        currentPrompt = buildRetryPrompt(initialPrompt, null);
-      }
-      continue;
-    }
-
-    // Judge against canonical contract
-    const judged = judge(grader, code, {
-      expectedHash: grader.hash,
-      granularity: feedbackArm,
-      revealInFeedback: true,
-    });
-
-    if (judged.pass) {
-      green = true;
-      break;
-    }
-
-    if (attempt < MAX_BUDGET) {
-      currentPrompt = buildRetryPrompt(initialPrompt, judged.feedback);
-    }
-  }
-
-  // Score final impl against hidden battery
   const allFalse = new Array(hidden.length).fill(false) as boolean[];
   let finalVector: readonly boolean[] = allFalse;
   let finalScore = 0;
 
-  if (lastCode !== undefined) {
-    const finalJudge = judge(grader, lastCode, {
+  if (loopResult.finalCode !== undefined) {
+    const finalJudge = judge(grader, loopResult.finalCode, {
       battery: hidden as unknown as import("../contract.ts").ContractCase[],
       expectedHash: grader.hash,
     });
@@ -172,14 +101,14 @@ async function runSession(
     feedbackArm,
     sessionIndex,
     model: TIERS.LOW.id,
-    attempts,
-    stalled,
-    green,
-    finalCode: lastCode,
+    attempts: loopResult.attemptsUsed,
+    stalled: loopResult.status === "stalled",
+    green: loopResult.green,
+    finalCode: loopResult.finalCode,
     finalVector,
     finalScore,
-    totalCostUsd,
-    totalWallMs,
+    totalCostUsd: loopResult.costUsd,
+    totalWallMs: loopResult.wallMs,
   };
 }
 
@@ -277,7 +206,7 @@ async function runWithConcurrency<T>(
   return results;
 }
 
-export async function runE1b(opts: RunE1bOptions = {}): Promise<void> {
+export async function runE1b(opts: RunE1bOptions = {}): Promise<RunE1bResult> {
   const n = opts.n ?? 30;
   const feedbackArms: FeedbackArm[] = opts.feedbackArms ?? ["passfail", "input", "full"];
   const taskName = opts.task ?? "duration-parse";
@@ -299,9 +228,6 @@ export async function runE1b(opts: RunE1bOptions = {}): Promise<void> {
     ...(opts.client ? { client: opts.client } : {}),
   });
 
-  // Contamination audit: initial prompt + one simulated retry prompt (uses canonical feedback)
-  // Hidden battery inputs must not appear in any prompt. The retry prompt injects feedback
-  // from judging canonical examples — which only contain canonical inputs, not hidden ones.
   auditNoContamination([initialPrompt], task.hidden);
 
   const jobs: Array<{ feedbackArm: FeedbackArm; sessionIndex: number }> = [];
@@ -339,6 +265,10 @@ export async function runE1b(opts: RunE1bOptions = {}): Promise<void> {
   const totals = ledger.totals();
   const fileName = `e1b-${ts}.json`;
 
+  const deadRun =
+    opts.live === true &&
+    (totals.costUsd === 0 || sessions.every((s) => s.finalScore === 0));
+
   const artifact = {
     config: { n, feedbackArms, task: taskName, budget: MAX_BUDGET },
     taskName,
@@ -348,6 +278,7 @@ export async function runE1b(opts: RunE1bOptions = {}): Promise<void> {
     criterion4,
     ledger: ledger.toJSON(),
     totalCostUsd: totals.costUsd,
+    deadRun,
   };
 
   await writeFile(join(outDir, fileName), JSON.stringify(artifact, null, 2));
@@ -366,6 +297,14 @@ export async function runE1b(opts: RunE1bOptions = {}): Promise<void> {
   console.log(`\nArtifact:   ${join(outDir, fileName)}`);
   console.log(`Cost log:   ${join(outDir, `cost-ledger-${ts}.jsonl`)}`);
   console.log(`Total cost: $${totals.costUsd.toFixed(6)}`);
+
+  if (deadRun) {
+    process.stderr.write(
+      "\n!!! DEAD RUN — harness defect suspected: live run with zero cost or all-zero scores. Artifact written as evidence.\n",
+    );
+  }
+
+  return { deadRun };
 }
 
 // CLI entry
@@ -403,11 +342,16 @@ if (
       .map((s) => s.trim() as FeedbackArm),
     task: getArg("--task", "duration-parse"),
     out: getArg("--out", "runs"),
+    live: true,
     ...(e1aArmD ? { e1aArmD } : {}),
   };
 
-  runE1b(opts).catch((err: unknown) => {
-    console.error(err);
-    process.exit(1);
-  });
+  runE1b(opts)
+    .then(({ deadRun }) => {
+      if (deadRun) process.exit(1);
+    })
+    .catch((err: unknown) => {
+      console.error(err);
+      process.exit(1);
+    });
 }

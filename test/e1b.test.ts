@@ -16,6 +16,7 @@ import {
   type SessionRecord,
   type FeedbackArmAnalysis,
   type E1aArmDStats,
+  type RunE1bResult,
 } from "../src/experiment/e1b.ts";
 import { TIERS } from "../src/models.ts";
 
@@ -98,14 +99,14 @@ function throwingClient(
 
 async function runAndRead(
   opts: Parameters<typeof runE1b>[0],
-): Promise<{ artifact: Record<string, unknown>; outDir: string; files: string[] }> {
+): Promise<{ artifact: Record<string, unknown>; outDir: string; files: string[]; result: RunE1bResult }> {
   const outDir = await mkdtemp(join(tmpdir(), "e1b-test-"));
-  await runE1b({ ...opts, out: outDir, tasksDir: TASKS_DIR });
+  const result = await runE1b({ ...opts, out: outDir, tasksDir: TASKS_DIR });
   const files = await readdir(outDir);
   const name = files.find((f) => f.startsWith("e1b-") && f.endsWith(".json"));
   assert.ok(name, "results artifact written");
   const raw = await readFile(join(outDir, name), "utf8");
-  return { artifact: JSON.parse(raw) as Record<string, unknown>, outDir, files };
+  return { artifact: JSON.parse(raw) as Record<string, unknown>, outDir, files, result };
 }
 
 // ── AC1 ─────────────────────────────────────────────────────────────────────
@@ -148,6 +149,20 @@ test("AC2 stall: same code twice → stalled=true, attempts=2, no third call", a
   assert.equal(callCount(), 2);
 });
 
+test("AC2 two consecutive no-code attempts are NOT a stall: always empty → budget exhausted, stalled=false", async () => {
+  const { artifact } = await runAndRead({
+    n: 1,
+    feedbackArms: ["full"],
+    client: cyclingClient([""]).client,
+  });
+
+  const sessions = artifact["sessions"] as SessionRecord[];
+  const s = sessions[0]!;
+  assert.equal(s.stalled, false, "no-code attempts do not count as stall");
+  assert.equal(s.green, false);
+  assert.equal(s.attempts, MAX_BUDGET);
+});
+
 // ── AC3 ─────────────────────────────────────────────────────────────────────
 
 test("AC3 budget: 5 distinct failing impls → attempts=MAX_BUDGET, green=false, stalled=false", async () => {
@@ -171,7 +186,7 @@ test("AC3 budget: 5 distinct failing impls → attempts=MAX_BUDGET, green=false,
 
 // ── AC4 ─────────────────────────────────────────────────────────────────────
 
-test("AC4 feedback injected: attempt-2 prompt contains judge feedback from attempt 1", async () => {
+test("AC4 feedback injected: attempt-2 prompt contains previous impl block and judge feedback", async () => {
   const captured: string[] = [];
   const client = cyclingClient(
     [fence(FAILING_IMPL), fence(CORRECT_IMPL)],
@@ -185,8 +200,16 @@ test("AC4 feedback injected: attempt-2 prompt contains judge feedback from attem
   assert.equal(captured.length, 1);
   const prompt = captured[0]!;
   assert.ok(
-    prompt.includes("Your previous attempt failed. Feedback:"),
-    "retry prompt must contain feedback header",
+    prompt.includes("Your previous implementation:"),
+    "retry prompt must contain previous impl block",
+  );
+  assert.ok(
+    prompt.includes(FAILING_IMPL),
+    "retry prompt must contain attempt 1's code",
+  );
+  assert.ok(
+    prompt.includes("Judge feedback:"),
+    "retry prompt must contain judge feedback header",
   );
   // full granularity: input + expected appear in feedback
   assert.ok(prompt.includes("1h30m"), "feedback includes canonical input");
@@ -194,7 +217,7 @@ test("AC4 feedback injected: attempt-2 prompt contains judge feedback from attem
 
 // ── AC5 ─────────────────────────────────────────────────────────────────────
 
-test("AC5 no-code retry: empty attempt 1, passing attempt 2 → no-code message in prompt, green=true", async () => {
+test("AC5 no-code retry: empty attempt 1, passing attempt 2 → no-code message in prompt, green=true, no previous impl block", async () => {
   const captured: string[] = [];
   const client = cyclingClient(
     ["", fence(CORRECT_IMPL)],
@@ -212,8 +235,12 @@ test("AC5 no-code retry: empty attempt 1, passing attempt 2 → no-code message 
 
   assert.equal(captured.length, 1);
   assert.ok(
-    captured[0]!.includes("produced no extractable code block"),
-    "no-code prompt injected",
+    captured[0]!.includes("Your previous response contained no code block."),
+    "no-code prompt injected with correct message",
+  );
+  assert.ok(
+    !captured[0]!.includes("Your previous implementation:"),
+    "no-code retry must not have previous impl block",
   );
 });
 
@@ -264,7 +291,7 @@ test("AC6 granularity arms differ: passfail vs full retry prompts are distinct",
 
   // Extract the feedback section (after the retry header) to avoid matching
   // canonical inputs that appear in the initial prompt's frozen contract block.
-  const FEEDBACK_HEADER = "Your previous attempt failed. Feedback:";
+  const FEEDBACK_HEADER = "Judge feedback:";
   const pfFeedback = passFailPrompts[0]!.split(FEEDBACK_HEADER)[1] ?? "";
   const fullFeedback = fullPrompts[0]!.split(FEEDBACK_HEADER)[1] ?? "";
 
@@ -559,4 +586,42 @@ test("AC12 model=LOW, system=GRUNT_DOGMA, maxTokens=2048, tags include attempt",
     assert.ok(entry.tags?.sessionIndex !== undefined, "tag: sessionIndex");
     assert.ok(entry.tags?.attempt !== undefined, "tag: attempt");
   }
+});
+
+// ── AC13 ─────────────────────────────────────────────────────────────────────
+
+test("AC13 dead-run guard: live=true + all-zero final scores → deadRun=true, artifact stamped", async () => {
+  const { artifact, result } = await runAndRead({
+    n: 1,
+    feedbackArms: ["full"],
+    client: cyclingClient([""]).client,
+    live: true,
+  });
+
+  assert.equal(result.deadRun, true);
+  assert.equal(artifact["deadRun"], true);
+});
+
+test("AC13 dead-run guard: live=false + zero scores → deadRun=false", async () => {
+  const { artifact, result } = await runAndRead({
+    n: 1,
+    feedbackArms: ["full"],
+    client: cyclingClient([""]).client,
+    live: false,
+  });
+
+  assert.equal(result.deadRun, false);
+  assert.equal(artifact["deadRun"], false);
+});
+
+test("AC13 dead-run guard: live=true + nonzero scores → deadRun=false", async () => {
+  const { artifact, result } = await runAndRead({
+    n: 1,
+    feedbackArms: ["full"],
+    client: cyclingClient([fence(CORRECT_IMPL)]).client,
+    live: true,
+  });
+
+  assert.equal(result.deadRun, false);
+  assert.equal(artifact["deadRun"], false);
 });
