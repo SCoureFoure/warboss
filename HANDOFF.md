@@ -91,7 +91,7 @@ correct runtime-necessity catch (the `as` cast had been masking it).
 
 ---
 
-### H-6 · loop-core (retry-in-place) + e1b refactor — `built (report filed)`
+### H-6 · loop-core (retry-in-place) + e1b refactor — `accepted (via H-10)`
 
 **Spec:** [specs/loop-core.spec.md](specs/loop-core.spec.md) (governing,
 frozen) + [specs/e1b-harness.spec.md](specs/e1b-harness.spec.md) **rev 2**
@@ -325,7 +325,7 @@ so accepted, but the format should be pinned in the spec.
 
 ---
 
-### H-10 · loop-core stall-pair fix (H-6 defect) — `queued`
+### H-10 · loop-core stall-pair fix (H-6 defect) — `accepted`
 
 **Spec:** [specs/loop-core.spec.md](specs/loop-core.spec.md) **rev 2**
 (governing, frozen — rev 2 adds **AC12**, which pins this exact case, and
@@ -359,6 +359,16 @@ amends AC6's wording; the normative stall rule is unchanged).
 - Gaps found: None.
 - Verify: `npm run typecheck` → clean (0 errors); `npm test` → 133/133 pass (132 prior + 1 AC12).
 - Cost/time: ~2 min wall time. No model API calls; offline only.
+
+**Planner verdict (2026-06-10): ACCEPTED.** Diff reviewed line by line: exactly
+the two reset lines in the generationFailed branch, nothing else touched in
+`loop.ts`. AC12 test matches the spec scenario and additionally asserts the
+full per-attempt sequence. Re-verified on main: typecheck clean, 133/133.
+The original repro sequence (X, empty, X) now runs to `exhausted`. With this,
+H-6's sole defect is closed — H-6 moves to `accepted (via H-10)`.
+Process note: the grunt committed directly on main instead of its worktree
+branch (`8b7c5ad` — isolation leaked; result correct, but future dispatch
+prompts should pin the working directory explicitly).
 
 ---
 
@@ -603,9 +613,13 @@ satisfiable. Rulings on the two report items:
   next rev (audit double-failure fail-open; `auditGaps` entry format). Full
   item above.
 
-- **H-6 · loop-core** — NOT accepted (2026-06-10): stall-pair defect, fix
-  queued as **H-10**. Everything else in the item verified good. Full item +
-  verdict above.
+- **H-10 · loop-core stall-pair fix** — built + accepted 2026-06-10. Two-line
+  reset in the generationFailed branch + AC12 regression test. 133/133 green.
+  Closes H-6's defect. Full item above.
+
+- **H-6 · loop-core** — initially NOT accepted (2026-06-10, stall-pair
+  defect); defect fixed in **H-10**, item now accepted. Everything else
+  verified good on first review. Full item + verdict above.
 
 - **H-4 · E1a harness rev 2** — built + accepted 2026-06-10. JS anchor in
   `E1A_SYSTEM`, viability gating (`applyViabilityGate` in `analysis.ts`,
