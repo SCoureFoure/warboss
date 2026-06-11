@@ -354,11 +354,11 @@ amends AC6's wording; the normative stall rule is unchanged).
 
 **Report back (implementer → planner):**
 
-- Done:
-- Deviations:
-- Gaps found:
-- Verify:
-- Cost/time:
+- Done: `src/loop.ts` (stall-pair reset in generationFailed branch), `test/loop.test.ts` (AC12 regression test added).
+- Deviations: None.
+- Gaps found: None.
+- Verify: `npm run typecheck` → clean (0 errors); `npm test` → 133/133 pass (132 prior + 1 AC12).
+- Cost/time: ~2 min wall time. No model API calls; offline only.
 
 ---
 

@@ -425,3 +425,34 @@ test("AC11 3-attempt script: third prompt contains attempt 2 code but NOT attemp
   const implBlock = thirdPrompt.split("Your previous implementation:")[1] ?? "";
   assert.ok(!implBlock.includes("return 0;"), "third prompt impl block does not have attempt 1 code");
 });
+
+// ── AC12 ─────────────────────────────────────────────────────────────────────
+
+test("AC12 failed generation breaks stall pair: [code X, empty, code X, empty, empty] → status=exhausted, never stalled", async () => {
+  const { agent } = makeAgent(
+    scriptedClient([
+      fence(WRONG_ADD),
+      "",
+      fence(WRONG_ADD),
+      "",
+      "",
+    ]),
+  );
+
+  const result = await runLoop({
+    agent,
+    contract: ADD_CONTRACT,
+    prompt: "implement add",
+    budget: 5,
+  });
+
+  assert.equal(result.status, "exhausted", "status is exhausted, not stalled");
+  assert.equal(result.attemptsUsed, 5, "all 5 attempts used");
+  assert.equal(result.attempts.length, 5, "5 attempts recorded");
+  // Verify the attempt sequence: attempt 1 code, 2 failed, 3 code, 4 failed, 5 failed
+  assert.equal(result.attempts[0]!.generationFailed, false, "attempt 1 has code");
+  assert.equal(result.attempts[1]!.generationFailed, true, "attempt 2 is empty");
+  assert.equal(result.attempts[2]!.generationFailed, false, "attempt 3 has code");
+  assert.equal(result.attempts[3]!.generationFailed, true, "attempt 4 is empty");
+  assert.equal(result.attempts[4]!.generationFailed, true, "attempt 5 is empty");
+});

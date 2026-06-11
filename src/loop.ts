@@ -126,6 +126,8 @@ export async function runLoop(opts: LoopOptions): Promise<LoopResult> {
       attempts.push(record);
       totalCostUsd += costUsd;
       totalWallMs += wallMs;
+      prevHadCode = false;
+      prevCodeForStall = undefined;
 
       if (i < budget) {
         currentPrompt = buildRetryPrompt(opts.prompt, record);
