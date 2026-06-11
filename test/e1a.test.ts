@@ -1,8 +1,8 @@
-/** AC1–AC13 — see specs/e1a-harness.spec.md */
+/** AC1–AC18 — see specs/e1a-harness.spec.md */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, mkdir, readdir, readFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -19,6 +19,7 @@ import {
   type ArmAnalysis,
 } from "../src/experiment/analysis.ts";
 import { runE1a } from "../src/experiment/e1a.ts";
+import { rescore } from "../src/experiment/rescore.ts";
 import { Contract } from "../src/contract.ts";
 import { judge, ContractHashMismatch } from "../src/runner.ts";
 import { TIERS } from "../src/models.ts";
@@ -423,12 +424,13 @@ test("AC8 splits: pass rates compute correctly over synthetic vectors", () => {
 test("AC9 criteria evaluation: synthetic fixtures drive PASS and FAIL per criterion", () => {
   const makeAnalysis = (
     arm: string,
-    clusterCount: number,
+    modalShare: number,
     covPass: number,
     notCovByCPass: number,
   ): ArmAnalysis => ({
     arm,
-    clusterResult: { count: clusterCount, sizes: new Array(clusterCount).fill(1) },
+    clusterResult: { count: 1, sizes: [1] },
+    modalShare,
     meanPassRate: 0,
     coveredPassRate: covPass,
     uncoveredPassRate: 0,
@@ -436,57 +438,173 @@ test("AC9 criteria evaluation: synthetic fixtures drive PASS and FAIL per criter
     totalCostUsd: 0,
   });
 
-  // Criterion 1 PASS: clusters(B)=2 ≤ 2, clusters(A)=5 ≥ 5
+  // Criterion 1 PASS: B modalShare=0.95 ≥ 0.9 && A modalShare=0.60 ≤ 0.7
   const pass1 = evaluateCriteria(
-    makeAnalysis("A", 5, 0.5, 0.5),
-    makeAnalysis("B", 2, 0.9, 0),
-    makeAnalysis("C", 3, 0, 0.4),
+    makeAnalysis("A", 0.60, 0.5, 0.5),
+    makeAnalysis("B", 0.95, 0.9, 0),
+    makeAnalysis("C", 0.5, 0, 0.4),
   );
   assert.ok(pass1.criterion1.pass);
 
-  // Criterion 1 FAIL: clusters(B)=3 > 2
-  const fail1 = evaluateCriteria(
-    makeAnalysis("A", 5, 0.5, 0.5),
-    makeAnalysis("B", 3, 0.9, 0),
-    makeAnalysis("C", 3, 0, 0.4),
+  // Criterion 1 FAIL case 1: B modalShare=0.80 < 0.9
+  const fail1a = evaluateCriteria(
+    makeAnalysis("A", 0.60, 0.5, 0.5),
+    makeAnalysis("B", 0.80, 0.9, 0),
+    makeAnalysis("C", 0.5, 0, 0.4),
   );
-  assert.ok(!fail1.criterion1.pass);
+  assert.ok(!fail1a.criterion1.pass);
+
+  // Criterion 1 FAIL case 2: A modalShare=0.80 > 0.7
+  const fail1b = evaluateCriteria(
+    makeAnalysis("A", 0.80, 0.5, 0.5),
+    makeAnalysis("B", 0.95, 0.9, 0),
+    makeAnalysis("C", 0.5, 0, 0.4),
+  );
+  assert.ok(!fail1b.criterion1.pass);
 
   // Criterion 2 PASS: B.covered - A.covered = 0.4 ≥ 0.15
   const pass2 = evaluateCriteria(
-    makeAnalysis("A", 5, 0.5, 0.5),
-    makeAnalysis("B", 2, 0.9, 0),
-    makeAnalysis("C", 3, 0, 0.4),
+    makeAnalysis("A", 0.60, 0.5, 0.5),
+    makeAnalysis("B", 0.95, 0.9, 0),
+    makeAnalysis("C", 0.5, 0, 0.4),
   );
   assert.ok(pass2.criterion2.pass);
 
   // Criterion 2 FAIL: B.covered - A.covered = 0.05 < 0.15
   const fail2 = evaluateCriteria(
-    makeAnalysis("A", 5, 0.85, 0.5),
-    makeAnalysis("B", 2, 0.90, 0),
-    makeAnalysis("C", 3, 0, 0.4),
+    makeAnalysis("A", 0.60, 0.85, 0.5),
+    makeAnalysis("B", 0.95, 0.90, 0),
+    makeAnalysis("C", 0.5, 0, 0.4),
   );
   assert.ok(!fail2.criterion2.pass);
 
   // Criterion 3 PASS: C.notCovByC=0.3 ≤ A.notCovByC=0.5
   const pass3 = evaluateCriteria(
-    makeAnalysis("A", 5, 0.5, 0.5),
-    makeAnalysis("B", 2, 0.9, 0),
-    makeAnalysis("C", 3, 0, 0.3),
+    makeAnalysis("A", 0.60, 0.5, 0.5),
+    makeAnalysis("B", 0.95, 0.9, 0),
+    makeAnalysis("C", 0.5, 0, 0.3),
   );
   assert.ok(pass3.criterion3.pass);
 
   // Criterion 3 FAIL: C.notCovByC=0.7 > A.notCovByC=0.5
   const fail3 = evaluateCriteria(
-    makeAnalysis("A", 5, 0.5, 0.5),
-    makeAnalysis("B", 2, 0.9, 0),
-    makeAnalysis("C", 3, 0, 0.7),
+    makeAnalysis("A", 0.60, 0.5, 0.5),
+    makeAnalysis("B", 0.95, 0.9, 0),
+    makeAnalysis("C", 0.5, 0, 0.7),
   );
   assert.ok(!fail3.criterion3.pass);
 
   // Criterion 4 always deferred
   assert.ok(!pass1.criterion4.pass);
   assert.equal(pass1.criterion4.detail, "deferred (E1b)");
+});
+
+// ── AC17 ────────────────────────────────────────────────────────────────────
+
+test("AC17 analyzeArm reports modalShare = sizes[0] / records.length", () => {
+  const task = loadTask(DURATION_DIR);
+  const s = splits(task.hidden, task.armCSubset);
+  const allIndices = task.hidden.map((_, i) => i);
+
+  const makeRecord = (vec: boolean[]): RunRecord => ({
+    arm: "A",
+    index: 0,
+    model: TIERS.LOW.id,
+    code: undefined,
+    generationFailed: false,
+    viable: true,
+    vector: vec,
+    score: 0,
+    coveredScore: 0,
+    uncoveredScore: 0,
+    costUsd: 0,
+    wallMs: 0,
+  });
+
+  const vecA = new Array(12).fill(true) as boolean[];
+  const vecB = new Array(12).fill(false) as boolean[];
+  vecB[0] = true;
+
+  // 29 records with vecA, 1 with vecB → modal cluster size = 29, total = 30
+  const records: RunRecord[] = [
+    ...Array.from({ length: 29 }, () => makeRecord(vecA)),
+    makeRecord(vecB),
+  ];
+
+  const result = analyzeArm("A", records, s, allIndices);
+  assert.ok(
+    Math.abs(result.modalShare - 29 / 30) < 1e-9,
+    `expected modalShare ≈ ${(29 / 30).toFixed(6)}, got ${result.modalShare}`,
+  );
+
+  // Empty records → modalShare = 0
+  const emptyResult = analyzeArm("A", [], s, allIndices);
+  assert.equal(emptyResult.modalShare, 0);
+});
+
+// ── AC18 ────────────────────────────────────────────────────────────────────
+
+test("AC18 rescore CLI: writes <base>-rescore-r3.json, sets provisional:true, does not modify source", async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), "e1a-rescore-"));
+
+  // Fixture: B modal 29/30 ≈ 0.967, A modal 18/30 = 0.60 → C1 PASS
+  const fixture = {
+    analysis: {
+      A: {
+        clusterResult: { count: 2, sizes: [18, 12] },
+        meanPassRate: 0.5,
+        coveredPassRate: 0.5,
+        uncoveredPassRate: 0.5,
+        notCoveredByCPassRate: 0.5,
+        totalCostUsd: 0,
+      },
+      B: {
+        clusterResult: { count: 2, sizes: [29, 1] },
+        meanPassRate: 0.9,
+        coveredPassRate: 0.9,
+        uncoveredPassRate: 0.9,
+        notCoveredByCPassRate: 0,
+        totalCostUsd: 0,
+      },
+      C: {
+        clusterResult: { count: 1, sizes: [30] },
+        meanPassRate: 0.4,
+        coveredPassRate: 0.4,
+        uncoveredPassRate: 0.4,
+        notCoveredByCPassRate: 0.4,
+        totalCostUsd: 0,
+      },
+    },
+  };
+
+  const artifactPath = join(tmpDir, "e1a-test-artifact.json");
+  const fixtureContent = JSON.stringify(fixture, null, 2);
+  await writeFile(artifactPath, fixtureContent);
+
+  await rescore(artifactPath);
+
+  // Source artifact unchanged (byte-identical)
+  const sourceAfter = await readFile(artifactPath, "utf8");
+  assert.equal(sourceAfter, fixtureContent);
+
+  // Output file written
+  const outPath = join(tmpDir, "e1a-test-artifact-rescore-r3.json");
+  const outRaw = await readFile(outPath, "utf8");
+  const out = JSON.parse(outRaw) as {
+    sourceArtifact: string;
+    provisional: boolean;
+    modalShares: { A: number; B: number; C: number };
+    criteria: { criterion1: { pass: boolean } };
+  };
+
+  assert.equal(out.provisional, true);
+  assert.equal(out.criteria.criterion1.pass, true);
+
+  // B modal = 29/30 ≈ 0.967, A modal = 18/30 = 0.6
+  assert.ok(Math.abs(out.modalShares.B - 29 / 30) < 1e-9);
+  assert.ok(Math.abs(out.modalShares.A - 18 / 30) < 1e-9);
+
+  assert.equal(resolve(out.sourceArtifact), resolve(artifactPath));
 });
 
 // ── AC10 ────────────────────────────────────────────────────────────────────

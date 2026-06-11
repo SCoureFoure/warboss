@@ -29,6 +29,7 @@ export interface SplitResult {
 export interface ArmAnalysis {
   readonly arm: string;
   readonly clusterResult: ClusterResult;
+  readonly modalShare: number;
   readonly meanPassRate: number;
   readonly coveredPassRate: number;
   readonly uncoveredPassRate: number;
@@ -115,9 +116,13 @@ export function analyzeArm(
   const notCoveredByCIndices = allIndices.filter(
     (i) => !split.coveredByCIndices.includes(i),
   );
+  const clusterResult = cluster(records);
+  const modalShare =
+    clusterResult.sizes[0] !== undefined ? clusterResult.sizes[0] / records.length : 0;
   return {
     arm,
-    clusterResult: cluster(records),
+    clusterResult,
+    modalShare,
     meanPassRate: meanPassRateAt(records, allIndices),
     coveredPassRate: meanPassRateAt(records, split.coveredIndices),
     uncoveredPassRate: meanPassRateAt(records, split.uncoveredIndices),
@@ -131,8 +136,7 @@ export function evaluateCriteria(
   armB: ArmAnalysis,
   armC: ArmAnalysis,
 ): CriteriaResult {
-  const c1Pass =
-    armB.clusterResult.count <= 2 && armA.clusterResult.count >= 5;
+  const c1Pass = armB.modalShare >= 0.9 && armA.modalShare <= 0.7;
   const c2Diff = armB.coveredPassRate - armA.coveredPassRate;
   const c2Pass = c2Diff >= 0.15;
   const c3Pass = armC.notCoveredByCPassRate <= armA.notCoveredByCPassRate;
@@ -140,7 +144,7 @@ export function evaluateCriteria(
   return {
     criterion1: {
       pass: c1Pass,
-      detail: `clusters(B)=${armB.clusterResult.count} ≤ 2 && clusters(A)=${armA.clusterResult.count} ≥ 5`,
+      detail: `modalShare(B)=${armB.modalShare.toFixed(3)} ≥ 0.9 && modalShare(A)=${armA.modalShare.toFixed(3)} ≤ 0.7`,
     },
     criterion2: {
       pass: c2Pass,

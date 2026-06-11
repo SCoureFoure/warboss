@@ -210,6 +210,7 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<RunE1aResult> {
   const defaultAnalysis = (arm: string) => ({
     arm,
     clusterResult: { count: 0, sizes: [] as number[] },
+    modalShare: 0,
     meanPassRate: 0,
     coveredPassRate: 0,
     uncoveredPassRate: 0,
