@@ -16,6 +16,7 @@ export interface TaskDef {
   readonly partial: Contract;
   readonly hidden: readonly HiddenCase[];
   readonly armCSubset: readonly string[];
+  readonly isolation: "vm" | "process";
 }
 
 interface RawExample {
@@ -31,6 +32,7 @@ interface RawTask {
   version: string;
   examples: RawExample[];
   armCSubset: string[];
+  isolation?: string;
 }
 
 interface RawHiddenCase {
@@ -49,6 +51,11 @@ export function loadTask(dir: string): TaskDef {
   const hiddenRaw = JSON.parse(
     readFileSync(join(dir, "hidden-battery.json"), "utf8"),
   ) as RawHiddenCase[];
+
+  const isolation = taskRaw.isolation ?? "vm";
+  if (isolation !== "vm" && isolation !== "process") {
+    throw new Error(`task.json: isolation must be "vm" or "process", got "${isolation}"`);
+  }
 
   if (!taskRaw.examples || taskRaw.examples.length === 0) {
     throw new Error("task.json: examples array is empty");
@@ -126,7 +133,7 @@ export function loadTask(dir: string): TaskDef {
     ...(c.throws ? { throws: true as const } : {}),
   }));
 
-  return { prose, grader, partial, hidden, armCSubset: taskRaw.armCSubset };
+  return { prose, grader, partial, hidden, armCSubset: taskRaw.armCSubset, isolation: isolation as "vm" | "process" };
 }
 
 export function auditNoContamination(
