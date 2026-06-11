@@ -48,7 +48,7 @@
 > in H-6 (the experiment must measure the product loop). Its live dispatch
 > stays a God spend decision.
 
-### H-5 · E1a rev-3 rescore (C1 instrument fix) — `queued`
+### H-5 · E1a rev-3 rescore (C1 instrument fix) — `accepted`
 
 **Spec:** [specs/e1a-harness.spec.md](specs/e1a-harness.spec.md) **rev 3**
 (the amended criterion-1 decision block + AC9/AC17/AC18).
@@ -82,9 +82,16 @@
 - Verify: `npm run typecheck` → clean (0 errors); `npm test` → 76/76 pass (was 74; +1 extra C1 fail case in AC9, +AC17, +AC18).
 - Cost/time: ~5 min wall time. No model API calls; offline only.
 
+**Planner verdict (2026-06-10): ACCEPTED.** Re-verified on merged main: typecheck
+clean, 132/132. `modalShare` (`sizes[0]/records.length`, 0 on empty) and the
+rev-3 criterion 1 (`modalShare(B) ≥ 0.9 && modalShare(A) ≤ 0.7`) match the spec
+exactly; `rescore.ts` carries `provisional: true` and the `(rev 3, provisional)`
+label in both artifact and printout. The `defaultAnalysis` deviation was a
+correct runtime-necessity catch (the `as` cast had been masking it).
+
 ---
 
-### H-6 · loop-core (retry-in-place) + e1b refactor — `queued`
+### H-6 · loop-core (retry-in-place) + e1b refactor — `built (report filed)`
 
 **Spec:** [specs/loop-core.spec.md](specs/loop-core.spec.md) (governing,
 frozen) + [specs/e1b-harness.spec.md](specs/e1b-harness.spec.md) **rev 2**
@@ -137,9 +144,25 @@ frozen) + [specs/e1b-harness.spec.md](specs/e1b-harness.spec.md) **rev 2**
 - Verify: `npm run typecheck` → clean; `npm test` → 93/93 pass.
 - Cost/time: ~15 min wall time. No model API calls; offline only.
 
+**Planner verdict (2026-06-10): NOT ACCEPTED — one defect.** Stall detection
+violates the spec's pair rule. Spec: "The check applies only between two
+consecutive attempts that BOTH produced code (`generationFailed` attempts never
+participate)" — and the notes-down said explicitly that a failed generation
+between two identical impls breaks the pair. The impl never resets
+`prevHadCode`/`prevCodeForStall` on the generationFailed path
+(`src/loop.ts` ~line 113–134), so the sequence (code X, failed gen, code X)
+stalls at attempt 3. Repro confirmed with a scripted fake client
+(`status: "stalled", attemptsUsed: 3`; spec demands the loop continue).
+No AC covers this case — AC4 only tests same-impl-every-call — which is how it
+slipped through green. Everything else verified good: retry template exact,
+budget semantics, `ContractHashMismatch` escape (AC8 forged-contract test is a
+legitimate workaround), e1b refactor clean. Fix is two lines (reset the stall
+pair state in the generationFailed branch) + one regression test for the
+X/failed/X sequence. Reopened as **H-10**.
+
 ---
 
-### H-7 · readiness-gate (grunt judge + convergence probe) — `queued`
+### H-7 · readiness-gate (grunt judge + convergence probe) — `accepted`
 
 **Spec:** [specs/readiness-gate.spec.md](specs/readiness-gate.spec.md)
 (governing, frozen).
@@ -174,9 +197,22 @@ frozen) + [specs/e1b-harness.spec.md](specs/e1b-harness.spec.md) **rev 2**
 - Verify: `npm run typecheck` → clean (0 errors); `npm test` → 86/86 pass (74 prior + 12 new gate tests).
 - Cost/time: ~2 min wall time. No model API calls; offline only.
 
+**Planner verdict (2026-06-10): ACCEPTED, one process note.** `JUDGE_SYSTEM`
+and the parse rules are byte-exact against the spec; fail-closed holds on every
+path (malformed first line, API exhaustion → `malformed: true`, never ready).
+Probe thresholds (`survivorRate ≥ 0.5 && modalShare ≥ 0.9`), contamination
+audit (inputs only), empty-probes throw, hash-mismatch propagation all verified.
+Process note: the probe's vector clustering is an inline re-implementation, not
+a reuse of `analysis.ts cluster` — the spec's "no parallel implementations"
+line nominally forbids this. Ruling: defensible (`cluster` takes `RunRecord[]`;
+reuse would have meant touching e1a surface, same trade the concurrency-helper
+note already authorized) but it was NOT listed under Deviations, and it should
+have been. Accepted as-is; deviation-reporting completeness flagged for future
+items.
+
 ---
 
-### H-8 · sandbox-hardening (process isolation) — `queued`
+### H-8 · sandbox-hardening (process isolation) — `accepted`
 
 **Spec:** [specs/sandbox-hardening.spec.md](specs/sandbox-hardening.spec.md)
 (governing, frozen). Membrane-core gains AC21 (`judgeAsync`) — implemented
@@ -217,9 +253,21 @@ here, indexed there.
 - Verify: `npm run typecheck` → clean; `npm test` → 90/90 pass (74 + 16 new).
 - Cost/time: ~15 min wall time. No model API calls; offline only.
 
+**Planner verdict (2026-06-10): ACCEPTED.** Two-layer isolation verified:
+vm-in-child (`sandbox-child.mjs`, empty context, no-op console, `##RESULT##`
+frame) AND `--permission` on the spawn line. All five deviations reviewed and
+ruled correct: (1) `--allow-fs-read=<CHILD_SCRIPT>` is the minimum boot
+allowance and is scoped to the single child-script path — no directory grants;
+(2)–(5) are accurate readings of Node behavior (vm timeout message wording,
+empty-context keepalive, `JSON.stringify` returning `undefined` for
+functions — the round-trip check in the child is the right fix). The keepalive
+comment documenting the exit-13 drain case is good work. Noted limitation,
+already in spec: `--max-old-space-size` is a heap hint, not a hard cap, and
+network is not gated — both accepted.
+
 ---
 
-### H-9 · warboss-decomposition (intent → contracts) — `queued` _(after H-7)_
+### H-9 · warboss-decomposition (intent → contracts) — `accepted` _(after H-7)_
 
 **Spec:**
 [specs/warboss-decomposition.spec.md](specs/warboss-decomposition.spec.md)
@@ -256,6 +304,61 @@ here, indexed there.
 - Gaps found: Grunt flagged `test/gate.test.ts` as missing — **resolved: H-7 already shipped those 12 tests**. No follow-up needed.
 - Verify: `npm run typecheck` → clean; `npm test` → 132/132 pass.
 - Cost/time: ~5 min wall time. No model API calls; offline only.
+
+**Planner verdict (2026-06-10): ACCEPTED, two spec gaps logged.** Pipeline
+stages verified against the spec: system prompts near-verbatim (one nit: the
+audit prompt drops the spec's stray space in `"} . Empty` — ruling: the spec
+text has a typo; impl form is correct, spec to be cleaned at next rev),
+mechanical `throws` mandate enforced at stage 3 AND post-amend (AC6), exactly
+one audit→amend round, `DecompositionParseError` carries both raws, never a
+third decompose call. Reported deviations all accepted (count-delta heuristic
+is the most literal one-round reading; inline `buildAdmitPrompt` fine — no
+`TaskDef` exists here; re-freeze id reconstruction is sound since
+`Contract.freeze` is deterministic). Two UNREPORTED forks found in review, both
+spec underspecification rather than defects — logged for the next spec rev:
+(1) audit double parse-failure silently becomes `gaps = []` (fail-open; spec
+says "same one-re-ask policy" but not the second-failure consequence — decide:
+throw, or carry a sentinel into `auditGaps`); (2) `auditGaps` entries are
+`"<id>: <gap>"`, not the bare gap string — spec says "carried verbatim"; the
+gap text IS verbatim within the entry, and AC5's test only substring-checks,
+so accepted, but the format should be pinned in the spec.
+
+---
+
+### H-10 · loop-core stall-pair fix (H-6 defect) — `queued`
+
+**Spec:** [specs/loop-core.spec.md](specs/loop-core.spec.md) **rev 2**
+(governing, frozen — rev 2 adds **AC12**, which pins this exact case, and
+amends AC6's wording; the normative stall rule is unchanged).
+
+**Scope checklist:**
+
+- [ ] `src/loop.ts` — reset the stall-pair state (`prevHadCode`,
+      `prevCodeForStall`) in the generationFailed branch, so a failed
+      generation breaks the consecutive-code pair.
+- [ ] `test/loop.test.ts` — AC12 regression test: scripted client
+      `[code X, <empty>, code X, <empty>, <empty>]`, budget 5 →
+      `status: "exhausted"`, `attemptsUsed: 5`, never `"stalled"`.
+      NOTE: an empty response is the way to force `generationFailed` offline —
+      `extractCode` falls back to raw trimmed text, so non-empty prose is NOT
+      a failed generation (AC6 rev-2 wording).
+- [ ] Green: `npm run typecheck` && `npm test`.
+
+**Notes down (planner → implementer):**
+
+- Defect detail in H-6's planner verdict above. The spec rule: stall is two
+  CONSECUTIVE attempts that BOTH produced code, trim-equal; `generationFailed`
+  attempts never participate AND break the pair.
+- Touch nothing else in `loop.ts` — retry template, budget, hash-mismatch
+  semantics are all verified correct.
+
+**Report back (implementer → planner):**
+
+- Done:
+- Deviations:
+- Gaps found:
+- Verify:
+- Cost/time:
 
 ---
 
@@ -465,6 +568,44 @@ satisfiable. Rulings on the two report items:
 ---
 
 ## Log (accepted items)
+
+- **H-11 · Entropy-reduction mandates (both layers)** — planner-built +
+  accepted 2026-06-10. God's ruling on the H-6 root cause: control the author
+  tier, leave grunts simple machines. (1) Dev loop: `specs/README.md` Rules
+  gain the authoring mandates — every normative sentence maps to an AC that
+  fails when violated; two-readings sentences must be killed by an AC;
+  state/order rules get one AC per transition. (2) Product:
+  `warboss-decomposition.spec.md` rev 2 — `DECOMPOSE_SYSTEM` gains four
+  entropy-reduction sentences (mechanical rules not intent, falsifiable rules
+  only, kill the second reading, one example per transition);
+  `src/warboss.ts` updated in sync. (3) Applied retroactively to
+  `loop-core.spec.md` rev 2: AC12 (stall-pair break — the H-6 hole) + AC6
+  wording fix ("empty", not "prose" — `extractCode`'s raw-text fallback made
+  the old wording a second two-readings instance, found in this review).
+  132/132 green; no test pinned the old prompt string. H-10 now refs rev 2.
+
+- **H-5 · E1a rev-3 rescore** — accepted 2026-06-10. `modalShare` on
+  `ArmAnalysis`, rev-3 criterion 1, offline `rescore.ts` CLI with
+  `provisional: true` stamping. Full item above.
+
+- **H-7 · readiness-gate** — accepted 2026-06-10. `gruntJudge` (fail-closed
+  READY/NOT READY parse) + `convergenceProbe` (k generations, survivor
+  clustering, `survivorRate ≥ 0.5 && modalShare ≥ 0.9`). One process note on
+  unreported cluster duplication. Full item above.
+
+- **H-8 · sandbox-hardening** — accepted 2026-06-10. Two-layer process
+  isolation (vm-in-child + `--permission`), `judgeAsync`, `isolation` task
+  field. All five deviations ruled correct. Full item above.
+
+- **H-9 · warboss-decomposition** — accepted 2026-06-10. `decompose`
+  (1 decompose + one re-ask, mechanical throws mandate, 1 audit, ≤ 1 amend,
+  freeze) + `admit` (judge → optional probe). Two spec gaps logged for the
+  next rev (audit double-failure fail-open; `auditGaps` entry format). Full
+  item above.
+
+- **H-6 · loop-core** — NOT accepted (2026-06-10): stall-pair defect, fix
+  queued as **H-10**. Everything else in the item verified good. Full item +
+  verdict above.
 
 - **H-4 · E1a harness rev 2** — built + accepted 2026-06-10. JS anchor in
   `E1A_SYSTEM`, viability gating (`applyViabilityGate` in `analysis.ts`,

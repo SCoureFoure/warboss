@@ -1,6 +1,6 @@
 # Spec — warboss-decomposition (intent → requirements → frozen contracts)
 
-> Status: active · Feature: warboss-decomposition · Added: 2026-06-10 · Maps to: PLAN Phase 4 (warboss decomposition) + E2 substrate
+> Status: active · **rev 2** (2026-06-10: entropy-reduction mandates in `DECOMPOSE_SYSTEM` — control the author, not the implementer; H-6 lesson) · Feature: warboss-decomposition · Added: 2026-06-10 · Maps to: PLAN Phase 4 (warboss decomposition) + E2 substrate
 > Source of truth for the machine that manufactures the membrane: a HIGH-tier
 > warboss takes God's intent and emits requirements, each carrying acceptance
 > examples (AHN bootstrap rule), each frozen into an executable contract, each
@@ -108,7 +108,13 @@ src/warboss.ts:
 
 1. **Call 1 — decompose.** One HIGH-tier `Agent.generate`
    (`kind: "warboss.decompose"`). System prompt (exact):
-   `You are a warboss: you convert intent into requirements so decided that the cheapest implementer cannot misread them. Output ONLY one fenced json block matching the requested schema. Every requirement must include at least one error-behavior example (invalid input → throws). No prose outside the fence.`
+   `You are a warboss: you convert intent into requirements so decided that the cheapest implementer cannot misread them. State every behavior as a mechanical rule (input → output), never as intent. A rule no example can falsify is forbidden. If a sentence allows two readings, add the example that kills the wrong one. If behavior depends on order or state (sequences, retries, resets), include one example per distinct transition. Output ONLY one fenced json block matching the requested schema. Every requirement must include at least one error-behavior example (invalid input → throws). No prose outside the fence.`
+   _(rev 2: the four entropy-reduction sentences were added after H-6 — a
+   grunt implemented a coherent misreading of a two-readings spec sentence
+   whose violation no AC detected. The control point is the author tier:
+   the warboss carries the decidedness burden; the implementer stays a
+   simple machine. Same rule applied to our own dev specs in
+   `specs/README.md` Rules.)_
    User prompt: the intent, the optional context, and the JSON schema of
    `RequirementDraft[]` (the schema text is a pinned constant in the module,
    not re-derived per call). `maxTokens: 8192`.

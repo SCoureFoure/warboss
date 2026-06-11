@@ -1,6 +1,6 @@
 # Spec — loop-core (retry-in-place: the core loop)
 
-> Status: active · Feature: loop-core · Added: 2026-06-10 · Maps to: PLAN Phase 2b (core loop), "Loop mechanics" section
+> Status: active · **rev 2** (2026-06-10: AC12 stall-pair break + AC6 wording — H-6 review findings) · Feature: loop-core · Added: 2026-06-10 · Maps to: PLAN Phase 2b (core loop), "Loop mechanics" section
 > Source of truth for the product's heart: `grunt generates → membrane judges
 > (pass/fail + feedback) → retry-in-place until green`. E1b later orchestrates
 > arms OVER this module; the loop itself is durable product infrastructure, not
@@ -160,10 +160,13 @@ src/loop.ts:
    each call (e.g. distinct constants) → exactly `budget` attempts,
    `status: "exhausted"`, `green: false`, `finalCode` = last code.
 6. **AC6 — generation failure counts and continues.** Scripted client
-   (call 1 → prose with no code, call 2 → correct impl) → 2 attempts; attempt
+   (call 1 → an EMPTY response, call 2 → correct impl) → 2 attempts; attempt
    1 `generationFailed: true`, `pass: false`, `vector: []`; the second
    request's prompt contains `Your previous response contained no code block.`
    and NO "Your previous implementation" block; `status: "green"`.
+   _(rev 2 wording: "empty", not "prose" — `extractCode` falls back to raw
+   trimmed text, so a non-empty prose response is treated as code, not as a
+   generation failure.)_
 7. **AC7 — no battery, no leakage.** Type-level: `LoopOptions` has no battery
    field. Behavioral: with a contract whose examples are distinct from a known
    "hidden" set, run the wrong→right script and assert no hidden input string
@@ -184,10 +187,16 @@ src/loop.ts:
 11. **AC11 — constant-size context.** Three-attempt script (wrong A → wrong B
     → correct): the THIRD request's prompt contains attempt 2's code but NOT
     attempt 1's code (history does not accumulate).
+12. **AC12 — failed generation breaks the stall pair** _(rev 2; H-6 defect,
+    H-10 fix)_. Scripted client `[code X, empty, code X, empty, empty]`,
+    budget 5 → all 5 attempts run, `status: "exhausted"`, never `"stalled"`.
+    Pins the only-consecutive reading of the stall rule: attempts 1 and 3 are
+    NOT a stall pair even though they are consecutive _code-producing_
+    attempts — the failed generation between them resets the pair.
 
 ## Verifies-with
 
-- Tests: `test/loop.test.ts` — AC1–AC11, offline, fake `MessagesClient`
+- Tests: `test/loop.test.ts` — AC1–AC12, offline, fake `MessagesClient`
   (reuse the capture pattern from `test/e1a.test.ts`).
 - Integration: E1b (when funded) drives this module live; until then a manual
   smoke `runLoop` against duration-parse with a live key is optional, not CI.

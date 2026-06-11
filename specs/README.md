@@ -26,6 +26,17 @@ Run the loop with the **`/spec`** skill (`.claude/skills/spec/SKILL.md`):
   them: pure unit (`node:test`, no network) > injected-fake unit > live `smoke`.
 - New behavior on an existing module gets its own AC / spec amendment — never
   bundle silently. The spec is where "same feature or new one?" is answered.
+- **Entropy is reduced at authoring time, not at implementation time** (H-6
+  lesson). The implementer is a simple machine; the spec author carries the
+  burden of decidedness:
+  - Every normative sentence (MUST / never / only) names the AC that fails
+    when it is violated. An unmapped clause means the spec is not ready to
+    freeze.
+  - If a rule has two grammatical readings, the AC set must kill the wrong
+    one (H-6: "two consecutive attempts that BOTH produced code" survived
+    both readings — no AC exercised the failed-gen-between-twins sequence).
+  - Rules over order or state (retries, resets, sequences) get one AC per
+    distinct transition, not one AC for the happy path.
 - Honor inherited thesis constraints and restate the ones a feature rides on in
   its **Constraints** section:
   - **Cost-metered.** Every model call goes through the `Ledger` — no un-metered
