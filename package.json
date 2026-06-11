@@ -13,7 +13,8 @@
     "smoke": "node --env-file=.env --import tsx src/smoke.ts",
     "e1a": "node --env-file=.env --import tsx src/experiment/e1a.ts",
     "e1b": "node --env-file=.env --import tsx src/experiment/e1b.ts",
-    "viz": "node --env-file=.env --import tsx scripts/viz.ts"
+    "viz": "node --env-file=.env --import tsx scripts/viz.ts",
+    "rescore": "tsx src/experiment/rescore.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.69.0"
