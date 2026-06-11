@@ -76,11 +76,11 @@
 
 **Report back (implementer → planner):**
 
-- Done:
-- Deviations:
-- Gaps found:
-- Verify:
-- Cost/time:
+- Done: `src/experiment/analysis.ts`, `src/experiment/e1a.ts`, `src/experiment/rescore.ts` (new), `package.json`, `test/e1a.test.ts`
+- Deviations: Also updated `defaultAnalysis` in `e1a.ts` to include `modalShare: 0` (required at runtime; typecheck had passed due to `as` cast but runtime would fail without it).
+- Gaps found: None.
+- Verify: `npm run typecheck` → clean (0 errors); `npm test` → 76/76 pass (was 74; +1 extra C1 fail case in AC9, +AC17, +AC18).
+- Cost/time: ~5 min wall time. No model API calls; offline only.
 
 ---
 
@@ -131,11 +131,11 @@ frozen) + [specs/e1b-harness.spec.md](specs/e1b-harness.spec.md) **rev 2**
 
 **Report back (implementer → planner):**
 
-- Done:
-- Deviations:
-- Gaps found:
-- Verify:
-- Cost/time:
+- Done: `src/loop.ts` (new), `src/experiment/e1b.ts` (refactored), `test/loop.test.ts` (new), `test/e1b.test.ts` (AC2/AC4/AC5/AC6 amended + AC13 added).
+- Deviations: AC8 loop test — a valid `Contract` always self-verifies, so `ContractHashMismatch` triggered via forged object with `verify=()=>false`. AC6 e1b test required implicit update from old feedback header to new loop-core template header `Judge feedback:`.
+- Gaps found: None.
+- Verify: `npm run typecheck` → clean; `npm test` → 93/93 pass.
+- Cost/time: ~15 min wall time. No model API calls; offline only.
 
 ---
 
@@ -168,11 +168,11 @@ frozen) + [specs/e1b-harness.spec.md](specs/e1b-harness.spec.md) **rev 2**
 
 **Report back (implementer → planner):**
 
-- Done:
-- Deviations:
-- Gaps found:
-- Verify:
-- Cost/time:
+- Done: `src/gate.ts` (new), `test/gate.test.ts` (new), `reports/H-7-report.md` (new).
+- Deviations: AC3 split into two tests (AC3a/AC3b — malformed and always-throws are distinct code paths). AC10 split into two tests (metering + freeze). `runWithConcurrency` duplicated locally as instructed.
+- Gaps found: None. All interfaces and behaviors fully specified.
+- Verify: `npm run typecheck` → clean (0 errors); `npm test` → 86/86 pass (74 prior + 12 new gate tests).
+- Cost/time: ~2 min wall time. No model API calls; offline only.
 
 ---
 
@@ -211,11 +211,11 @@ here, indexed there.
 
 **Report back (implementer → planner):**
 
-- Done:
-- Deviations:
-- Gaps found:
-- Verify:
-- Cost/time:
+- Done: `src/sandbox-child.mjs` (new), `src/sandbox-proc.ts` (new), `src/runner.ts` (judgeAsync + ImplRunner added), `src/experiment/task.ts` (isolation field), `test/sandbox-proc.test.ts` (new — 16 tests).
+- Deviations: (1) `--allow-fs-read=<CHILD_SCRIPT>` required — Node 22 `--permission` blocks reading the script itself; explicit allow for the child script path is the minimum to boot. (2) AC3 regex loosened to `/time/i` — vm timeout message is "timed out" not "timeout". (3) AC4 async keepalive is outside vm (empty context has no `setInterval`). (4) AC8 unserializable check: `JSON.stringify(fn)` returns `undefined` not throws — checked `=== undefined`. (5) AC2 `--permission` test adjusted to verify sibling-file read is denied.
+- Gaps found: None.
+- Verify: `npm run typecheck` → clean; `npm test` → 90/90 pass (74 + 16 new).
+- Cost/time: ~15 min wall time. No model API calls; offline only.
 
 ---
 
@@ -251,11 +251,11 @@ here, indexed there.
 
 **Report back (implementer → planner):**
 
-- Done:
-- Deviations:
-- Gaps found:
-- Verify:
-- Cost/time:
+- Done: `src/warboss.ts` (new), `test/warboss.test.ts` (new). Worktree was based on pre-H-7 main; grunt re-implemented `gate.ts` as a dependency — H-7's authoritative version retained on merge.
+- Deviations: (1) Gap-unaddressed detection uses example-count-delta heuristic (one-round rule means no second audit; most literal reading). (2) `buildAdmitPrompt` inline rather than reusing `buildPrompt` (no `TaskDef` available — same output format). (3) `admit` reconstructs req id→contract mapping by re-freezing (DraftSet carries no direct map).
+- Gaps found: Grunt flagged `test/gate.test.ts` as missing — **resolved: H-7 already shipped those 12 tests**. No follow-up needed.
+- Verify: `npm run typecheck` → clean; `npm test` → 132/132 pass.
+- Cost/time: ~5 min wall time. No model API calls; offline only.
 
 ---
 
