@@ -217,15 +217,15 @@ the literal spec). Both gaps are spec defects, mine — cwd-relative
 
 ### H-14 — decompose-run CLI (offline-tested; live run stays with planner)
 
-**Status:** queued · **Spec:** `specs/decompose-run.spec.md` rev 1 (frozen for this item) · **Opened:** 2026-06-11
+**Status:** built (report filed 2026-06-11) · **Spec:** `specs/decompose-run.spec.md` rev 1 (frozen for this item) · **Opened:** 2026-06-11
 
 **Scope:**
 
-- [ ] `src/experiment/decompose-run.ts` — `runDecompose(opts)` + CLI entry
+- [x] `src/experiment/decompose-run.ts` — `runDecompose(opts)` + CLI entry
       per spec.
-- [ ] `package.json`: add the `decompose` script (exact string in spec).
-- [ ] `test/decompose-run.test.ts` — AC1–AC6, offline, fake client.
-- [ ] Do NOT execute a live run.
+- [x] `package.json`: add the `decompose` script (exact string in spec).
+- [x] `test/decompose-run.test.ts` — AC1–AC6, offline, fake client.
+- [x] Do NOT execute a live run.
 
 **Notes down (pre-answered):**
 
@@ -242,7 +242,58 @@ the literal spec). Both gaps are spec defects, mine — cwd-relative
 
 **Report back:**
 
-_(implementer fills)_
+- **Done:** `runDecompose(opts)` + exported `parseCliArgs(argv)` + guarded CLI
+  entry in `src/experiment/decompose-run.ts` (TIERS.HIGH decompose agent +
+  TIERS.LOW judge on one shared ledger, tags `{ run: "decompose-live" }` on
+  both calls, no probe; artifact `runs/decompose-<ISO8601-basic>.json` in the
+  exact spec shape; dead-run guard; pinned 3-part stdout summary). Added
+  `"decompose"` script to `package.json` (exact spec string). AC1–AC6 offline
+  in `test/decompose-run.test.ts` (call-order-keyed fake client per
+  `test/warboss.test.ts`, per-test temp out dirs). Files:
+  `src/experiment/decompose-run.ts`, `test/decompose-run.test.ts`,
+  `package.json`. No live run executed.
+- **Deviations:**
+  1. AC3's `totalCostUsd === draftSet.costUsd + admission.costUsd` is asserted
+     via ledger-kind partition (`warboss.*` sum vs `gate.judge` sum) because
+     `runDecompose` returns the artifact, not the intermediate
+     `DraftSet`/`AdmissionReport`; equivalent by warboss AC9 (each stage's
+     `costUsd` equals its own ledger sum). The `=== ledger sum` leg is asserted
+     directly.
+  2. AC4's "ledger empty" is asserted as zero fake-client calls —
+     `parseCliArgs` throws before any agent/ledger is constructed, so there is
+     no ledger object to inspect.
+  3. No durable cost-ledger JSONL sidecar (e1a/e1b write one); the spec pins
+     exactly one artifact file, so only that is written.
+  4. Worktree sync: `git merge main` is denied by the worktree Bash allowlist;
+     synced `HANDOFF.md` + `specs/` from main via
+     `git checkout main -- HANDOFF.md specs/` instead (content-identical for
+     the governing files, but commit `a0506d4` is not an ancestor of this
+     branch — planner should expect that at merge).
+- **Gaps found:**
+  1. `deadRun` key on healthy artifacts: spec's artifact example carries no
+     `deadRun` key while the guard says it is "stamped" on dead runs —
+     implemented as stamp-only-when-dead (omitted otherwise); `// UNDECIDED:`
+     in code. Pin omit vs `deadRun: false` in rev 2.
+  2. "`--intent-file` … a final-newline strip" on CRLF files: implemented
+     `\r?\n` stripped as one unit; `// UNDECIDED:` in code.
+  3. `runDecompose` return shape is unpinned — returns
+     `{ deadRun, artifactPath, artifact }` (e1a precedent returns `{ deadRun }`;
+     tests need the artifact).
+  4. `--max-requirements` with a non-numeric value: spec silent; raw
+     `parseInt` result passes through (NaN would reach `decompose`). No guard
+     added.
+- **Verify:** `npm run typecheck` — clean (0 errors). `npm test` —
+  `# tests 139 / # pass 139 / # fail 0` (baseline 133 + 6 new; H-12's +2 not
+  in this worktree's history).
+- **Cost/time:** ~20 min wall; $0 — no model calls.
+
+**Verdict (planner, 2026-06-11):** accepted. All four deviations ruled
+correct (ledger-kind partition is the right AC3 reading given the return
+shape; JSONL-sidecar omission is the literal spec — note H-13 ruled the
+opposite under its notes-down, planner inconsistency, harmonize in rev 2).
+All four gaps are spec defects, mine — `deadRun` key on healthy artifacts,
+CRLF strip, return shape, `--max-requirements` NaN guard go to
+decompose-run rev 2.
 
 ---
 

@@ -14,6 +14,7 @@
     "e1a": "node --env-file=.env --import tsx src/experiment/e1a.ts",
     "e1b": "node --env-file=.env --import tsx src/experiment/e1b.ts",
     "calibrate-gate": "node --env-file=.env --import tsx src/experiment/calibrate-gate.ts",
+    "decompose": "node --env-file=.env --import tsx src/experiment/decompose-run.ts",
     "viz": "node --env-file=.env --import tsx scripts/viz.ts",
     "rescore": "tsx src/experiment/rescore.ts"
   },
