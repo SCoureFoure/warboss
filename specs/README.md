@@ -85,8 +85,9 @@ Run the loop with the **`/spec`** skill (`.claude/skills/spec/SKILL.md`):
 | [e1a-harness](e1a-harness.spec.md) | E1a variance experiment runner + duration-parse task assets (rev 3: modal-share C1 + rescore) | Phase 2a (E1a) | active |
 | [e1b-harness](e1b-harness.spec.md) | E1b feedback-granularity sub-arms (rev 2: loop delegated to loop-core, dead-run guard) | Phase 2b (E1b) | active |
 | [loop-core](loop-core.spec.md) | Retry-in-place loop: generate → judge → feedback → retry, budget, stall, cost-to-green | Phase 2b (core loop) | active |
-| [readiness-gate](readiness-gate.spec.md) | Admission check: grunt judge (READY/NOT READY) + K-impl convergence probe | Lever 1 (grunt-readiness gate) | active |
+| [readiness-gate](readiness-gate.spec.md) | Admission check (rev 2: convergence probe = the only gate; `intentProbe` pre-freeze divergence instrument; introspective judges demoted to calibration-only) | Lever 1 (grunt-readiness gate) | active |
 | [sandbox-hardening](sandbox-hardening.spec.md) | Process-isolated execution (`node --permission` child) + `judgeAsync` | Phase 4 precondition | active |
-| [warboss-decomposition](warboss-decomposition.spec.md) | Intent → requirements → frozen contracts + gate admission; error-coverage mandate | Phase 4 (E2 substrate) | active |
+| [warboss-decomposition](warboss-decomposition.spec.md) | Intent → requirements → frozen contracts + gate admission; error-coverage mandate (rev 4: fiat-flagging `resolutions`, audit-gap escalation, probe-only admission, prompt-injected requirement cap) | Phase 4 (E2 substrate) | active |
 | [e2-contract-authorship](e2-contract-authorship.spec.md) | Human- vs warboss-authored contract driving the same grunt loop; hidden-score happy/error split; pre-registered E2 criterion | Phase 4 (E2) | active |
 | [gate-judge-derive](gate-judge-derive.spec.md) | `deriveCheck` mechanical-enumeration readiness instrument + calibration runner (gruntJudge rework) | Lever 1 (gate rework) | active |
+| [e3-intent-divergence](e3-intent-divergence.spec.md) | E3: pre-freeze surfacing of underdetermined semantics — rev-4 fiat/escalation flags + `intentProbe` vs the three known E2 misses; pre-registered all-three-surfaced criterion | Phase 4 follow-on (E2 consequence) | active |

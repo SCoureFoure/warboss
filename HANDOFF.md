@@ -133,7 +133,141 @@ three funded live runs of 2026-06-11):
 
 ## Active items
 
-_None queued. (H-17 accepted 2026-06-12 — body in archive. E2 measured same day; see standing notes.)_
+> **Leg 6 — the kick-back leg** (specs authored 2026-06-12 by the top tier,
+> handed to the planner for dispatch). Design ruling behind all three items:
+> the E2 measurement proved post-freeze instruments cannot detect fiat
+> resolutions (every per-case rate 0/30 or 30/30 — the freeze destroys the
+> divergence), and introspective judges are triple-falsified. The kick-back
+> therefore moves to the AUTHOR tier, pre-freeze: the warboss must REPORT
+> the choices intent didn't force (H-18), and prose-level behavioral
+> divergence becomes the mechanical detector (H-19). E3 (H-20) is the
+> falsification experiment for both. Planner: dispatch H-18 ∥ H-19 in
+> parallel worktrees (no file overlap), H-20 only after both merge.
+
+### H-18 · warboss-decomposition rev 4 — fiat-flagging + escalations + probe-only admission — `queued`
+
+**Spec (frozen):** [warboss-decomposition.spec.md](specs/warboss-decomposition.spec.md) rev 4.
+**Worktree:** your assigned worktree only — never the main checkout (rule 4).
+At session start, `git checkout main -- specs/warboss-decomposition.spec.md HANDOFF.md` (worktrees branch from session-start HEAD; do not assume the spec is at worktree HEAD).
+
+**Scope checklist:**
+
+- `src/warboss.ts`:
+  - `Resolution` type + `resolutions` field on `RequirementDraft` (mandatory,
+    shape-checked in stage-3 validation; empty array legal).
+  - `DECOMPOSE_SYSTEM` rev-4 text (exact string in spec) + requirement-cap
+    line injected into the decompose user prompt (exact line in spec).
+  - `AUDIT_SYSTEM` rev-4 text (exact string in spec); audit user prompt now
+    carries `Original intent:` + the intent; gap entries gain
+    `intentDecides` with the fail-closed parse rule (non-boolean → false).
+  - Gap routing: amendable → amend (unchanged); intent-undecided → NEVER
+    amended, → `escalations`. `DraftSet.escalations` with the two pinned
+    entry formats + pinned ordering (fiat first).
+  - `admit` rework: `AdmitOptions.judgeAgent` deleted, `probe` required;
+    per contract probe-or-fail-closed (exact no-battery question string in
+    spec); no `gruntJudge` call anywhere in `admit`.
+- `src/experiment/decompose-run.ts`: call-site fix only — `admit` is invoked
+  with the new options shape (empty probes map); every contract will kick
+  back with the no-battery question and the artifact records that honestly.
+  No other behavior change. (decompose-run.spec.md gets a one-line rev note
+  pointing at warboss-decomposition rev 4 — planner files it at acceptance,
+  implementer does NOT edit specs.)
+- `test/warboss.test.ts`: AC1–AC17. Pre-existing fixtures gain
+  `resolutions: []`; AC7/AC8 fixtures change judge-scripts → probe-scripts
+  (spec-driven amendments, report them as such, not as deviations).
+- `test/decompose-run.test.ts`: minimal fixture updates for the new
+  `admit` shape (expect kicked-back-with-no-battery in the admission stage).
+
+**Notes down:**
+
+- `resolutions` is draft metadata — it does NOT enter `Contract.freeze`
+  canonical form. Hashes of drafts with identical
+  requirement/entry/version/examples must not change (existing AC1
+  determinism assertion will catch a violation).
+- The fail-closed `intentDecides` rule is load-bearing: a missing boolean
+  routes to ESCALATION, not to amend. Do not "helpfully" default to true.
+- Amend-prompt purity is capture-asserted (AC14): no intent-undecided gap
+  text may reach the amend call — the amend prompt is built from the
+  amendable partition only.
+- Worktree grunts cannot `git merge` — sync via `git checkout main -- <paths>`;
+  commit in your worktree. npm eats `--flags` on Windows — invoke runners via
+  `node` directly.
+
+### H-19 · readiness-gate rev 2 — `intentProbe` pre-freeze divergence instrument — `queued`
+
+**Spec (frozen):** [readiness-gate.spec.md](specs/readiness-gate.spec.md) rev 2.
+**Worktree:** your assigned worktree only — never the main checkout (rule 4).
+At session start, `git checkout main -- specs/readiness-gate.spec.md HANDOFF.md`.
+
+**Scope checklist:**
+
+- `src/gate.ts`: add `intentProbe(opts)` + `IntentProbeOptions` /
+  `IntentProbeVerdict` beside the existing instruments. Contract-free:
+  generation via the SHARED dispatch skeleton (reuse the existing
+  `dispatchGeneration` / `runWithConcurrency` helpers — do not duplicate),
+  execution via `runImpl` from `sandbox.ts`; outcome keys, viability screen,
+  splits, and `decidedRate` exactly as pinned. No `ready` boolean, no
+  threshold (deliberate — E3 calibrates first).
+- `gruntJudge` / `deriveCheck`: NO code change — their demotion is a wiring
+  change that lives in H-18's `admit` rework. Doc-comment updates only if
+  the spec's rev-2 status lines make the existing comments wrong.
+- `test/gate.test.ts`: AC11–AC16 beside the existing cases (AC1–AC10
+  untouched).
+
+**Notes down:**
+
+- Outcome key for a throwing execution is the SINGLE key `throw` — error
+  messages are not clustered (AC12 kills the "cluster by message" reading).
+- `value:` keys use `JSON.stringify(run.value)`; `undefined` stringifies to
+  `undefined` (no quotes) → key `value:undefined` (AC12 asserts it).
+- Viability screen excludes all-throw impls from clustering but counts them
+  in `nonviable`; `viable === 0` forces `decidedRate: 0` — fail closed, no
+  throw (AC13).
+- No contamination guard on candidate inputs — pinned as correct in the
+  spec (inputs carry no expected outputs). Do not copy the
+  convergenceProbe audit.
+- Worktree + npm-flags notes as in H-18. No file overlap with H-18 (gate.ts
+  vs warboss.ts; test files disjoint).
+
+### H-20 · E3 intent-divergence runner — `queued` (DO NOT DISPATCH until H-18 + H-19 are merged to main)
+
+**Spec (frozen):** [e3-intent-divergence.spec.md](specs/e3-intent-divergence.spec.md) rev 1.
+**Worktree:** your assigned worktree only — never the main checkout (rule 4).
+At session start, `git checkout main -- specs/e3-intent-divergence.spec.md HANDOFF.md`.
+
+**Scope checklist:**
+
+- `src/experiment/e3.ts`: `runE3(opts)` + CLI entry guarded like e1b/e2.
+  Author arm = rev-4 `decompose` (`maxRequirements: 1`, duration-parse
+  prose); probe arm = `intentProbe` (k=8, `E3_CANDIDATE_INPUTS` pinned
+  constant); `evaluateE3Criterion` pure helper (surfacing rules + criterion,
+  exported); artifact + jsonl sidecar + dead-run guard; costs split
+  `authoringCostUsd` / `probingCostUsd`.
+- `E3_CANDIDATE_INPUTS` and `E3_NEEDLES` copied VERBATIM from the spec
+  (pre-registered — any edit is a spec violation, not a judgment call).
+- `test/e3.test.ts`: AC1–AC8, offline, fake client.
+- `package.json`: add `"e3": "node --env-file=.env --import tsx src/experiment/e3.ts"`.
+
+**Notes down:**
+
+- E3 dispatches NO grunt loop and touches NO hidden battery — if you find
+  yourself importing e1b session machinery, stop and re-read the spec.
+- `surfacedByAuthor` consults `escalations` ONLY — `auditGaps` is the
+  amendable remainder and is deliberately out (AC2 variant kills the
+  "scan everything" reading).
+- Needle matching is case-insensitive substring over lowercased escalation
+  entries; recall over precision is the pinned trade.
+- Live run is God-gated and sequenced in standing notes (~$0.20: fresh rev-4
+  decompose — the 2026-06-12 artifact predates the `resolutions` schema and
+  cannot be reused — plus k=8 LOW probe).
+- Worktree + npm-flags notes as in H-18.
+
+> **Parallel-dispatch note (planner):** H-18 and H-19 have no file overlap
+> (warboss.ts/decompose-run.ts/test-warboss vs gate.ts/test-gate) — dispatch
+> both in parallel worktrees. H-20 imports both items' outputs
+> (`decompose` rev 4, `intentProbe`) and adds the only `package.json` line —
+> sequence it strictly after both merge. After H-20 acceptance, the E3 live
+> run is the leg's verdict gate (God funds, ~$0.20).
 
 <!-- ARCHIVED — bodies moved to HANDOFF-archive.md on acceptance
 ### H-15 · E2 contract-authorship runner — `queued`
