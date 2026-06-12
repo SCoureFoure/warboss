@@ -85,15 +85,24 @@ three funded live runs of 2026-06-11):
   (`specs/README.md` Rules): every normative sentence maps to an AC that fails
   when violated; kill second readings with an example; one AC per state
   transition.
-- **Both God-gated spends RAN 2026-06-12 (total $0.241).** Results:
-  - **E2 attempt 1: UNMEASURABLE, not falsified** (`reports/e2-verdict.md`).
-    Warboss authored 34 examples / 22 throws (vs human 5 / 0) for $0.1632 —
-    thesis mechanism confirmed qualitatively — but that density re-derived 3
-    hidden inputs (`"0s"`, `"30m1h"`, `"-1h"`) and the contamination audit
-    aborted BEFORE scoring ($0 grinding spent). Fix = **H-17 / e2 spec rev 2**
-    (residual-battery exclusion). The authoring artifact
-    `runs/decompose-20260612T132205Z.json` is reusable — re-run costs only
-    ~$0.10 grinding after H-17 merges.
+- **All 2026-06-12 live spends complete (total $0.468).** Results:
+  - **E2 MEASURED (attempt 2, post-H-17): criterion FAIL 0.667 < 0.700, but
+    the error path fully closed** (`reports/e2-verdict.md`, attempt-2 section;
+    artifact `runs/e2-20260612T142157Z.json`, $0.227 grinding + $0.163
+    authoring). Warboss `meanErrorScore` **1.000 vs human 0.000** — the sharp
+    prediction held; Corollary-D error debt is solved by machine authoring.
+    The FAIL is two deterministic (0/30) happy-path **ambiguity-resolution
+    divergences**: bare-number `"120"` (warboss never pinned it; human pins
+    `"90"→90`) and whitespace `" 1h 30m "` (warboss pins throws; battery says
+    accept). Both were derivable as "intent does not decide this" — and
+    `admit` passed the contract with **0 questions**: third independent datum
+    the cheap-judge admission line is blind (gruntJudge, deriveCheck, now
+    admit-in-anger). Pre-registered consequence narrowed: warboss needs an
+    **underdetermined-semantics kick-back pass** (not adversarial example
+    generation — error coverage is already perfect). `decimal-hours` fails for
+    BOTH sources (neither contract decides it) — battery design note for any
+    rev 3. Attempt 1 (same day, rev 1) aborted on contamination; the
+    residual-battery fix is H-17, spec rev 2.
   - **derive-calibration: FAIL as gate**
     (`reports/derive-calibration-verdict.md`, $0.0778). `decidedRate` 0.000 on
     ALL configs (metric saturates — one hole flips a run UNDECIDED); worse,
@@ -124,78 +133,7 @@ three funded live runs of 2026-06-11):
 
 ## Active items
 
-### H-17 · E2 rev 2 — residual-battery contamination fix — `built (report filed)`
-
-**Spec (frozen):** [e2-contract-authorship.spec.md](specs/e2-contract-authorship.spec.md) **rev 2**.
-**Worktree:** your assigned worktree only — never the main checkout (rule 4).
-**First action in the worktree:** `git checkout main -- specs/e2-contract-authorship.spec.md HANDOFF.md`
-(worktrees branch from session-start HEAD, NOT the planner's latest commit —
-H-15/H-16 lesson; do not assume the rev-2 spec is at your HEAD).
-
-**Why this item exists:** the 2026-06-12 live run (`reports/e2-verdict.md`)
-proved rev 1 self-defeating — warboss's dense authoring re-derived 3 hidden
-inputs and the contamination audit aborted before any scoring. Rev 2 turns
-collision into a recorded, mechanical exclusion so the ≥0.90× criterion is
-measurable. The expensive authoring artifact already exists and is reusable.
-
-**Scope checklist:**
-
-- `src/experiment/e2.ts`: implement the rev-2 "Contamination-disjoint residual
-  battery" stage — build both prompts, exclude every hidden case whose
-  `JSON.stringify(input element)` needle appears in EITHER prompt (verbatim
-  the `auditNoContamination` needle rule; `task.ts` is NOT modified), record
-  `hiddenBattery: { total, excluded: [{ name, leakedBy }], residualCount,
-  happyCount, errorCount }` in the artifact, score EVERYTHING (finalVector,
-  finalScore, coverage split, criterion) over the residual only, enforce the
-  residual viability guard (≥1 happy AND ≥1 error, else descriptive throw
-  before any session), keep the post-filter `auditNoContamination` call as
-  belt-and-braces. Export the filter helper for direct unit tests. Delete the
-  `as unknown as SessionRecord[]` cast.
-- `src/experiment/e1b.ts` (only change): export `AnalyzableSession` (the five
-  fields pinned in the spec) and loosen `analyzeE1bArm`'s param to
-  `readonly AnalyzableSession[]`. Zero behavior change; e1b tests pass
-  unmodified.
-- `test/e2.test.ts`: amend AC5/AC8/AC9 per rev 2; add AC11–AC13. Offline,
-  fake client.
-- No `package.json` change. No change to `arms.ts`, `task.ts`, `loop.ts`,
-  `gate.ts`, `decompose-run.ts`, `warboss.ts`.
-
-**Notes down:**
-
-- AC11's needle semantics are worked out in the spec with both polarity
-  examples (quoted `"90"` vs unquoted `90`) — implement substring match of
-  the JSON needle exactly; over-exclusion from unquoted numeric needles is
-  deliberate and asserted, not a bug to fix.
-- `leakedBy` array order is pinned: `["human", "warboss"]` when both leak.
-- Residual preserves original hidden-battery order; `finalVector.length` =
-  residual length everywhere (sessions, coverage split, artifact).
-- AC12 must assert the fake client recorded ZERO generate calls when the
-  viability guard throws (guard fires before any dispatch).
-- AC13 is partly grep-level: no `as unknown as` anywhere in `e2.ts`.
-- npm eats `--flags` on Windows — CLI tested via `node` direct invocation.
-- Worktree grunts cannot `git merge` — sync via `git checkout main -- <paths>`,
-  commit in your worktree.
-
-**Report back:**
-
-Done:
-- `src/experiment/e1b.ts`: exported `AnalyzableSession` interface (5 readonly fields: green, stalled, attempts, finalScore, totalCostUsd); loosened `analyzeE1bArm` param from `readonly SessionRecord[]` to `readonly AnalyzableSession[]`. Zero behavior change; all pre-existing e1b tests pass unmodified.
-- `src/experiment/e2.ts`: implemented rev-2 residual-battery contamination fix. Added `ExcludedCase`, `HiddenBattery` interfaces and exported `buildResidualBattery` helper (exact needle rule from `auditNoContamination`; symmetric exclusion; `leakedBy` order pinned `["human","warboss"]`). `runE2` now: builds both prompts first, calls `buildResidualBattery`, enforces viability guard (≥1 happy AND ≥1 error, throws descriptively naming counts before any session/model call), calls `auditNoContamination([humanPrompt, warbossPrompt], residual)` as belt-and-braces, dispatches all sessions against `residual` (not `task.hidden`), records `hiddenBattery` in artifact, scores `finalVector`/`finalScore`/`coverageSplit`/`e2Criterion` over residual only. Deleted the `as unknown as SessionRecord[]` cast on `analyzeE1bArm` calls (now uses structural subtyping directly). Also deleted the `battery: hidden as unknown as ContractCase[]` cast in `runE2Session` (structural subtyping holds; `HiddenCase` satisfies `ContractCase`). Removed now-unused `ContractCase` import. Updated spec comment to rev 2.
-- `test/e2.test.ts`: imported `buildResidualBattery` and `type AnalyzableSession`; amended AC8 to rev-2 semantics (collision excludes, never aborts; asserts excluded entry, `leakedBy`, sessions ran, `finalVector.length = residualCount`); amended AC9 to assert `hiddenBattery` key with all 5 sub-fields; added AC11 (exclusion rule mechanics + needle polarity examples), AC12 (viability guard — zero error cases and zero happy cases, both assert zero generate calls), AC13 (AnalyzableSession 5-field shape, structural subtyping compiles without cast, grep-level no `as unknown as` in e2.ts).
-
-Files changed: `src/experiment/e1b.ts`, `src/experiment/e2.ts`, `test/e2.test.ts`.
-
-Deviations:
-- The `battery: hidden as unknown as ContractCase[]` cast in `runE2Session` was also deleted (not explicitly scoped in H-17, but AC13's grep assertion covers all `as unknown as` in e2.ts and structural subtyping makes the cast unnecessary). No behavior change.
-- `AnalyzableSession` import was not needed as an explicit type in `e2.ts` (structural inference handles the call sites), so it was not imported there. The import in `test/e2.test.ts` for AC13 verification is sufficient.
-
-Gaps found: none. Spec was unambiguous for all implementation decisions. The belt-and-braces `auditNoContamination` call spec says "by construction it passes; if it throws, the filter itself is defective and the throw stands" — implemented exactly as stated, no UNDECIDED.
-
-Verify:
-- `npm run typecheck`: clean (exit 0, no errors)
-- `npm test`: 177/177 pass, 0 fail. Pre-change suite was 173/173; 4 new tests added (AC11 ×1, AC12 ×2, AC13 ×1). Net: 177/177 all-pass.
-
-Cost/time: ~4 min wall time; no model calls made (offline implementation only).
+_None queued. (H-17 accepted 2026-06-12 — body in archive. E2 measured same day; see standing notes.)_
 
 <!-- ARCHIVED — bodies moved to HANDOFF-archive.md on acceptance
 ### H-15 · E2 contract-authorship runner — `queued`
@@ -280,6 +218,7 @@ Cost/time: ~4 min wall time; no model calls made (offline implementation only).
 
 | Item | What | Outcome |
 | --- | --- | --- |
+| **H-17** · E2 rev-2 residual battery | `buildResidualBattery` exclusion stage + viability guard (`src/experiment/e2.ts`), `AnalyzableSession` loosening (`e1b.ts`), AC11–AC13 | accepted 2026-06-12, 177/177, zero gaps; unblocked E2 attempt 2 same day (criterion FAIL 0.667, error path 1.000 vs 0.000) |
 | **H-16** · gate-judge derive-check | `deriveCheck` mechanical-enumeration instrument + `calibrate-derive` runner (`src/gate.ts`, `src/experiment/calibrate-derive.ts`), AC1–AC9 | accepted 2026-06-12, 173/173; jsonl-sidecar ruling pinned; return-type gap → rev 2 |
 | **H-15** · E2 contract-authorship | `runE2` human-vs-warboss contract on the grunt loop, happy/error hidden split, ≥0.90× criterion (`src/experiment/e2.ts`), AC1–AC10 | accepted 2026-06-12, 173/173; `analyzeE1bArm`/`E2SessionRecord` cast → e2 rev 2 |
 | **H-14** · decompose-run CLI | `runDecompose` + `decompose` script (`src/experiment/decompose-run.ts`), AC1–AC6 | accepted 2026-06-11; 4 spec gaps → decompose-run rev 2 (see standing notes) |
