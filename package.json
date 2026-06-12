@@ -13,6 +13,7 @@
     "smoke": "node --env-file=.env --import tsx src/smoke.ts",
     "e1a": "node --env-file=.env --import tsx src/experiment/e1a.ts",
     "e1b": "node --env-file=.env --import tsx src/experiment/e1b.ts",
+    "calibrate-gate": "node --env-file=.env --import tsx src/experiment/calibrate-gate.ts",
     "viz": "node --env-file=.env --import tsx scripts/viz.ts",
     "rescore": "tsx src/experiment/rescore.ts"
   },
