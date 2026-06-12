@@ -1,4 +1,4 @@
-/** AC1–AC6 — see specs/decompose-run.spec.md (rev 1). Offline, fake client. */
+/** AC1–AC6 — see specs/decompose-run.spec.md (rev 1; rev 4 warboss call-site update). Offline, fake client. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
@@ -42,6 +42,7 @@ function scriptedClient(responses: ScriptedResponse[]): {
   };
 }
 
+// rev 4: all requirement fixtures carry resolutions: []
 const VALID_2REQ = [
   {
     id: "parse-duration",
@@ -52,6 +53,7 @@ const VALID_2REQ = [
       { name: "basic", input: ["1h30m"], expected: 5400 },
       { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
     ],
+    resolutions: [],
   },
   {
     id: "format-duration",
@@ -62,6 +64,7 @@ const VALID_2REQ = [
       { name: "basic", input: [5400], expected: "1h30m" },
       { name: "negative", input: [-1], expected: "<throws>", throws: true },
     ],
+    resolutions: [],
   },
 ];
 
@@ -73,13 +76,12 @@ function ledgerSum(artifact: DecomposeArtifact): number {
 }
 
 function assertCostIdentity(artifact: DecomposeArtifact): void {
-  // draftSet.costUsd equals its own ledger sum (warboss AC9), so the
-  // partition by ledger kind recovers the two component costs.
+  // rev 4: no gate.judge entries — admission is probe-only, no model calls for no-battery kick-backs
   const draftCost = artifact.ledger
     .filter((e) => e.kind.startsWith("warboss."))
     .reduce((acc, e) => acc + e.costUsd, 0);
   const admitCost = artifact.ledger
-    .filter((e) => e.kind === "gate.judge")
+    .filter((e) => e.kind.startsWith("gate."))
     .reduce((acc, e) => acc + e.costUsd, 0);
   assert.ok(
     Math.abs(artifact.totalCostUsd - (draftCost + admitCost)) < 1e-9,
@@ -95,12 +97,12 @@ async function freshOutDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "decompose-run-test-"));
 }
 
-test("AC1 — happy path artifact: 2 requirements, empty audit, both admitted", async () => {
+test("AC1 — happy path artifact: 2 requirements, empty audit, both kicked back (no probe batteries)", async () => {
+  // rev 4: runDecompose passes empty probes map → both contracts kick back with no-battery question
   const { client } = scriptedClient([
     { text: VALID_2REQ_FENCED },
     { text: EMPTY_GAPS_FENCED },
-    { text: "READY" },
-    { text: "READY" },
+    // No more judge calls — probe-only admission with empty map makes no model calls
   ]);
   const out = await freshOutDir();
 
@@ -114,8 +116,19 @@ test("AC1 — happy path artifact: 2 requirements, empty audit, both admitted", 
   assert.equal(artifact.requirements.length, 2);
   assert.equal(artifact.contracts.length, 2);
   assert.deepEqual(artifact.auditGaps, []);
-  assert.equal(artifact.admission.admitted.length, 2);
-  assert.deepEqual(artifact.admission.kickedBack, []);
+  // rev 4: both kicked back (no probe batteries)
+  assert.equal(artifact.admission.admitted.length, 0, "no batteries → none admitted");
+  assert.equal(artifact.admission.kickedBack.length, 2, "both kicked back");
+
+  // kicked-back questions are the no-battery strings
+  assert.ok(
+    artifact.admission.kickedBack[0]?.questions[0]?.includes("no probe battery supplied for"),
+    `first kicked-back question: ${artifact.admission.kickedBack[0]?.questions[0]}`,
+  );
+  assert.ok(
+    artifact.admission.kickedBack[1]?.questions[0]?.includes("no probe battery supplied for"),
+    `second kicked-back question: ${artifact.admission.kickedBack[1]?.questions[0]}`,
+  );
 
   // contracts[].hash matches the frozen contract of the source requirement
   artifact.contracts.forEach((c, i) => {
@@ -129,7 +142,6 @@ test("AC1 — happy path artifact: 2 requirements, empty audit, both admitted", 
       examples: req.examples,
     });
     assert.equal(c.hash, frozen.hash, `contract ${c.id} hash matches frozen`);
-    assert.equal(artifact.admission.admitted[i], frozen.hash);
   });
 
   assert.ok(
@@ -154,12 +166,12 @@ test("AC1 — happy path artifact: 2 requirements, empty audit, both admitted", 
   assertCostIdentity(artifact);
 });
 
-test("AC2 — kick-back surfaced: NOT READY question lands on the second requirement", async () => {
+test("AC2 — kick-back surfaced: both requirements kicked back with no-battery question", async () => {
+  // rev 4: empty probes map → both get kicked back
   const { client } = scriptedClient([
     { text: VALID_2REQ_FENCED },
     { text: EMPTY_GAPS_FENCED },
-    { text: "READY" },
-    { text: "NOT READY\n- what about negatives?" },
+    // No model calls for admission
   ]);
   const out = await freshOutDir();
 
@@ -170,12 +182,14 @@ test("AC2 — kick-back surfaced: NOT READY question lands on the second require
   });
   const artifact = result.artifact;
 
-  assert.equal(artifact.admission.admitted.length, 1);
-  assert.equal(artifact.admission.kickedBack.length, 1);
-  const kb = artifact.admission.kickedBack[0]!;
-  assert.deepEqual(kb.questions, ["what about negatives?"]);
-  assert.equal(kb.id, "format-duration", "id names the second requirement");
-  assert.equal(kb.hash, artifact.contracts[1]!.hash);
+  assert.equal(artifact.admission.admitted.length, 0);
+  assert.equal(artifact.admission.kickedBack.length, 2);
+
+  // Both kicked back with the no-battery question, naming their requirement id
+  const kb0 = artifact.admission.kickedBack[0]!;
+  const kb1 = artifact.admission.kickedBack[1]!;
+  assert.ok(kb0.questions[0]?.includes(kb0.id), `question names id: ${kb0.questions[0]}`);
+  assert.ok(kb1.questions[0]?.includes(kb1.id), `question names id: ${kb1.questions[0]}`);
 
   // AC3 leg on the AC2 fixture
   assertCostIdentity(artifact);
@@ -187,8 +201,6 @@ test("AC3 — cost identity holds in both fixtures (explicit)", async () => {
   const { client } = scriptedClient([
     { text: VALID_2REQ_FENCED },
     { text: EMPTY_GAPS_FENCED },
-    { text: "READY" },
-    { text: "NOT READY\n- what about negatives?" },
   ]);
   const out = await freshOutDir();
   const { artifact } = await runDecompose({
@@ -197,7 +209,11 @@ test("AC3 — cost identity holds in both fixtures (explicit)", async () => {
     out,
   });
   assertCostIdentity(artifact);
-  assert.ok(artifact.totalCostUsd > 0, "fixture carries nonzero cost");
+  // warboss calls have nonzero cost; admission has zero (no model calls for no-battery)
+  const warbossCost = artifact.ledger
+    .filter((e) => e.kind.startsWith("warboss."))
+    .reduce((acc, e) => acc + e.costUsd, 0);
+  assert.ok(warbossCost > 0, "warboss calls carry nonzero cost");
 });
 
 test("AC4 — intent input validation: both / neither → descriptive error, no model call", () => {
@@ -258,11 +274,10 @@ test("AC5 — fail-up propagation: both decompose calls unparseable → rejects,
 
 test("AC6 — dead-run guard: live + zero cost → deadRun stamped; live false → no stamp", async () => {
   const zero = { input_tokens: 0, output_tokens: 0 };
+  // rev 4: only 2 model calls (decompose + audit); admission is probe-only, no model calls
   const zeroCostScript = (): ScriptedResponse[] => [
     { text: VALID_2REQ_FENCED, usage: zero },
     { text: EMPTY_GAPS_FENCED, usage: zero },
-    { text: "READY", usage: zero },
-    { text: "READY", usage: zero },
   ];
 
   // live: true + zero-cost fixture → deadRun stamped, nonzero exit path
