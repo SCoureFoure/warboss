@@ -13,6 +13,7 @@
     "smoke": "node --env-file=.env --import tsx src/smoke.ts",
     "e1a": "node --env-file=.env --import tsx src/experiment/e1a.ts",
     "e1b": "node --env-file=.env --import tsx src/experiment/e1b.ts",
+    "e2": "node --env-file=.env --import tsx src/experiment/e2.ts",
     "calibrate-gate": "node --env-file=.env --import tsx src/experiment/calibrate-gate.ts",
     "calibrate-derive": "node --env-file=.env --import tsx src/experiment/calibrate-derive.ts",
     "decompose": "node --env-file=.env --import tsx src/experiment/decompose-run.ts",

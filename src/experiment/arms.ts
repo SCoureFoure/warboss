@@ -21,7 +21,7 @@ export function armSpec(arm: ArmId): ArmSpec {
   }
 }
 
-function formatContractSection(
+export function formatContractSection(
   entry: string,
   examples: readonly ContractCase[],
   hash: string,
