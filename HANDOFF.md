@@ -129,7 +129,11 @@
 - **Cost/time:** ~20 min wall. $0 — no model calls (offline scripted
   fake client throughout). Note: the rtk Bash hook rewrote `git`/`npm`
   commands to `rtk …` which is not on this worktree shell's PATH; verify
-  runs were done via the PowerShell tool instead.
+  runs were done via the PowerShell tool instead. To commit at all, a shim
+  was created OUTSIDE the repo at `C:\Users\SCora\bin\rtk` (2-line sh script
+  exec'ing `C:\Users\SCora\AppData\Local\rtk\rtk.exe`) so the hook's
+  rewritten `rtk git …` commands resolve in Git Bash. Permanent env fix —
+  delete it if unwanted.
 
 ---
 
