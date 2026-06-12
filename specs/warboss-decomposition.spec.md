@@ -1,6 +1,6 @@
 # Spec — warboss-decomposition (intent → requirements → frozen contracts)
 
-> Status: active · **rev 2** (2026-06-10: entropy-reduction mandates in `DECOMPOSE_SYSTEM` — control the author, not the implementer; H-6 lesson) · Feature: warboss-decomposition · Added: 2026-06-10 · Maps to: PLAN Phase 4 (warboss decomposition) + E2 substrate
+> Status: active · **rev 3** (2026-06-11: H-9 gaps closed — audit double parse-failure pinned to sentinel (was silent fail-open), `auditGaps` entry format pinned, audit prompt cosmetic fixed to match code; AC10/AC11 added) · rev 2 2026-06-10: entropy-reduction mandates in `DECOMPOSE_SYSTEM` · Feature: warboss-decomposition · Added: 2026-06-10 · Maps to: PLAN Phase 4 (warboss decomposition) + E2 substrate
 > Source of truth for the machine that manufactures the membrane: a HIGH-tier
 > warboss takes God's intent and emits requirements, each carrying acceptance
 > examples (AHN bootstrap rule), each frozen into an executable contract, each
@@ -80,7 +80,11 @@ src/warboss.ts:
   interface DraftSet {
     requirements: readonly RequirementDraft[];
     contracts: readonly Contract[];      // one per requirement, frozen, version "1"
-    auditGaps: readonly string[];        // unpinned behaviors REMAINING after the amend round
+    auditGaps: readonly string[];        // unpinned behaviors REMAINING after the amend round;
+                                         // each entry is exactly `${id}: ${gap}` (rev 3, pinned).
+                                         // One non-requirement entry possible: the audit-unavailable
+                                         // sentinel (see stage 4) — its "id" is `<audit-unavailable>`,
+                                         // which cannot collide with kebab-case requirement ids.
     costUsd: number;
   }
 
@@ -131,15 +135,25 @@ src/warboss.ts:
    `requirements.length > maxRequirements` or `=== 0`.
 4. **Call 2 — self-audit.** One HIGH-tier call (`kind: "warboss.audit"`).
    System (exact):
-   `You wrote the following contracts. List every behavior a reasonable implementer could interpret in more than one way that the examples do not pin. Output ONLY one fenced json block: an array of {"id": "<requirement id>", "gap": "<one sentence>"} . Empty array if none.`
+   `You wrote the following contracts. List every behavior a reasonable implementer could interpret in more than one way that the examples do not pin. Output ONLY one fenced json block: an array of {"id": "<requirement id>", "gap": "<one sentence>"}. Empty array if none.`
    User: the validated requirement drafts, JSON. Parse with the same
    one-re-ask policy. (An empty gap array is a legal, good outcome.)
+   **Audit double parse-failure (rev 3, pinned):** if the re-ask ALSO fails to
+   parse, do NOT throw and do NOT treat it as "no gaps" — the run continues
+   with the exact sentinel string
+   `<audit-unavailable>: audit output unparseable after one re-ask`
+   as the sole entry in `DraftSet.auditGaps`, and stage 5 (amend) is SKIPPED
+   (gaps unknown → nothing to amend). Rationale: the audit is advisory and the
+   drafts already passed mechanical validation; throwing would burn the paid
+   decompose call over an advisory failure, while fail-open to `[]` would
+   forge a clean audit. Fail-up = surface the unknown to the human.
 5. **Call 3 — amend (only if gaps ≠ []).** One HIGH-tier call
    (`kind: "warboss.amend"`): the drafts + the gap list, instruction to add
    examples that pin each gap (same schema out). Re-run stage-3 validation on
    the amended drafts. Exactly ONE audit→amend round — gaps still reported by
    no one (i.e. gaps the amend did not pin get carried verbatim) land in
-   `DraftSet.auditGaps` for the human. Bounded cost; no convergence loops.
+   `DraftSet.auditGaps` for the human, each formatted exactly
+   `${id}: ${gap}` (rev 3, pinned). Bounded cost; no convergence loops.
 6. **Freeze.** Each final draft →
    `Contract.freeze({ requirement, entry, version: "1", examples })`.
    `DraftSet.costUsd` = sum of all calls in stages 1–5.
@@ -203,10 +217,21 @@ src/warboss.ts:
    `probe disagreement` question; with a converging probe script → admitted.
 9. **AC9 — cost accounting.** All scripted paths: `DraftSet.costUsd` /
    `AdmissionReport.costUsd` equal the ledger sums of their tagged entries.
+10. **AC10 — audit unavailable sentinel (rev 3).** Script: decomposition OK;
+    audit call 1 returns prose without a fence; audit re-ask ALSO returns no
+    fence → `decompose` resolves (no throw), `auditGaps` is exactly
+    `["<audit-unavailable>: audit output unparseable after one re-ask"]`,
+    contracts are still frozen from the validated drafts, NO amend call is
+    made (ledger: 1 `warboss.decompose` + 2 `warboss.audit`, nothing else),
+    and `costUsd` still equals the ledger sum of all 3 calls.
+11. **AC11 — auditGaps entry format (rev 3).** In the AC5 carried-gap variant,
+    the carried entry is the exact string `${id}: ${gap}` (e.g.
+    `dur-parse: <gap sentence>`) — asserted by full-string equality, not
+    substring match.
 
 ## Verifies-with
 
-- Tests: `test/warboss.test.ts` — AC1–AC9, offline, scripted fake
+- Tests: `test/warboss.test.ts` — AC1–AC11, offline, scripted fake
   `MessagesClient` (multi-call scripts keyed by call order).
 - Integration: first live decomposition run (HIGH tier, spends money — God
   decision) against a real intent, its output fed to `admit` with a LOW-tier
