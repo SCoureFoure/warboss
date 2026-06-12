@@ -60,7 +60,76 @@
 
 ## Active items
 
-_None queued. Next leg opens here._
+### H-12 — warboss-decomposition rev 3: audit-unavailable sentinel + format pin
+
+**Status:** built (report filed 2026-06-11) · **Spec:** `specs/warboss-decomposition.spec.md` rev 3 (frozen for this item) · **Opened:** 2026-06-11
+
+**Scope:**
+
+- [x] In `src/warboss.ts` `decompose` stage 4: replace the audit double
+      parse-failure fail-open (`gaps = []`) with the rev-3 sentinel — resolve
+      with `auditGaps === ["<audit-unavailable>: audit output unparseable after one re-ask"]`,
+      skip the amend stage, freeze contracts from the validated drafts.
+- [x] `test/warboss.test.ts`: add AC10 (sentinel path — exact array equality,
+      ledger shows 1 decompose + 2 audit + 0 amend, costUsd = ledger sum) and
+      AC11 (carried-gap entry is the exact string `${id}: ${gap}`, full-string
+      equality).
+- [x] No other behavior changes. Do not touch `admit`, prompts, or specs.
+
+**Notes down (pre-answered):**
+
+- The sentinel string is pinned verbatim in the spec — copy it, don't compose
+  it. Angle brackets are intentional (cannot collide with kebab-case ids).
+- `AUDIT_SYSTEM` in code already matches the rev-3 prompt text (`"}. Empty`);
+  no prompt edit needed.
+- The existing `auditGaps = gaps.map((g) => \`${g.id}: ${g.gap}\`)` lines
+  already produce the pinned format — AC11 is a regression pin, not a fix.
+- Run `npm run typecheck` + `npm test`; report exact pass counts. Baseline is
+  133 passing; expect 135.
+
+**Report back:**
+
+- **Done:** Stage-4 fail-open replaced with the rev-3 sentinel path. New
+  module constant `AUDIT_UNAVAILABLE_SENTINEL` holds the spec string copied
+  verbatim; on audit double parse-failure `auditGaps` is set to exactly
+  `[sentinel]`, `gaps` is set to `[]` so stage 5 (amend) is skipped by the
+  existing `gaps.length > 0` guard, and stage 6 freezes contracts from the
+  validated drafts unchanged. The `auditGaps` declaration moved above stage 4
+  (it was declared between stages 4 and 5) so the sentinel branch can assign
+  it; no other code paths changed. Added AC10 and AC11 tests; updated the
+  test file's header comment from `AC1–AC9` to `AC1–AC11`. Files:
+  `src/warboss.ts`, `test/warboss.test.ts`, `HANDOFF.md` (this item).
+- **Deviations:**
+  - The dispatched worktree was cut from `main@5f3ec3f`, which predates the
+    planner's rev-3 spec and this H-12 item (worktree spec file is rev 2;
+    Active items was empty). The rev-3 spec text and the H-12 item body were
+    read (read-only) from the main checkout's uncommitted files and treated
+    as the frozen spec; the H-12 item body was copied verbatim into this
+    worktree's HANDOFF.md so the report has its home. Per protocol rule 1
+    (implementer never edits specs) the worktree's spec file was left at
+    rev 2 — merging the planner's rev-3 edit from main is conflict-free since
+    this branch does not touch it.
+  - AC11 asserts `auditGaps.length === 1`, then full-string equality on entry
+    0, then exact array deep-equality — the spec's "full-string equality, not
+    substring" plus the AC5-variant scenario implies a single carried entry;
+    the deep-equal makes that explicit. Belt-and-suspenders, not a behavior
+    deviation.
+  - AC10's two unparseable audit responses are plain prose with no fence
+    (mirroring AC3's style); the spec's "returns no fence" wording is taken
+    literally — fenced-but-invalid-JSON double failure is the same code path
+    (`parseAuditGaps` returns null) but is not separately tested.
+- **Gaps found:** none. The rev-3 paragraph is decided: sentinel string
+  pinned verbatim, amend skip pinned, freeze-from-validated-drafts pinned,
+  ledger shape and cost equality pinned by AC10. No `// UNDECIDED:` markers
+  needed.
+- **Verify:** `npm run typecheck` → clean (tsc --noEmit, no output, exit 0).
+  `npm test` → TAP summary `# tests 135 / # pass 135 / # fail 0` (baseline
+  133 + AC10 + AC11; new tests are `ok 134` and `ok 135`). No live runs;
+  offline fake-client only.
+- **Cost/time:** ~20 min wall. $0 — no model calls (offline scripted
+  fake client throughout). Note: the rtk Bash hook rewrote `git`/`npm`
+  commands to `rtk …` which is not on this worktree shell's PATH; verify
+  runs were done via the PowerShell tool instead.
 
 ---
 
