@@ -14,7 +14,7 @@
  * (H-9/H-14), run off-band as a God-funded spend; its artifact is an INPUT here.
  * E2 keeps no loop logic of its own: `runLoop` + `judge` are reused verbatim.
  *
- * Spec: specs/e2-contract-authorship.spec.md (rev 1).
+ * Spec: specs/e2-contract-authorship.spec.md (rev 2).
  */
 
 import { mkdir, writeFile, readFile } from "node:fs/promises";
@@ -26,7 +26,7 @@ import { Ledger } from "../cost.ts";
 import { jsonlFileSink } from "../ledger-sink.ts";
 import { judge } from "../runner.ts";
 import { TIERS } from "../models.ts";
-import { Contract, type ContractCase } from "../contract.ts";
+import { Contract } from "../contract.ts";
 import { runLoop, type LoopResult } from "../loop.ts";
 import { loadTask, auditNoContamination, type HiddenCase } from "./task.ts";
 import { formatContractSection } from "./arms.ts";
@@ -36,7 +36,6 @@ import {
   type FeedbackArm,
   type FeedbackArmAnalysis,
   type E1aArmDStats,
-  type SessionRecord,
 } from "./e1b.ts";
 import type { DecomposeArtifact } from "./decompose-run.ts";
 
@@ -92,6 +91,71 @@ export interface RunE2Options {
 
 export interface RunE2Result {
   readonly deadRun: boolean;
+}
+
+export interface ExcludedCase {
+  readonly name: string;
+  readonly leakedBy: readonly ("human" | "warboss")[];
+}
+
+export interface HiddenBattery {
+  readonly total: number;
+  readonly excluded: readonly ExcludedCase[];
+  readonly residualCount: number;
+  readonly happyCount: number;
+  readonly errorCount: number;
+}
+
+/**
+ * Build the contamination-disjoint residual battery (rev 2).
+ *
+ * Exclusion rule: hidden case `c` is excluded iff for ANY element `inp` of
+ * `c.input`, `JSON.stringify(inp)` appears as a substring of EITHER prompt.
+ * This is verbatim the needle rule `auditNoContamination` uses (task.ts).
+ *
+ * Symmetric exclusion: leaked by EITHER prompt → excluded for BOTH.
+ * `leakedBy` order is pinned: ["human", "warboss"] when both leak.
+ * Residual preserves original hidden-battery order.
+ */
+export function buildResidualBattery(
+  hidden: readonly HiddenCase[],
+  humanPrompt: string,
+  warbossPrompt: string,
+): { residual: readonly HiddenCase[]; hiddenBattery: HiddenBattery } {
+  const excluded: ExcludedCase[] = [];
+  const residual: HiddenCase[] = [];
+
+  for (const c of hidden) {
+    let leakedByHuman = false;
+    let leakedByWarboss = false;
+    for (const inp of c.input) {
+      const needle = JSON.stringify(inp);
+      if (humanPrompt.includes(needle)) leakedByHuman = true;
+      if (warbossPrompt.includes(needle)) leakedByWarboss = true;
+    }
+    if (leakedByHuman || leakedByWarboss) {
+      const leakedBy: ("human" | "warboss")[] = [];
+      if (leakedByHuman) leakedBy.push("human");
+      if (leakedByWarboss) leakedBy.push("warboss");
+      excluded.push({ name: c.name, leakedBy });
+    } else {
+      residual.push(c);
+    }
+  }
+
+  const happyCount = residual.filter((c) => c.throws !== true).length;
+  const errorCount = residual.filter((c) => c.throws === true).length;
+
+  return {
+    residual,
+    hiddenBattery: {
+      total: hidden.length,
+      excluded,
+      residualCount: residual.length,
+      happyCount,
+      errorCount,
+    },
+  };
 }
 
 /** Static contract coverage: does the contract carry any error-path example? */
@@ -161,7 +225,7 @@ async function runE2Session(
 
   if (loopResult.finalCode !== undefined) {
     const finalJudge = judge(sourceContract, loopResult.finalCode, {
-      battery: hidden as unknown as ContractCase[],
+      battery: hidden,
       expectedHash: sourceContract.hash,
     });
     finalVector = finalJudge.vector;
@@ -324,8 +388,24 @@ export async function runE2(opts: RunE2Options = {}): Promise<RunE2Result> {
       warbossContract.hash,
     );
 
-  // Contamination audit spans BOTH source prompts, before any dispatch.
-  auditNoContamination([humanPrompt, warbossPrompt], task.hidden);
+  // ── Contamination-disjoint residual battery (rev 2) ────────────────────────
+  const { residual, hiddenBattery } = buildResidualBattery(
+    task.hidden,
+    humanPrompt,
+    warbossPrompt,
+  );
+
+  // Residual viability guard: ≥1 happy AND ≥1 error case required.
+  if (hiddenBattery.happyCount < 1 || hiddenBattery.errorCount < 1) {
+    throw new Error(
+      `E2 residual battery is not viable: ${hiddenBattery.happyCount} happy case(s) and ` +
+        `${hiddenBattery.errorCount} error case(s) survive after contamination exclusion. ` +
+        `Need ≥1 happy AND ≥1 error to measure both halves of the coverage split.`,
+    );
+  }
+
+  // Belt-and-braces: audit the residual against both prompts (by construction passes).
+  auditNoContamination([humanPrompt, warbossPrompt], residual);
 
   const ts = new Date()
     .toISOString()
@@ -365,7 +445,7 @@ export async function runE2(opts: RunE2Options = {}): Promise<RunE2Result> {
         job.sessionIndex,
         job.contract,
         granularity,
-        task.hidden,
+        residual,
       ),
   );
 
@@ -374,16 +454,10 @@ export async function runE2(opts: RunE2Options = {}): Promise<RunE2Result> {
   const humanSessions = sessions.filter((s) => s.source === "human");
   const warbossSessions = sessions.filter((s) => s.source === "warboss");
 
-  // UNDECIDED: spec pins E2SessionRecord WITHOUT a `feedbackArm` field (source is
-  // the partition key) AND mandates reuse of analyzeE1bArm, whose parameter type
-  // is SessionRecord (which requires `feedbackArm`). analyzeE1bArm reads only
-  // green/stalled/attempts/finalScore/totalCostUsd — all present on E2SessionRecord
-  // — so a structural cast bridges the two without altering the pinned record shape
-  // or editing e1b.ts. Reading taken: cast at the call site; do not add feedbackArm.
-  const humanAnalysis = analyzeE1bArm("human", humanSessions as unknown as SessionRecord[]);
-  const warbossAnalysis = analyzeE1bArm("warboss", warbossSessions as unknown as SessionRecord[]);
+  const humanAnalysis = analyzeE1bArm("human", humanSessions);
+  const warbossAnalysis = analyzeE1bArm("warboss", warbossSessions);
 
-  const coverageSplit = computeCoverageSplit(task.hidden, {
+  const coverageSplit = computeCoverageSplit(residual, {
     human: humanSessions,
     warboss: warbossSessions,
   });
@@ -426,6 +500,7 @@ export async function runE2(opts: RunE2Options = {}): Promise<RunE2Result> {
         hasErrorExample: hasErrorExample(warbossContract),
       },
     },
+    hiddenBattery,
     analysis: { human: humanAnalysis, warboss: warbossAnalysis },
     coverageSplit,
     e2Criterion,

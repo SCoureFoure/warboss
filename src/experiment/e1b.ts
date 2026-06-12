@@ -112,9 +112,17 @@ async function runSession(
   };
 }
 
+export interface AnalyzableSession {
+  readonly green: boolean;
+  readonly stalled: boolean;
+  readonly attempts: number;
+  readonly finalScore: number;
+  readonly totalCostUsd: number;
+}
+
 export function analyzeE1bArm(
   feedbackArm: string,
-  sessions: readonly SessionRecord[],
+  sessions: readonly AnalyzableSession[],
 ): FeedbackArmAnalysis {
   const n = sessions.length;
   if (n === 0) {
