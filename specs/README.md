@@ -88,3 +88,5 @@ Run the loop with the **`/spec`** skill (`.claude/skills/spec/SKILL.md`):
 | [readiness-gate](readiness-gate.spec.md) | Admission check: grunt judge (READY/NOT READY) + K-impl convergence probe | Lever 1 (grunt-readiness gate) | active |
 | [sandbox-hardening](sandbox-hardening.spec.md) | Process-isolated execution (`node --permission` child) + `judgeAsync` | Phase 4 precondition | active |
 | [warboss-decomposition](warboss-decomposition.spec.md) | Intent → requirements → frozen contracts + gate admission; error-coverage mandate | Phase 4 (E2 substrate) | active |
+| [e2-contract-authorship](e2-contract-authorship.spec.md) | Human- vs warboss-authored contract driving the same grunt loop; hidden-score happy/error split; pre-registered E2 criterion | Phase 4 (E2) | active |
+| [gate-judge-derive](gate-judge-derive.spec.md) | `deriveCheck` mechanical-enumeration readiness instrument + calibration runner (gruntJudge rework) | Lever 1 (gate rework) | active |
