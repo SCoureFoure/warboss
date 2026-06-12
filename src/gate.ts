@@ -1,17 +1,26 @@
 /**
- * Gate instruments: two readiness probes that gate work before it enters
+ * Gate instruments: readiness probes that gate work before it enters
  * the experiment loop.
  *
- *   gruntJudge     — cheap, one LOW-tier call; judges whether a prompt is
- *                    fully decided (zero interpretation latitude left).
+ *   gruntJudge       — cheap, one LOW-tier call; judges whether a prompt is
+ *                      fully decided (zero interpretation latitude left).
+ *                      Calibration only — falsified as a gate.
  *   convergenceProbe — expensive, K independent generations + convergence
- *                    check; measures whether a contract is satisfiable and
- *                    whether survivors agree on probe cases.
+ *                      check; measures whether a contract is satisfiable and
+ *                      whether survivors agree on probe cases. The only
+ *                      admission gate.
+ *   intentProbe      — pre-freeze instrument; K generations from PROSE intent
+ *                      (no contract); outcomes clustered per candidate input to
+ *                      detect intent-underdetermined semantics. Report-only
+ *                      until E3 calibrates thresholds.
+ *   deriveCheck      — mechanical DECIDED/UNDECIDED enumeration instrument.
+ *                      Calibration only — falsified as a gate.
  */
 
 import { Agent, extractCode } from "./agent.ts";
 import { Contract, type ContractCase } from "./contract.ts";
 import { judge, ContractHashMismatch } from "./runner.ts";
+import { runImpl } from "./sandbox.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,6 +78,42 @@ export interface ProbeVerdict {
     name?: string;
     split: Record<string, number>;
   }[];
+  costUsd: number;
+}
+
+// Instrument 3 (rev 2) — pre-freeze intent-divergence probe
+export interface IntentProbeOptions {
+  agent: Agent;
+  /** PROSE intent + entry/signature line — NO contract section. */
+  prompt: string;
+  /** Function name impls must define (execution target). */
+  entry: string;
+  /** Candidate inputs (arg tuples); MUST be non-empty. */
+  inputs: readonly (readonly unknown[])[];
+  k?: number;
+  system?: string;
+  maxTokens?: number;
+  /** Ledger kind, default "gate.intent". */
+  kind?: string;
+  tags?: Record<string, string | number>;
+}
+
+export interface IntentProbeVerdict {
+  k: number;
+  /** Impls that produced code (extractCode non-undefined). */
+  generated: number;
+  /** Generated impls with ≥1 non-throw outcome (counted in clusters). */
+  viable: number;
+  /** Generated impls that threw on EVERY input (excluded from clustering). */
+  nonviable: number;
+  /** Only inputs where viable impls disagree — the kick-back payload. */
+  splits: readonly {
+    inputIndex: number;
+    input: readonly unknown[];
+    outcomes: Record<string, number>;
+  }[];
+  /** (inputs.length - splits.length) / inputs.length; 0 when viable === 0. */
+  decidedRate: number;
   costUsd: number;
 }
 
@@ -349,6 +394,132 @@ export async function convergenceProbe(
     survivorRate,
     modalShare,
     disagreements,
+    costUsd: totalCostUsd,
+  };
+}
+
+// ── intentProbe ──────────────────────────────────────────────────────────────
+
+/**
+ * Pre-freeze intent-divergence probe (rev 2).
+ * K independent generations from PROSE intent (no contract); outcomes clustered
+ * per candidate input to detect intent-underdetermined semantics.
+ * Report-only until E3 calibrates thresholds — no `ready` boolean, no threshold.
+ */
+export async function intentProbe(
+  opts: IntentProbeOptions,
+): Promise<IntentProbeVerdict> {
+  const k = opts.k ?? 8;
+  const system = opts.system ?? PROBE_DEFAULT_SYSTEM;
+  const maxTokens = opts.maxTokens ?? 2048;
+  const kind = opts.kind ?? "gate.intent";
+
+  // Guard: empty inputs before any model call (mirrors convergenceProbe's empty-probes rule).
+  if (opts.inputs.length === 0) {
+    throw new Error(
+      "intentProbe: opts.inputs must not be empty (received 0 candidate inputs)",
+    );
+  }
+
+  // Dispatch k independent generations using the SHARED helpers (no duplication).
+  const genTasks: Array<() => Promise<{ code: string | undefined; costUsd: number }>> =
+    Array.from({ length: k }, () => () =>
+      dispatchGeneration(opts.agent, opts.prompt, system, maxTokens, kind, opts.tags),
+    );
+
+  const genResults = await runWithConcurrency(genTasks, PROBE_CONCURRENCY);
+
+  // Accumulate total cost across all generations (including failed ones).
+  let totalCostUsd = 0;
+  for (const r of genResults) {
+    totalCostUsd += r.costUsd;
+  }
+
+  // For each generated impl, execute over every candidate input and collect outcomes.
+  // Outcome key: "value:<JSON.stringify(run.value)>" on success, "throw" on failure.
+  // Special case: JSON.stringify(undefined) returns undefined (the JS value undefined),
+  // so we emit "value:undefined" (the string) — the key is literally "value:undefined".
+
+  interface ImplOutcomes {
+    outcomes: string[]; // one per input, indexed same as opts.inputs
+  }
+
+  let generatedCount = 0;
+  let viableCount = 0;
+  let nonviableCount = 0;
+  const viableImplOutcomes: ImplOutcomes[] = [];
+
+  for (const gen of genResults) {
+    if (gen.code === undefined) continue; // no extractable code → not generated
+    generatedCount++;
+
+    // Execute over all candidate inputs.
+    const outcomes: string[] = [];
+    let hasNonThrow = false;
+    for (const input of opts.inputs) {
+      const run = runImpl(gen.code, opts.entry, input);
+      if (run.ok) {
+        // Successful execution: key is "value:" + JSON.stringify(value).
+        // JSON.stringify(undefined) returns undefined (not a string), so use
+        // the literal "undefined" string — key becomes "value:undefined".
+        const jsonVal = JSON.stringify(run.value);
+        const key = "value:" + (jsonVal === undefined ? "undefined" : jsonVal);
+        outcomes.push(key);
+        hasNonThrow = true;
+      } else {
+        // Threw: single key "throw" regardless of error message.
+        outcomes.push("throw");
+      }
+    }
+
+    if (hasNonThrow) {
+      viableCount++;
+      viableImplOutcomes.push({ outcomes });
+    } else {
+      nonviableCount++;
+      // All-throw impl excluded from clustering.
+    }
+  }
+
+  // Build splits: for each input index, cluster viable impls by outcome key.
+  // Only inputs with ≥2 distinct keys among viable impls are reported.
+  const splits: Array<{
+    inputIndex: number;
+    input: readonly unknown[];
+    outcomes: Record<string, number>;
+  }> = [];
+
+  for (let ii = 0; ii < opts.inputs.length; ii++) {
+    // Collect outcome keys for this input across all viable impls.
+    const dist: Record<string, number> = {};
+    for (const impl of viableImplOutcomes) {
+      const key = impl.outcomes[ii]!;
+      dist[key] = (dist[key] ?? 0) + 1;
+    }
+
+    // A split entry is added only when there are ≥2 distinct keys.
+    if (Object.keys(dist).length >= 2) {
+      splits.push({
+        inputIndex: ii,
+        input: opts.inputs[ii]!,
+        outcomes: dist,
+      });
+    }
+  }
+
+  // decidedRate: fail closed when viable === 0 (no throw, returns 0).
+  const decidedRate =
+    viableCount === 0
+      ? 0
+      : (opts.inputs.length - splits.length) / opts.inputs.length;
+
+  return {
+    k,
+    generated: generatedCount,
+    viable: viableCount,
+    nonviable: nonviableCount,
+    splits,
+    decidedRate,
     costUsd: totalCostUsd,
   };
 }
