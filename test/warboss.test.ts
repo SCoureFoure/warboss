@@ -1,4 +1,4 @@
-/** AC1–AC9 — see specs/warboss-decomposition.spec.md */
+/** AC1–AC11 — see specs/warboss-decomposition.spec.md */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -628,4 +628,82 @@ test("AC9 — cost accounting: DraftSet.costUsd equals ledger sum; AdmissionRepo
 
   assert.equal(contracts.length, 2, "two contracts to judge");
   assert.equal(report.admitted.length, 2, "both admitted");
+});
+
+test("AC10 — audit unavailable sentinel: double audit parse-failure → sentinel, no amend", async () => {
+  const client = scriptedClient([
+    { text: VALID_2REQ_FENCED },
+    { text: "I think the gaps are roughly these..." }, // audit call 1: no fence
+    { text: "still prose, still no fence" }, // audit re-ask: no fence either
+  ]);
+  const { agent, ledger } = makeAgent(client);
+
+  const draft = await decompose({ agent, intent: "Parse and format durations" });
+
+  // Resolves (no throw) with exactly the pinned sentinel as the sole entry
+  assert.deepEqual(draft.auditGaps, [
+    "<audit-unavailable>: audit output unparseable after one re-ask",
+  ]);
+
+  // Contracts still frozen from the validated drafts
+  assert.equal(draft.contracts.length, 2);
+  assert.equal(draft.contracts[0]?.version, "1");
+
+  // Ledger: exactly 1 decompose + 2 audit, nothing else (amend skipped)
+  const entries = ledger.all();
+  assert.equal(
+    entries.filter((e) => e.kind === "warboss.decompose").length,
+    1,
+    "exactly 1 decompose call",
+  );
+  assert.equal(
+    entries.filter((e) => e.kind === "warboss.audit").length,
+    2,
+    "exactly 2 audit calls",
+  );
+  assert.equal(
+    entries.filter((e) => e.kind === "warboss.amend").length,
+    0,
+    "no amend call",
+  );
+  assert.equal(entries.length, 3, "exactly 3 total calls");
+
+  // costUsd still equals the ledger sum of all 3 calls
+  const ledgerTotal = ledger.totals().costUsd;
+  assert.ok(
+    Math.abs(draft.costUsd - ledgerTotal) < 1e-9,
+    `DraftSet.costUsd ${draft.costUsd} should equal ledger sum ${ledgerTotal}`,
+  );
+});
+
+test("AC11 — auditGaps entry format: carried gap is the exact string `${id}: ${gap}`", async () => {
+  // AC5 carried-gap variant: amend returns the original drafts (gap unaddressed)
+  const origDraftJson = JSON.stringify([
+    {
+      id: "dur-parse",
+      requirement: "Parse a duration string.",
+      entry: "parseDuration",
+      signature: "(s: string) => number",
+      examples: [
+        { name: "basic", input: ["1h"], expected: 3600 },
+        { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
+      ],
+    },
+  ]);
+  const gapSentence = "What happens when input is 0s?";
+  const gapResponse =
+    "```json\n" + JSON.stringify([{ id: "dur-parse", gap: gapSentence }]) + "\n```";
+  const client = scriptedClient([
+    { text: "```json\n" + origDraftJson + "\n```" },
+    { text: gapResponse },
+    { text: "```json\n" + origDraftJson + "\n```" }, // amend unchanged → gap carried
+  ]);
+  const { agent } = makeAgent(client);
+
+  const draft = await decompose({ agent, intent: "test" });
+
+  // Full-string equality on the carried entry (not substring match)
+  assert.equal(draft.auditGaps.length, 1);
+  assert.equal(draft.auditGaps[0], `dur-parse: ${gapSentence}`);
+  assert.deepEqual(draft.auditGaps, [`dur-parse: ${gapSentence}`]);
 });

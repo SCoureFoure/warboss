@@ -58,6 +58,10 @@ const DECOMPOSE_SYSTEM =
 const AUDIT_SYSTEM =
   'You wrote the following contracts. List every behavior a reasonable implementer could interpret in more than one way that the examples do not pin. Output ONLY one fenced json block: an array of {"id": "<requirement id>", "gap": "<one sentence>"}. Empty array if none.';
 
+// Audit double parse-failure sentinel (spec rev 3, pinned — copied verbatim).
+const AUDIT_UNAVAILABLE_SENTINEL =
+  "<audit-unavailable>: audit output unparseable after one re-ask";
+
 const SCHEMA_TEXT = `Output a JSON array of requirements. Schema for each item:
 {
   "id": "kebab-case-unique-id",
@@ -301,6 +305,8 @@ export async function decompose(opts: DecomposeOptions): Promise<DraftSet> {
   // Stage 3 — Mechanical validation
   validateDrafts(drafts, maxRequirements);
 
+  let auditGaps: readonly string[] = [];
+
   // Stage 4 — Call 2: self-audit
   const auditCall1 = await callAudit(opts.agent, drafts, opts.tags);
   totalCost += auditCall1.costUsd;
@@ -319,11 +325,14 @@ export async function decompose(opts: DecomposeOptions): Promise<DraftSet> {
     totalCost += auditCall2.costUsd;
     gaps = parseAuditGaps(auditCall2.text);
     if (gaps === null) {
+      // Audit double parse-failure (rev 3, pinned): do NOT throw, do NOT
+      // treat as "no gaps" — surface the sentinel as the sole auditGaps
+      // entry; gaps unknown → stage 5 (amend) is skipped; contracts are
+      // still frozen from the validated drafts.
       gaps = [];
+      auditGaps = [AUDIT_UNAVAILABLE_SENTINEL];
     }
   }
-
-  let auditGaps: readonly string[] = [];
 
   // Stage 5 — Call 3: amend (only if gaps != [])
   if (gaps.length > 0) {
