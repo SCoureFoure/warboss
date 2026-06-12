@@ -124,7 +124,7 @@ three funded live runs of 2026-06-11):
 
 ## Active items
 
-### H-17 · E2 rev 2 — residual-battery contamination fix — `queued`
+### H-17 · E2 rev 2 — residual-battery contamination fix — `built (report filed)`
 
 **Spec (frozen):** [e2-contract-authorship.spec.md](specs/e2-contract-authorship.spec.md) **rev 2**.
 **Worktree:** your assigned worktree only — never the main checkout (rule 4).
@@ -178,7 +178,24 @@ measurable. The expensive authoring artifact already exists and is reusable.
 
 **Report back:**
 
-_(implementer fills: Done / Deviations / Gaps found / Verify / Cost-time)_
+Done:
+- `src/experiment/e1b.ts`: exported `AnalyzableSession` interface (5 readonly fields: green, stalled, attempts, finalScore, totalCostUsd); loosened `analyzeE1bArm` param from `readonly SessionRecord[]` to `readonly AnalyzableSession[]`. Zero behavior change; all pre-existing e1b tests pass unmodified.
+- `src/experiment/e2.ts`: implemented rev-2 residual-battery contamination fix. Added `ExcludedCase`, `HiddenBattery` interfaces and exported `buildResidualBattery` helper (exact needle rule from `auditNoContamination`; symmetric exclusion; `leakedBy` order pinned `["human","warboss"]`). `runE2` now: builds both prompts first, calls `buildResidualBattery`, enforces viability guard (≥1 happy AND ≥1 error, throws descriptively naming counts before any session/model call), calls `auditNoContamination([humanPrompt, warbossPrompt], residual)` as belt-and-braces, dispatches all sessions against `residual` (not `task.hidden`), records `hiddenBattery` in artifact, scores `finalVector`/`finalScore`/`coverageSplit`/`e2Criterion` over residual only. Deleted the `as unknown as SessionRecord[]` cast on `analyzeE1bArm` calls (now uses structural subtyping directly). Also deleted the `battery: hidden as unknown as ContractCase[]` cast in `runE2Session` (structural subtyping holds; `HiddenCase` satisfies `ContractCase`). Removed now-unused `ContractCase` import. Updated spec comment to rev 2.
+- `test/e2.test.ts`: imported `buildResidualBattery` and `type AnalyzableSession`; amended AC8 to rev-2 semantics (collision excludes, never aborts; asserts excluded entry, `leakedBy`, sessions ran, `finalVector.length = residualCount`); amended AC9 to assert `hiddenBattery` key with all 5 sub-fields; added AC11 (exclusion rule mechanics + needle polarity examples), AC12 (viability guard — zero error cases and zero happy cases, both assert zero generate calls), AC13 (AnalyzableSession 5-field shape, structural subtyping compiles without cast, grep-level no `as unknown as` in e2.ts).
+
+Files changed: `src/experiment/e1b.ts`, `src/experiment/e2.ts`, `test/e2.test.ts`.
+
+Deviations:
+- The `battery: hidden as unknown as ContractCase[]` cast in `runE2Session` was also deleted (not explicitly scoped in H-17, but AC13's grep assertion covers all `as unknown as` in e2.ts and structural subtyping makes the cast unnecessary). No behavior change.
+- `AnalyzableSession` import was not needed as an explicit type in `e2.ts` (structural inference handles the call sites), so it was not imported there. The import in `test/e2.test.ts` for AC13 verification is sufficient.
+
+Gaps found: none. Spec was unambiguous for all implementation decisions. The belt-and-braces `auditNoContamination` call spec says "by construction it passes; if it throws, the filter itself is defective and the throw stands" — implemented exactly as stated, no UNDECIDED.
+
+Verify:
+- `npm run typecheck`: clean (exit 0, no errors)
+- `npm test`: 177/177 pass, 0 fail. Pre-change suite was 173/173; 4 new tests added (AC11 ×1, AC12 ×2, AC13 ×1). Net: 177/177 all-pass.
+
+Cost/time: ~4 min wall time; no model calls made (offline implementation only).
 
 <!-- ARCHIVED — bodies moved to HANDOFF-archive.md on acceptance
 ### H-15 · E2 contract-authorship runner — `queued`
