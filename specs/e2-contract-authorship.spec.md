@@ -1,6 +1,13 @@
 # Spec — E2 contract authorship (human-authored vs warboss-authored contract)
 
-> Status: active · rev 1 · Feature: e2-contract-authorship · Added: 2026-06-12 · Maps to: PLAN Phase 4 "E2 — contract authorship" + `duh_plan.md:255-261`
+> Status: active · rev 2 · Feature: e2-contract-authorship · Added: 2026-06-12 · Rev 2: 2026-06-12 · Maps to: PLAN Phase 4 "E2 — contract authorship" + `duh_plan.md:255-261`
+> **Rev 2 changes** (driven by the 2026-06-12 live run, `reports/e2-verdict.md`):
+> (1) the fixed hidden battery is replaced by a **contamination-disjoint
+> residual battery** — collided cases are mechanically excluded and recorded,
+> not fatal (rev 1's abort made the criterion unmeasurable whenever warboss's
+> dense authoring re-derived a hidden input); (2) `analyzeE1bArm` is loosened
+> to a structural `AnalyzableSession` param, deleting rev 1's
+> `as unknown as SessionRecord[]` cast (H-15 report gap).
 > Source of truth for the thesis's load-bearing experiment: does a *machine*
 > author (warboss decomposition) write a contract dense enough that the same
 > cheap grunt reaches the same hidden-battery correctness as a human-authored
@@ -39,11 +46,15 @@ offline via the injected fake client.
   passes `expectedHash`. The warboss contract is reconstructed by re-freezing
   the artifact's requirement and its hash is asserted equal to the artifact's
   recorded hash before any session runs — a mismatch throws (no silent drift).
-- **Hidden battery never leaks.** Hidden cases never appear in any prompt,
-  feedback, system string, or in either contract's examples. The contamination
-  audit (`auditNoContamination`) runs over BOTH source prompts before any
-  dispatch. The warboss authoring step never saw the hidden battery (the
-  decompose intent is the public prose only) — E2 inherits, never relaxes, this.
+- **Hidden battery never leaks (rev 2: enforced by exclusion, not abort).**
+  No hidden case that survives into the scoring battery appears in any prompt,
+  feedback, or system string. Rev 2 achieves this by mechanically EXCLUDING
+  every collided case up front (see "Contamination-disjoint residual battery")
+  and then running `auditNoContamination` over BOTH source prompts against the
+  RESIDUAL battery before any dispatch — by construction it passes; if it
+  throws, the filter itself is defective and the throw stands. The warboss
+  authoring step never saw the hidden battery (the decompose intent is the
+  public prose only) — E2 inherits, never relaxes, this.
 - **Grunt is a doer, not a planner.** One `Agent.generate` per attempt; the
   retry loop is `runLoop` (loop-core). E2 keeps no loop logic of its own.
 - **`node:vm` is not a security sandbox.** E2's task stays a pure synchronous
@@ -88,6 +99,74 @@ offline via the injected fake client.
   equivalence is guaranteed by the shared prose intent, not by entry-name
   identity. E2 never rewrites the hidden battery per source.
 
+### Contamination-disjoint residual battery (rev 2, replaces abort-on-collision)
+
+The 2026-06-12 live run proved rev 1's design self-defeating: warboss's dense
+authoring (34 examples, 22 `throws`) re-derived 3 of the 12 hidden inputs
+(`"0s"`, `"30m1h"`, `"-1h"`), and the audit aborted before scoring — the very
+density E2 exists to measure tripped the guard. Rev 2 makes collision a
+**recorded, mechanical exclusion** instead of a fatal event:
+
+1. **Build both prompts first** (unchanged shape, see "Session execution").
+2. **Exclusion rule (one mechanical rule, no judgment):** hidden case `c` is
+   excluded iff for ANY element `inp` of `c.input`, `JSON.stringify(inp)`
+   appears as a substring of EITHER source prompt. This is verbatim the needle
+   rule `auditNoContamination` already uses (`task.ts`) — the filter and the
+   audit can never disagree. Example: hidden input `"0s"` → needle `"0s"`
+   WITH the JSON quotes; it matches a prompt containing
+   `parseDuration("0s") === 0`.
+   - The substring rule over-matches (e.g. needle `"90"` would also match a
+     prompt containing `"90m"` — string inputs carry their quotes, so this
+     particular case does NOT collide; but unquoted numeric needles can
+     over-match). Over-matching is DELIBERATE and safe: a false-positive
+     exclusion only shrinks the battery; a false negative is impossible
+     relative to the audit because the rules are identical.
+3. **Symmetric exclusion:** a case leaked by EITHER prompt is excluded for
+   BOTH sources. Both sources are always scored on the identical residual set
+   (excluding per-source would hand each source a different exam).
+4. **Residual battery** = hidden cases minus exclusions, original order
+   preserved. ALL scoring — `finalVector`, `finalScore`, coverage split,
+   the E2 criterion — runs over the residual ONLY. `finalVector.length` =
+   residual length.
+5. **Residual viability guard:** after exclusion the residual MUST retain
+   ≥ 1 happy case AND ≥ 1 error case (`throws === true`); otherwise →
+   descriptive throw naming the surviving counts, BEFORE any session runs
+   (a battery that cannot produce both halves of the coverage split cannot
+   answer E2). For the 2026-06-12 artifact the residual is 9 of 12
+   (8 happy + 1 error: `garbage-unit`) — thin on the error side but viable.
+6. **Belt-and-braces:** `auditNoContamination([humanPrompt, warbossPrompt],
+   residual)` still runs after filtering. `task.ts` is NOT modified.
+7. **Artifact records the exclusions** (see "Artifact"): every excluded case's
+   `name` plus `leakedBy` — which source prompt(s) contained it
+   (`["human"]`, `["warboss"]`, or both). The verdict needs this to report
+   authoring-density side effects.
+
+Why filter, not regenerate: the battery is a frozen hand-authored asset;
+regenerating it post-authoring would cost a model call and need its own
+contamination proof. Filtering is deterministic, mechanical, and $0.
+
+### Analyzer loosening (rev 2, the only change to `e1b.ts`)
+
+`analyzeE1bArm`'s param type narrows to the five fields it actually reads:
+
+```ts
+export interface AnalyzableSession {
+  readonly green: boolean;
+  readonly stalled: boolean;
+  readonly attempts: number;
+  readonly finalScore: number;
+  readonly totalCostUsd: number;
+}
+export function analyzeE1bArm(
+  feedbackArm: string,
+  sessions: readonly AnalyzableSession[],
+): FeedbackArmAnalysis;
+```
+
+`SessionRecord` and `E2SessionRecord` both satisfy it structurally; `e2.ts`
+deletes the `as unknown as SessionRecord[]` cast. Zero behavior change —
+e1b's own tests pass untouched.
+
 ### Session execution (per source, mirrors e1b)
 
 - One session = one `runLoop` call followed by hidden-battery post-scoring,
@@ -125,8 +204,8 @@ interface E2SessionRecord {
   stalled: boolean;
   green: boolean;                   // passed its OWN source contract
   finalCode: string | undefined;
-  finalVector: readonly boolean[];  // hidden-battery vector, length = hidden.length
-  finalScore: number;               // hidden-battery fraction passed (all 12 cases)
+  finalVector: readonly boolean[];  // RESIDUAL-battery vector, length = residual.length (rev 2)
+  finalScore: number;               // residual-battery fraction passed (rev 2)
   totalCostUsd: number;
   totalWallMs: number;
 }
@@ -138,10 +217,10 @@ interface E2SessionRecord {
   meanCostPerGreenSession / totalCostUsd numbers reuse **`analyzeE1bArm`**
   (exported from `e1b.ts`) — call it per source with that source's sessions.
   (`analyzeE1bArm` keys its result by a string name; pass the source name.)
-- **Coverage split (the E2-specific measurement, NEW):** partition the hidden
-  battery by the `throws` flag once, up front:
-  - `happyIdx` = indices where `hidden[i].throws !== true`.
-  - `errorIdx` = indices where `hidden[i].throws === true`.
+- **Coverage split (the E2-specific measurement):** partition the RESIDUAL
+  battery (rev 2 — never the full battery) by the `throws` flag once, up front:
+  - `happyIdx` = residual indices where `residual[i].throws !== true`.
+  - `errorIdx` = residual indices where `residual[i].throws === true`.
   Per source, over its N sessions:
   - `meanHappyScore` = mean over sessions of (passed happy indices / `happyIdx.length`).
   - `meanErrorScore` = mean over sessions of (passed error indices / `errorIdx.length`).
@@ -220,9 +299,16 @@ interface RunE2Result { readonly deadRun: boolean; }
     "human":   { "hash": "…", "entry": "parseDuration",        "hasErrorExample": false },
     "warboss": { "hash": "…", "entry": "…",                    "hasErrorExample": true  }
   },
+  "hiddenBattery": {
+    "total": 12,
+    "excluded": [ { "name": "zero-seconds", "leakedBy": ["warboss"] } ],
+    "residualCount": 9,
+    "happyCount": 8,
+    "errorCount": 1
+  },
   "analysis": { "human": FeedbackArmAnalysis, "warboss": FeedbackArmAnalysis },
   "coverageSplit": {
-    "happyIdx": [/* hidden indices */], "errorIdx": [/* hidden indices */],
+    "happyIdx": [/* residual indices */], "errorIdx": [/* residual indices */],
     "human":   { "meanHappyScore": 0.0, "meanErrorScore": 0.0 },
     "warboss": { "meanHappyScore": 0.0, "meanErrorScore": 0.0 }
   },
@@ -244,14 +330,17 @@ interface RunE2Result { readonly deadRun: boolean; }
 
 ### Module layout & CLI
 
-```
+```text
 src/experiment/e2.ts    runE2(opts): exported fn + CLI entry
-test/e2.test.ts         AC1–AC10 (offline, fake MessagesClient + fixture artifact)
+src/experiment/e1b.ts   rev 2: AnalyzableSession export + analyzeE1bArm param loosening (only change)
+test/e2.test.ts         AC1–AC13 (offline, fake MessagesClient + fixture artifact)
 ```
 
 - Export from `e2.ts`: `runE2`, `RunE2Options`, `E2SessionRecord`, the coverage
-  helpers needed by tests.
-- Export `formatContractSection` from `arms.ts` (the only change to `arms.ts`).
+  helpers needed by tests, and (rev 2) the residual-battery filter helper so
+  AC11/AC12 can unit-test it directly.
+- Export `formatContractSection` from `arms.ts` (the only change to `arms.ts`,
+  done in rev 1 — already shipped).
 - npm script: `"e2": "node --env-file=.env --import tsx src/experiment/e2.ts"`.
 - CLI flags: `--warboss-artifact <path>` (required for live), `--task`,
   `--n`, `--granularity`, `--out`, `--e1a-arm-d <path>`. **npm eats `--flags`
@@ -284,11 +373,13 @@ test/e2.test.ts         AC1–AC10 (offline, fake MessagesClient + fixture artif
    warboss contract's entry and is non-degenerate (not forced all-false by an
    entry-name mismatch). The human session scores through `parseDuration`.
 
-5. **AC5 — coverage split.** Synthetic sessions with known `finalVector`s over a
-   hidden battery containing both `throws !== true` and `throws === true` cases →
-   `coverageSplit.happyIdx` / `errorIdx` partition exactly by the flag;
-   `meanHappyScore` / `meanErrorScore` per source equal the hand-computed means.
-   A task whose hidden battery has no error-path case → `meanErrorScore: null`.
+5. **AC5 — coverage split (rev 2: over the residual).** Synthetic sessions with
+   known `finalVector`s over a RESIDUAL battery containing both `throws !== true`
+   and `throws === true` cases → `coverageSplit.happyIdx` / `errorIdx` partition
+   exactly by the flag over residual indices; `meanHappyScore` / `meanErrorScore`
+   per source equal the hand-computed means. A residual with no error-path case
+   is unreachable in rev 2 (the viability guard throws first — AC12); the
+   `meanErrorScore: null` branch remains only for the helper's direct unit test.
 
 6. **AC6 — static contract coverage.** For the real `duration-parse` human
    contract, `contracts.human.hasErrorExample === false`; a warboss contract
@@ -300,35 +391,70 @@ test/e2.test.ts         AC1–AC10 (offline, fake MessagesClient + fixture artif
    `pass: false` with the degenerate-baseline detail. `detail` carries both
    means in all three.
 
-8. **AC8 — contamination audit over both prompts.** A warboss contract whose
-   examples include a hidden-battery input → `auditNoContamination` throws naming
-   the offending case, before any session runs (the same guard e1b uses, now
-   spanning both source prompts).
+8. **AC8 — collision excludes, never aborts (rev 2, replaces rev 1's
+   abort-on-collision).** A warboss contract whose examples include hidden
+   input `"X"` (a happy case) → `runE2` does NOT throw; the case appears in
+   `hiddenBattery.excluded` with `leakedBy: ["warboss"]`; sessions run; every
+   `finalVector` has length `residualCount`; and
+   `auditNoContamination([humanPrompt, warbossPrompt], residual)` was satisfied
+   (no throw). The full battery is never scored.
 
 9. **AC9 — artifact structure & costs.** `runE2` with fake client, `n: 1`,
    injected warboss contract writes exactly one `runs/e2-<ts>.json` and one
    `cost-ledger-<ts>.jsonl`; artifact has `config`, `contracts` keyed
-   `human`/`warboss`, `analysis`, `coverageSplit`, `e2Criterion`,
-   `grindingCostUsd` (= ledger sum), `authoringCostUsd` (= `0` for injected
-   contract; = the artifact's `totalCostUsd` when reconstructed from a path),
-   `totalCostUsd` (= grinding only), `ledger`, and `sessions` of length `2n`.
+   `human`/`warboss`, `hiddenBattery` (rev 2: `total`, `excluded`,
+   `residualCount`, `happyCount`, `errorCount`), `analysis`, `coverageSplit`,
+   `e2Criterion`, `grindingCostUsd` (= ledger sum), `authoringCostUsd` (= `0`
+   for injected contract; = the artifact's `totalCostUsd` when reconstructed
+   from a path), `totalCostUsd` (= grinding only), `ledger`, and `sessions` of
+   length `2n`.
 
 10. **AC10 — dead-run guard.** `live: true` + fake client yielding all-zero
     final scores → `deadRun: true` stamped and `{ deadRun: true }` returned;
     same fixture `live: false` → no dead-run failure; `live: true` with nonzero
     scores and cost → `deadRun: false`.
 
+11. **AC11 — exclusion rule mechanics (rev 2).** Fixture where the warboss
+    contract's examples contain hidden input `"X"` and the HUMAN contract's
+    examples contain hidden input `"Y"` (both happy cases, distinct) → both
+    cases excluded; `excluded` entries carry `leakedBy: ["warboss"]` and
+    `leakedBy: ["human"]` respectively; an input present in BOTH prompts →
+    `leakedBy: ["human", "warboss"]` (array order pinned: human first);
+    residual preserves the original hidden order minus exclusions. Needle
+    examples (kill both readings): string input `"90"` → needle `"90"`
+    INCLUDING the JSON quotes, which is NOT a substring of a prompt containing
+    only `parseDuration("90m") === 5400` (after `90` comes `m`, not a quote) →
+    NOT excluded; numeric input `90` → needle `90` WITHOUT quotes, which IS a
+    substring of that same prompt → excluded (deliberate over-match, assert
+    it).
+
+12. **AC12 — residual viability guard (rev 2).** Fixture whose exclusions
+    leave zero error-path cases in the residual (e.g. the only `throws` hidden
+    input appears in the warboss examples) → descriptive throw naming the
+    surviving happy/error counts, BEFORE any session runs (fake client records
+    zero generate calls). Same for zero happy cases.
+
+13. **AC13 — analyzer loosening (rev 2).** `e1b.ts` exports
+    `AnalyzableSession` with exactly the five fields pinned in Decisions;
+    `analyzeE1bArm` accepts `readonly AnalyzableSession[]`; `e2.ts` contains
+    no `as unknown as` cast (grep-assertable); `npm run typecheck` passes and
+    every pre-existing e1b test passes unmodified.
+
 ## Verifies-with
 
-- Tests: `test/e2.test.ts` — AC1–AC10, offline, fake `MessagesClient` + a small
+- Tests: `test/e2.test.ts` — AC1–AC13, offline, fake `MessagesClient` + a small
   fixture decompose artifact (written by the test into a temp `out` dir).
-- Integration (live, God-gated, two spends, sequenced):
-  1. `decompose-run` against the duration-parse intent scoped to one function
-     (`--max-requirements 1`), producing a `runs/decompose-….json` whose single
-     requirement carries the mandated error example. (~$0.10–0.30 HIGH tier.)
+- Integration (live, God-gated — rev 2 needs ONE spend, the authoring artifact
+  already exists):
+  1. ~~decompose-run~~ DONE 2026-06-12: `runs/decompose-20260612T132205Z.json`
+     ($0.1632, 1 requirement, 34 examples / 22 throws, admitted, auditGaps 0).
+     Reuse it — do not re-author.
   2. `node --env-file=.env --import tsx src/experiment/e2.ts --warboss-artifact
-     runs/decompose-….json --n 30 --granularity full` (~$0.10 LOW tier).
-  Verdict written to `reports/e2-verdict.md`.
+     runs/decompose-20260612T132205Z.json --n 30 --granularity full`
+     (~$0.10 LOW tier). Expected exclusions vs that artifact: `zero-seconds`
+     (`"0s"`), `reversed-order` (`"30m1h"`), `negative` (`"-1h"`) — all
+     `leakedBy: ["warboss"]`; residual 9 (8 happy + 1 error).
+  Verdict appended to `reports/e2-verdict.md` (rev-2 section).
 - Falsifies / experiment link: **E2** (PLAN pre-registered). Sharp prediction:
   the warboss arm's `meanErrorScore` exceeds the human arm's (which is ~0, the
   human contract pins no error behavior), lifting `warboss.meanFinalHiddenScore`

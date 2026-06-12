@@ -67,9 +67,8 @@ three funded live runs of 2026-06-11):
   `runGateCalibration`/`runDeriveCalibration` return type (pin `{ deadRun }`);
   decompose-run — `deadRun` key on healthy artifacts (omit vs `false`), CRLF
   final-newline strip, `runDecompose` return shape, `--max-requirements` NaN
-  guard; e2 — `analyzeE1bArm`'s param is `SessionRecord` (requires `feedbackArm`)
-  but `E2SessionRecord` omits it, bridged by `as unknown as SessionRecord[]`
-  cast; rev 2 loosen the analyzer to a structural subset type or pin the cast.
+  guard; ~~e2 — `analyzeE1bArm` cast~~ → folded into e2 spec rev 2 / H-17
+  (`AnalyzableSession` structural loosening).
 - **Cost-ledger JSONL sidecar — RULING PINNED (H-16):** every experiment runner
   writes ONE `cost-ledger-<ts>.jsonl` alongside its `<run>-<ts>.json` artifact
   (e1b, calibrate-gate, calibrate-derive, e2 all do). Resolves the H-13/H-14
@@ -86,18 +85,32 @@ three funded live runs of 2026-06-11):
   (`specs/README.md` Rules): every normative sentence maps to an AC that fails
   when violated; kill second readings with an example; one AC per state
   transition.
-- **Live spends now unlocked (God-gated, both cheap, sequence each):**
-  (1) **E2** — first run `decompose-run` against the duration-parse intent
-  scoped to one function (`--max-requirements 1`, ~$0.10–0.30 HIGH), then
-  `node --env-file=.env --import tsx src/experiment/e2.ts --warboss-artifact
-  runs/decompose-<ts>.json --n 30 --granularity full` (~$0.10 LOW). Sharp
-  prediction: warboss `meanErrorScore` >> human's ~0 (human contract pins no
-  error behavior) lifts warboss hidden score past E1b's 0.750 plateau and ≥
-  0.90× human. Verdict → `reports/e2-verdict.md`. (2) **derive-calibration** —
-  `node --env-file=.env --import tsx src/experiment/calibrate-derive.ts --n 20`
-  (~$0.07). Win = density tracks right (decidedRate B > A, reversing gruntJudge)
-  AND config C enumerates the bare-number hole gruntJudge missed 20/20. Verdict
-  → `reports/derive-calibration-verdict.md`.
+- **Both God-gated spends RAN 2026-06-12 (total $0.241).** Results:
+  - **E2 attempt 1: UNMEASURABLE, not falsified** (`reports/e2-verdict.md`).
+    Warboss authored 34 examples / 22 throws (vs human 5 / 0) for $0.1632 —
+    thesis mechanism confirmed qualitatively — but that density re-derived 3
+    hidden inputs (`"0s"`, `"30m1h"`, `"-1h"`) and the contamination audit
+    aborted BEFORE scoring ($0 grinding spent). Fix = **H-17 / e2 spec rev 2**
+    (residual-battery exclusion). The authoring artifact
+    `runs/decompose-20260612T132205Z.json` is reusable — re-run costs only
+    ~$0.10 grinding after H-17 merges.
+  - **derive-calibration: FAIL as gate**
+    (`reports/derive-calibration-verdict.md`, $0.0778). `decidedRate` 0.000 on
+    ALL configs (metric saturates — one hole flips a run UNDECIDED); worse,
+    precision broken: config B pins `parseDuration("90") === 90` in-prompt yet
+    deriveCheck flags bare-number underivable 20/20 (false positive), while
+    config A — where the hole is REAL — flags it only 2/20. Mirror pathology
+    of gruntJudge (over-confident, 0 recall) vs deriveCheck (over-skeptical,
+    low precision). **Cheap-judge gate line shelved by default (two FAILs);
+    probe stays mandatory.** Open option if God wants one more datum: MID-tier
+    comparison (~$0.10) before burying it; rev-2 instrument ideas in the
+    verdict (hole-level matrix metric, subtract-pinned-set prompt).
+- **decompose-run rev 2 gap list grew:** `--max-requirements` is a
+  post-validation cap only — never surfaced into the decompose prompt
+  (`warboss.ts:306`), so the model freely split duration-parse into 6 reqs and
+  the run fail-closed. Workaround used: `--context` SCOPE CONSTRAINT demanding
+  one atomic requirement. Rev 2 should inject the cap into the prompt.
+  (Joins the 4 H-14 gaps + jsonl-sidecar adoption already queued above.)
 - Offline trick: an EMPTY fake-client response is the only way to force
   `generationFailed` — `extractCode` falls back to raw trimmed text.
 - Tooling: npm eats `--flags` on Windows — invoke live runners directly
@@ -111,8 +124,61 @@ three funded live runs of 2026-06-11):
 
 ## Active items
 
-_None queued. Next leg opens here. (H-15, H-16 accepted 2026-06-12 — bodies in
-archive. The two live runs they enable are God-gated spends, sequenced below.)_
+### H-17 · E2 rev 2 — residual-battery contamination fix — `queued`
+
+**Spec (frozen):** [e2-contract-authorship.spec.md](specs/e2-contract-authorship.spec.md) **rev 2**.
+**Worktree:** your assigned worktree only — never the main checkout (rule 4).
+**First action in the worktree:** `git checkout main -- specs/e2-contract-authorship.spec.md HANDOFF.md`
+(worktrees branch from session-start HEAD, NOT the planner's latest commit —
+H-15/H-16 lesson; do not assume the rev-2 spec is at your HEAD).
+
+**Why this item exists:** the 2026-06-12 live run (`reports/e2-verdict.md`)
+proved rev 1 self-defeating — warboss's dense authoring re-derived 3 hidden
+inputs and the contamination audit aborted before any scoring. Rev 2 turns
+collision into a recorded, mechanical exclusion so the ≥0.90× criterion is
+measurable. The expensive authoring artifact already exists and is reusable.
+
+**Scope checklist:**
+
+- `src/experiment/e2.ts`: implement the rev-2 "Contamination-disjoint residual
+  battery" stage — build both prompts, exclude every hidden case whose
+  `JSON.stringify(input element)` needle appears in EITHER prompt (verbatim
+  the `auditNoContamination` needle rule; `task.ts` is NOT modified), record
+  `hiddenBattery: { total, excluded: [{ name, leakedBy }], residualCount,
+  happyCount, errorCount }` in the artifact, score EVERYTHING (finalVector,
+  finalScore, coverage split, criterion) over the residual only, enforce the
+  residual viability guard (≥1 happy AND ≥1 error, else descriptive throw
+  before any session), keep the post-filter `auditNoContamination` call as
+  belt-and-braces. Export the filter helper for direct unit tests. Delete the
+  `as unknown as SessionRecord[]` cast.
+- `src/experiment/e1b.ts` (only change): export `AnalyzableSession` (the five
+  fields pinned in the spec) and loosen `analyzeE1bArm`'s param to
+  `readonly AnalyzableSession[]`. Zero behavior change; e1b tests pass
+  unmodified.
+- `test/e2.test.ts`: amend AC5/AC8/AC9 per rev 2; add AC11–AC13. Offline,
+  fake client.
+- No `package.json` change. No change to `arms.ts`, `task.ts`, `loop.ts`,
+  `gate.ts`, `decompose-run.ts`, `warboss.ts`.
+
+**Notes down:**
+
+- AC11's needle semantics are worked out in the spec with both polarity
+  examples (quoted `"90"` vs unquoted `90`) — implement substring match of
+  the JSON needle exactly; over-exclusion from unquoted numeric needles is
+  deliberate and asserted, not a bug to fix.
+- `leakedBy` array order is pinned: `["human", "warboss"]` when both leak.
+- Residual preserves original hidden-battery order; `finalVector.length` =
+  residual length everywhere (sessions, coverage split, artifact).
+- AC12 must assert the fake client recorded ZERO generate calls when the
+  viability guard throws (guard fires before any dispatch).
+- AC13 is partly grep-level: no `as unknown as` anywhere in `e2.ts`.
+- npm eats `--flags` on Windows — CLI tested via `node` direct invocation.
+- Worktree grunts cannot `git merge` — sync via `git checkout main -- <paths>`,
+  commit in your worktree.
+
+**Report back:**
+
+_(implementer fills: Done / Deviations / Gaps found / Verify / Cost-time)_
 
 <!-- ARCHIVED — bodies moved to HANDOFF-archive.md on acceptance
 ### H-15 · E2 contract-authorship runner — `queued`
