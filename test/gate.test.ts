@@ -8,7 +8,7 @@ import { Ledger } from "../src/cost.ts";
 import { Contract, type ContractCase } from "../src/contract.ts";
 import { ContractHashMismatch } from "../src/runner.ts";
 import { TIERS } from "../src/models.ts";
-import { gruntJudge, convergenceProbe } from "../src/gate.ts";
+import { gruntJudge, convergenceProbe, deriveCheck } from "../src/gate.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -532,4 +532,93 @@ test("AC10 tampered contract — ContractHashMismatch propagates", async () => {
       }),
     ContractHashMismatch,
   );
+});
+
+// ── gate-judge-derive AC1–AC4 — see specs/gate-judge-derive.spec.md (rev 1) ───
+
+const DERIVE_SYSTEM =
+  "You are the implementer who will receive this task. Do NOT rate your confidence. Mechanically enumerate the concrete inputs whose exact required output you cannot derive from the task text alone. First line of your reply: exactly DECIDED if you can derive the output for every input, or exactly UNDECIDED otherwise. If UNDECIDED, list each underivable input as a \"- \" bullet — the concrete input value followed by the one behavior the task leaves open — one per line, nothing else.";
+
+// ── AC1: deriveCheck — DECIDED parse ─────────────────────────────────────────
+
+test("derive AC1 deriveCheck DECIDED parse", async () => {
+  const captured: Anthropic.MessageCreateParamsNonStreaming[] = [];
+  const client = scriptedClient(["DECIDED"], (body) => captured.push(body));
+  const { agent } = makeAgent(client);
+
+  const verdict = await deriveCheck({
+    agent,
+    prompt: "Write a function that adds two numbers.",
+  });
+
+  assert.equal(verdict.ready, true);
+  assert.deepEqual(verdict.undecided, []);
+  assert.equal(verdict.malformed, false);
+
+  // Pinned system string, user === prompt verbatim, max_tokens 1024, no thinking.
+  assert.equal(captured.length, 1);
+  const body = captured[0]!;
+  assert.equal(body.system, DERIVE_SYSTEM);
+  assert.equal(
+    body.messages[0]!.content as string,
+    "Write a function that adds two numbers.",
+  );
+  assert.equal(body.max_tokens, 1024);
+  assert.ok(!("thinking" in body), "no thinking key");
+});
+
+// ── AC2: deriveCheck — UNDECIDED parse ───────────────────────────────────────
+
+test("derive AC2 deriveCheck UNDECIDED parse", async () => {
+  const response =
+    'UNDECIDED\n- "90": is a bare number seconds or minutes?\n- empty string behavior?';
+  const client = scriptedClient([response]);
+  const { agent } = makeAgent(client);
+
+  const verdict = await deriveCheck({ agent, prompt: "Parse duration strings." });
+
+  assert.equal(verdict.ready, false);
+  assert.equal(verdict.malformed, false);
+  assert.deepEqual(verdict.undecided, [
+    '"90": is a bare number seconds or minutes?',
+    "empty string behavior?",
+  ]);
+});
+
+// ── AC3: deriveCheck — fails closed ──────────────────────────────────────────
+
+test("derive AC3a deriveCheck malformed response — fails closed", async () => {
+  const client = scriptedClient(["I think I can mostly do this."]);
+  const { agent } = makeAgent(client);
+
+  const verdict = await deriveCheck({ agent, prompt: "some task" });
+
+  assert.equal(verdict.ready, false);
+  assert.equal(verdict.malformed, true);
+  assert.deepEqual(verdict.undecided, []);
+});
+
+test("derive AC3b deriveCheck always-throws client — malformed shape, costUsd:0, raw empty", async () => {
+  const { agent } = makeAgent(alwaysThrowsClient());
+
+  const verdict = await deriveCheck({ agent, prompt: "some task" });
+
+  assert.equal(verdict.ready, false);
+  assert.equal(verdict.malformed, true);
+  assert.deepEqual(verdict.undecided, []);
+  assert.equal(verdict.costUsd, 0);
+  assert.equal(verdict.raw, "");
+});
+
+// ── AC4: deriveCheck — DECIDED with stray bullets stays decided-empty ─────────
+
+test("derive AC4 deriveCheck DECIDED with stray bullets stays decided-empty", async () => {
+  const client = scriptedClient(["DECIDED\n- ignored bullet"]);
+  const { agent } = makeAgent(client);
+
+  const verdict = await deriveCheck({ agent, prompt: "some task" });
+
+  assert.equal(verdict.ready, true);
+  assert.deepEqual(verdict.undecided, []);
+  assert.equal(verdict.malformed, false);
 });
