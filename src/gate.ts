@@ -30,6 +30,21 @@ export interface GruntJudgeVerdict {
   costUsd: number;
 }
 
+export interface DeriveCheckOptions {
+  agent: Agent; // the tier that would DO the work (LOW by policy)
+  prompt: string; // the EXACT dispatch environment, verbatim
+  kind?: string; // ledger kind, default "gate.derive"
+  tags?: Record<string, string | number>;
+}
+
+export interface DeriveCheckVerdict {
+  ready: boolean; // true iff first line is exactly DECIDED
+  undecided: readonly string[]; // enumerated underivable inputs, empty when ready
+  malformed: boolean; // true → ready forced false (fail closed)
+  raw: string;
+  costUsd: number;
+}
+
 export interface ProbeOptions {
   agent: Agent;
   contract: Contract;
@@ -61,6 +76,9 @@ export interface ProbeVerdict {
 
 const JUDGE_SYSTEM =
   "You are the implementer who will receive this task. Judge ONLY whether the task is fully decided — zero interpretation latitude left. First line of your reply: exactly READY or NOT READY. If NOT READY, list every undecided question as a \"- \" bullet, one per line, nothing else.";
+
+const DERIVE_SYSTEM =
+  "You are the implementer who will receive this task. Do NOT rate your confidence. Mechanically enumerate the concrete inputs whose exact required output you cannot derive from the task text alone. First line of your reply: exactly DECIDED if you can derive the output for every input, or exactly UNDECIDED otherwise. If UNDECIDED, list each underivable input as a \"- \" bullet — the concrete input value followed by the one behavior the task leaves open — one per line, nothing else.";
 
 const PROBE_DEFAULT_SYSTEM =
   "Implement the requested function in JavaScript. Output ONLY one fenced code block. No prose.";
@@ -130,6 +148,73 @@ function parseJudgeResponse(raw: string, costUsd: number): GruntJudgeVerdict {
 
   // Anything else → malformed; never a green light.
   return { ready: false, questions: [], malformed: true, raw, costUsd };
+}
+
+// ── deriveCheck ──────────────────────────────────────────────────────────────
+
+/**
+ * One LOW-tier call that asks the implementer to mechanically enumerate the
+ * concrete inputs whose required output it cannot derive from the prompt — a
+ * recall task, not a confidence call (the gate-calibration rework hypothesis).
+ * Fail-closed: malformed is never a green light. Sibling of gruntJudge; shares
+ * its API-attempt loop and parse skeleton.
+ */
+export async function deriveCheck(
+  opts: DeriveCheckOptions,
+): Promise<DeriveCheckVerdict> {
+  const kind = opts.kind ?? "gate.derive";
+
+  // Attempt up to MAX_API_ATTEMPTS (3 total).
+  let raw = "";
+  let costUsd = 0;
+
+  for (let attempt = 0; attempt < MAX_API_ATTEMPTS; attempt++) {
+    try {
+      const result = await opts.agent.generate({
+        system: DERIVE_SYSTEM,
+        prompt: opts.prompt,
+        maxTokens: 1024,
+        kind,
+        ...(opts.tags ? { tags: opts.tags } : {}),
+      });
+      raw = result.text;
+      costUsd = result.costUsd;
+      break; // success
+    } catch {
+      if (attempt === MAX_API_ATTEMPTS - 1) {
+        // All attempts exhausted — treat as malformed, costUsd: 0, raw: "".
+        return { ready: false, undecided: [], malformed: true, raw: "", costUsd: 0 };
+      }
+      // else: retry
+    }
+  }
+
+  return parseDeriveResponse(raw, costUsd);
+}
+
+function parseDeriveResponse(raw: string, costUsd: number): DeriveCheckVerdict {
+  // Find first non-empty trimmed line.
+  const lines = raw.split("\n");
+  const firstLine = lines.find((l) => l.trim().length > 0)?.trim() ?? "";
+
+  if (firstLine === "DECIDED") {
+    return { ready: true, undecided: [], malformed: false, raw, costUsd };
+  }
+
+  if (firstLine === "UNDECIDED") {
+    // Subsequent lines matching /^- / (after .trim()) become undecided entries.
+    const undecided: string[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const trimmed = lines[i]!.trim();
+      if (trimmed.startsWith("- ")) {
+        undecided.push(trimmed.slice(2));
+      }
+    }
+    return { ready: false, undecided, malformed: false, raw, costUsd };
+  }
+
+  // Anything else → malformed; never a green light. Fail closed.
+  return { ready: false, undecided: [], malformed: true, raw, costUsd };
 }
 
 // ── convergenceProbe ─────────────────────────────────────────────────────────

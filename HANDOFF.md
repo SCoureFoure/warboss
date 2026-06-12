@@ -85,7 +85,80 @@ three funded live runs of 2026-06-11):
 
 ## Active items
 
-_None queued. Next leg opens here._
+### H-15 · E2 contract-authorship runner — `queued`
+
+**Spec (frozen):** [e2-contract-authorship.spec.md](specs/e2-contract-authorship.spec.md) rev 1.
+**Worktree:** your assigned worktree only — never the main checkout (rule 4).
+
+**Scope checklist:**
+
+- `src/experiment/e2.ts`: `runE2(opts)` + CLI entry guarded like `e1b.ts`.
+  Two contract sources (`human` = `task.grader`, `warboss` = reconstructed
+  from a decompose artifact), N sessions each via `runLoop`, hidden-battery
+  post-scoring, coverage split (happy/error by `throws`), pre-registered E2
+  criterion (warboss ≥ 0.90 × human hidden score), separate
+  authoring/grinding cost fields, dead-run guard, timestamped artifact +
+  jsonl cost log.
+- Export `formatContractSection` from `src/experiment/arms.ts` (only change
+  to that file) and reuse it; reuse `analyzeE1bArm` + `SessionRecord` from
+  `e1b.ts`, `runLoop`, `judge`, `loadTask`, `auditNoContamination`,
+  `GRUNT_DOGMA`. No loop logic of your own.
+- `test/e2.test.ts`: AC1–AC10, offline, fake client + a fixture decompose
+  artifact written into a temp `out` dir.
+- `package.json`: add `"e2": "node --env-file=.env --import tsx src/experiment/e2.ts"`.
+
+**Notes down:**
+
+- Reconstruct the warboss contract by re-freezing the artifact's single
+  requirement and ASSERT its hash equals the artifact's recorded
+  `contracts[0].hash` — mismatch throws. Exactly-one-requirement rule.
+- Entry names may differ between sources and that is correct — score each
+  arm's hidden battery through its OWN contract's entry. Do not "fix" a
+  mismatch (spec "Entry-name independence").
+- `meanErrorScore` is `null` (not 0) when a task's hidden battery has no
+  error-path case.
+- npm eats `--flags` on Windows — the CLI is invoked via `node` directly;
+  test the CLI path accordingly (do not rely on `npm run e2 -- --flag`).
+- Worktree grunts cannot `git merge` (permission layer) — sync planner files
+  via `git checkout main -- <paths>` if needed; commit in your worktree.
+
+### H-16 · gate-judge derive-check + calibration runner — `queued`
+
+**Spec (frozen):** [gate-judge-derive.spec.md](specs/gate-judge-derive.spec.md) rev 1.
+**Worktree:** your assigned worktree only — never the main checkout (rule 4).
+
+**Scope checklist:**
+
+- `src/gate.ts`: add `deriveCheck(opts)` beside `gruntJudge` — mechanical
+  DECIDED/UNDECIDED enumeration instrument, fail-closed, shares the
+  API-attempt/parse skeleton. Pinned system string + parse rules in spec.
+- `src/experiment/calibrate-derive.ts`: `runDeriveCalibration(opts)` + CLI
+  entry — near-clone of `calibrate-gate.ts`, calls `deriveCheck`, reports
+  per-config DECIDED rate + enumerated underivable inputs vs the pinned r2
+  anchors, dead-run guard, timestamped artifact + jsonl cost log.
+- `test/gate.test.ts`: AC1–AC4 (beside the `gruntJudge` cases).
+  `test/calibrate-derive.test.ts`: AC5–AC9. Offline, fake client.
+- `package.json`: add `"calibrate-derive": "node --env-file=.env --import tsx src/experiment/calibrate-derive.ts"`.
+
+**Notes down:**
+
+- `deriveCheck` is the gate-calibration FAIL rework: enumeration (recall),
+  NOT confidence (`gruntJudge`). Do not collapse the two — keep both
+  instruments exported.
+- Bullets are harvested ONLY under an `UNDECIDED` first line (AC4 kills the
+  "always harvest bullets" reading). `DECIDED` → `undecided: []` regardless of
+  trailing bullets.
+- The runner computes NO pass/fail — it juxtaposes DECIDED rate + enumerated
+  inputs against `{ A: 0.60, B: 0.967, C: 0.967 }`; interpretation is human.
+- npm eats `--flags` on Windows — CLI invoked via `node` directly.
+- Worktree grunts cannot `git merge` — sync via `git checkout main -- <paths>`,
+  commit in your worktree.
+
+> **Parallel-dispatch note (planner):** H-15 and H-16 both add one line to
+> `package.json` scripts and both add test files — expect a trivial
+> `package.json` scripts-block merge conflict, resolved by the planner at
+> merge. No other overlap (H-15 touches `e2.ts`/`arms.ts`; H-16 touches
+> `gate.ts`/`calibrate-derive.ts`).
 
 ---
 
