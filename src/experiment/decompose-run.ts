@@ -7,7 +7,7 @@
  * semantics live in `specs/warboss-decomposition.spec.md`; this module never
  * re-validates or re-parses model output.
  *
- * Spec: specs/decompose-run.spec.md (rev 1).
+ * Spec: specs/decompose-run.spec.md (rev 1; rev 4 warboss call-site update).
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -39,6 +39,7 @@ export interface DecomposeArtifact {
   readonly requirements: readonly RequirementDraft[];
   readonly contracts: readonly { id: string; hash: string; version: string }[];
   readonly auditGaps: readonly string[];
+  readonly escalations: readonly string[];
   readonly admission: {
     readonly admitted: readonly string[];
     readonly kickedBack: readonly {
@@ -68,7 +69,9 @@ export async function runDecompose(
   const clientOpt = opts.client !== undefined ? { client: opts.client } : {};
 
   const decomposeAgent = new Agent(TIERS.HIGH, ledger, clientOpt);
-  const judgeAgent = new Agent(TIERS.LOW, ledger, clientOpt);
+  // rev 4: probe agent for admission (LOW tier); every contract will kick back with
+  // the no-battery question until probe-battery authoring exists (a follow-on leg).
+  const probeAgent = new Agent(TIERS.LOW, ledger, clientOpt);
 
   const draftSet = await decompose({
     agent: decomposeAgent,
@@ -80,8 +83,13 @@ export async function runDecompose(
     tags: { ...RUN_TAGS },
   });
 
+  // rev 4: probe-only admission; empty probes map → every contract kicks back
+  // with the no-battery question (deliberate — probe-battery authoring is a follow-on leg).
   const admission = await admit(draftSet, {
-    judgeAgent,
+    probe: {
+      agent: probeAgent,
+      probes: new Map(),
+    },
     tags: { ...RUN_TAGS },
   });
 
@@ -108,6 +116,7 @@ export async function runDecompose(
       version: c.version,
     })),
     auditGaps: draftSet.auditGaps,
+    escalations: draftSet.escalations,
     admission: {
       admitted: admission.admitted.map((c) => c.hash),
       kickedBack: admission.kickedBack.map((kb) => ({
