@@ -853,3 +853,92 @@ All four gaps are spec defects, mine — `deadRun` key on healthy artifacts,
 CRLF strip, return shape, `--max-requirements` NaN guard go to
 decompose-run rev 2.
 
+
+---
+
+## H-15 · E2 contract-authorship runner
+
+**Spec:** [e2-contract-authorship.spec.md](specs/e2-contract-authorship.spec.md) rev 1.
+**Commit:** `85d2055` (worktree branch), merged to main.
+
+**Scope:** `runE2` — human (`task.grader`) vs warboss (reconstructed from a
+decompose artifact) contract driving the same LOW grunt loop; hidden-score
+happy/error split; pre-registered E2 criterion (warboss ≥ 0.90 × human);
+authoring vs grinding cost split; AC1–AC10.
+
+**Report back (implementer):**
+
+- **Done:** `src/experiment/e2.ts` (`runE2` + CLI; sources human/warboss;
+  warboss reconstructed with exactly-one-requirement + hash-integrity assert;
+  thin `runE2Session` → `runLoop`; hidden scored through each source's own
+  entry; coverage split happy/error by `throws`, empty subset → `null`;
+  `evaluateE2Criterion` with degenerate-human guard; `hasErrorExample`;
+  `grindingCostUsd`/`authoringCostUsd` split, `totalCostUsd` = grinding;
+  dead-run guard; `e2-<ts>.json` + `cost-ledger-<ts>.jsonl`). Exported
+  `formatContractSection` from `arms.ts` (only change). `test/e2.test.ts`
+  AC1–AC10. `package.json` `"e2"` script.
+- **Deviations:** AC9 single-file count asserted in a fresh temp dir (second
+  isolated run) since AC9 body reuses a shared dir — behaviorally faithful.
+  Copied file-private `runWithConcurrency` into `e2.ts` rather than widen
+  e1b's export surface (gate.ts sets the same precedent). CLI parsed via
+  direct `node` invocation (npm eats `--flags` on Windows).
+- **Gaps found:** `E2SessionRecord` is pinned WITHOUT `feedbackArm` (source is
+  the partition key) but `analyzeE1bArm`'s param type `SessionRecord` requires
+  it; `analyzeE1bArm` only reads `green/stalled/attempts/finalScore/totalCostUsd`
+  (all present) → bridged with `as unknown as SessionRecord[]` at the call
+  site, marked `// UNDECIDED:` (~e2.ts:376). Rev-2 candidate: loosen
+  `analyzeE1bArm` to a structural subset type, or pin the cast.
+- **Verify:** typecheck clean; full suite (run as `node --import tsx --test`,
+  npm/npx blocked by worktree permission layer) 162/162; e2 file 15/15.
+  No live run.
+- **Cost/time:** ~12 min, $0 (offline).
+
+**Verdict (planner, 2026-06-12):** accepted. Re-verified on main post-merge:
+typecheck clean, `npm test` 173/173. Both deviations ruled correct (concurrency
+copy matches gate.ts precedent; isolated count-run is faithful). The
+`analyzeE1bArm`/`E2SessionRecord` cast is a real spec gap → e2 rev 2 (loosen
+the analyzer param to a structural subset). Process: worktree branched from
+session-start HEAD `842a753`, one commit behind the spec commit `3ca4329` —
+recovered via `git checkout main -- <spec paths>` (clean, byte-identical). See
+standing-notes lesson.
+
+---
+
+## H-16 · gate-judge derive-check + calibration runner
+
+**Spec:** [gate-judge-derive.spec.md](specs/gate-judge-derive.spec.md) rev 1.
+**Commit:** `534e9ce` (worktree branch), merged to main.
+
+**Scope:** `deriveCheck` mechanical-enumeration readiness instrument (gruntJudge
+rework) + `runDeriveCalibration` runner over the r2 A/B/C configs; AC1–AC9.
+
+**Report back (implementer):**
+
+- **Done:** `src/gate.ts` `deriveCheck` + types beside `gruntJudge` (unchanged,
+  still exported); byte-exact `DERIVE_SYSTEM`; shared `MAX_API_ATTEMPTS`/parse
+  skeleton; `maxTokens` 1024, no thinking; fail-closed; exhausted →
+  `{ready:false,undecided:[],malformed:true,raw:"",costUsd:0}`; kind
+  `gate.derive`. `src/experiment/calibrate-derive.ts` `runDeriveCalibration` +
+  CLI (near-clone of calibrate-gate; per-config decidedCount/decidedRate/
+  malformedCount/undecided, anchors verbatim, no pass/fail, dead-run guard).
+  `test/gate.test.ts` AC1–AC4 (`derive AC…` prefixed); `test/calibrate-derive.test.ts`
+  AC5–AC9. `package.json` `"calibrate-derive"` script.
+- **Deviations:** test labels prefixed `derive AC1..4` to avoid colliding with
+  the file's existing AC1–AC10. AC8 asserts exactly one `cost-ledger-*.jsonl`
+  written (spec-literal "emits one") — the jsonl-sidecar harmonization the
+  standing notes flagged; wrote one, matching calibrate-gate. Commit carries 3
+  planner files synced via `git checkout main -- …`, byte-identical to main.
+- **Gaps found:** `runDeriveCalibration` return type unpinned (same gap as
+  H-13's `runGateCalibration`) → implemented `{ deadRun }`, marked
+  `// UNDECIDED:`. `loadTask` cwd-relative carried verbatim (inherited
+  gate-calibration gap, not re-marked).
+- **Verify:** typecheck clean; `npm test` 158/158; new derive AC1–4 + AC5–9
+  green, existing gruntJudge/probe cases unchanged. No live run.
+- **Cost/time:** ~12 min, $0 (offline).
+
+**Verdict (planner, 2026-06-12):** accepted. Re-verified on main post-merge:
+173/173, typecheck clean. AC8 jsonl assertion settles the standing
+H-13/H-14 inconsistency — **ruling: experiment runners write one
+`cost-ledger-<ts>.jsonl` sidecar** (calibrate-gate/e1b/e2 all do; decompose-run
+rev 2 should adopt). `runDeriveCalibration` return type → gate-calibration-family
+rev 2 (pin `{ deadRun }`).

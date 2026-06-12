@@ -62,16 +62,42 @@ three funded live runs of 2026-06-11):
   (`runs/decompose-20260612T022857Z.json`, $0.26): 6 requirements, all carry
   throws examples (mandate held), auditGaps 0, 5 admitted, 1 kicked back with
   a genuine catch (tags '#'-strip ambiguity). Substrate works end-to-end.
-- Spec gaps for rev 2s (all planner defects, from H-13/H-14 reports):
-  gate-calibration — cwd-relative `loadTask` path, unpinned return type;
+- Spec gaps for rev 2s (all planner defects, from H-13/H-14/H-15/H-16 reports):
+  gate-calibration / calibrate-derive — cwd-relative `loadTask` path, unpinned
+  `runGateCalibration`/`runDeriveCalibration` return type (pin `{ deadRun }`);
   decompose-run — `deadRun` key on healthy artifacts (omit vs `false`), CRLF
   final-newline strip, `runDecompose` return shape, `--max-requirements` NaN
-  guard. Also harmonize the cost-ledger JSONL sidecar ruling (H-13 wrote one
-  per notes-down, H-14 omitted it per spec-literal — both accepted, pin one).
+  guard; e2 — `analyzeE1bArm`'s param is `SessionRecord` (requires `feedbackArm`)
+  but `E2SessionRecord` omits it, bridged by `as unknown as SessionRecord[]`
+  cast; rev 2 loosen the analyzer to a structural subset type or pin the cast.
+- **Cost-ledger JSONL sidecar — RULING PINNED (H-16):** every experiment runner
+  writes ONE `cost-ledger-<ts>.jsonl` alongside its `<run>-<ts>.json` artifact
+  (e1b, calibrate-gate, calibrate-derive, e2 all do). Resolves the H-13/H-14
+  inconsistency; decompose-run rev 2 should adopt the sidecar.
+- **Worktree branch-point lesson (H-15/H-16):** the Agent worktree isolation
+  branched both grunts from the SESSION-START HEAD (`842a753`), NOT from the
+  planner's post-dispatch spec commit (`3ca4329`) — so committing the spec to
+  main before dispatch did NOT place it at worktree HEAD (rule 4's premise is
+  weaker than assumed). Both grunts recovered cleanly via
+  `git checkout main -- <spec paths>` (byte-identical → merges clean). Standing
+  defense: dispatch prompts must instruct the grunt to `git checkout main --`
+  its spec/HANDOFF paths at start; do not assume the spec is at worktree HEAD.
 - Entropy-reduction authoring mandates are binding for every new spec/AC
   (`specs/README.md` Rules): every normative sentence maps to an AC that fails
   when violated; kill second readings with an example; one AC per state
   transition.
+- **Live spends now unlocked (God-gated, both cheap, sequence each):**
+  (1) **E2** — first run `decompose-run` against the duration-parse intent
+  scoped to one function (`--max-requirements 1`, ~$0.10–0.30 HIGH), then
+  `node --env-file=.env --import tsx src/experiment/e2.ts --warboss-artifact
+  runs/decompose-<ts>.json --n 30 --granularity full` (~$0.10 LOW). Sharp
+  prediction: warboss `meanErrorScore` >> human's ~0 (human contract pins no
+  error behavior) lifts warboss hidden score past E1b's 0.750 plateau and ≥
+  0.90× human. Verdict → `reports/e2-verdict.md`. (2) **derive-calibration** —
+  `node --env-file=.env --import tsx src/experiment/calibrate-derive.ts --n 20`
+  (~$0.07). Win = density tracks right (decidedRate B > A, reversing gruntJudge)
+  AND config C enumerates the bare-number hole gruntJudge missed 20/20. Verdict
+  → `reports/derive-calibration-verdict.md`.
 - Offline trick: an EMPTY fake-client response is the only way to force
   `generationFailed` — `extractCode` falls back to raw trimmed text.
 - Tooling: npm eats `--flags` on Windows — invoke live runners directly
@@ -85,6 +111,10 @@ three funded live runs of 2026-06-11):
 
 ## Active items
 
+_None queued. Next leg opens here. (H-15, H-16 accepted 2026-06-12 — bodies in
+archive. The two live runs they enable are God-gated spends, sequenced below.)_
+
+<!-- ARCHIVED — bodies moved to HANDOFF-archive.md on acceptance
 ### H-15 · E2 contract-authorship runner — `queued`
 
 **Spec (frozen):** [e2-contract-authorship.spec.md](specs/e2-contract-authorship.spec.md) rev 1.
@@ -159,6 +189,7 @@ three funded live runs of 2026-06-11):
 > `package.json` scripts-block merge conflict, resolved by the planner at
 > merge. No other overlap (H-15 touches `e2.ts`/`arms.ts`; H-16 touches
 > `gate.ts`/`calibrate-derive.ts`).
+-->
 
 ---
 
@@ -166,6 +197,8 @@ three funded live runs of 2026-06-11):
 
 | Item | What | Outcome |
 | --- | --- | --- |
+| **H-16** · gate-judge derive-check | `deriveCheck` mechanical-enumeration instrument + `calibrate-derive` runner (`src/gate.ts`, `src/experiment/calibrate-derive.ts`), AC1–AC9 | accepted 2026-06-12, 173/173; jsonl-sidecar ruling pinned; return-type gap → rev 2 |
+| **H-15** · E2 contract-authorship | `runE2` human-vs-warboss contract on the grunt loop, happy/error hidden split, ≥0.90× criterion (`src/experiment/e2.ts`), AC1–AC10 | accepted 2026-06-12, 173/173; `analyzeE1bArm`/`E2SessionRecord` cast → e2 rev 2 |
 | **H-14** · decompose-run CLI | `runDecompose` + `decompose` script (`src/experiment/decompose-run.ts`), AC1–AC6 | accepted 2026-06-11; 4 spec gaps → decompose-run rev 2 (see standing notes) |
 | **H-13** · gate-calibration runner | `runGateCalibration` + `calibrate-gate` script, AC1–AC5 | accepted 2026-06-11; 2 spec gaps → gate-calibration rev 2; live verdict in `reports/gate-calibration-verdict.md` |
 | **H-12** · audit-unavailable sentinel | rev-3 sentinel in `decompose` stage 4 + AC10/AC11 (`src/warboss.ts`) | accepted 2026-06-11, 135/135; stale-worktree lesson → rule 4 |
