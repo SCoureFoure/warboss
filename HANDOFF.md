@@ -172,23 +172,11 @@ live spend.** Frozen-spec scope bodies live in each spec + the Log table below._
 
 **Standing notes carried from Leg 7 (rev-2 candidates surfaced at build/merge):**
 
-- **NEXT live step (God-gated, ~$0.15): the E4 run — BUT read the contamination
-  caveat first.** `tasks/duration-parse/god-answers.json` is authored (3 knowns:
-  `"120"`→throws, `" 1h 30m "`→5400, `"1.5h"`→5400). The run is
-  `node --env-file=.env --import tsx src/experiment/e4.ts --n 30 --granularity full`.
-  **Design tension to resolve BEFORE spending:** `renderOwnerDecisions` writes
-  the ruling INPUT literal into the warboss `context` (`parseDuration("120")
-  throws`), so all three contested inputs leak into the warboss prompt → the E2
-  residual filter EXCLUDES them from the God battery → E4 cannot score the very
-  cases it exists to measure (spec AC7 accepted this; it guts pre-reg
-  prediction #1). **e4 rev-2 candidate (do before the live run): render
-  owner decisions as PROSE-ONLY behavior (no input literal), e.g. "a bare number
-  with no unit throws", so the oracle keeps the contested cases.**
-- **e4 rev-2 (cost ledger):** `runE2` owns its own `Ledger`/sidecar and takes no
-  external ledger, so E4 emits TWO `cost-ledger-*.jsonl` (authoring + grinding)
-  instead of one; the artifact's merged `ledger` array is complete. Fix = thread
-  an optional shared `Ledger` into `runE2`. (H-21 deviation 1, `// UNDECIDED:` in
-  `e4.ts`.)
+- **e4 rev-2 BOTH deviations → SPECED as H-26 (active item below), the live-run
+  blocker.** (1) Prose-only owner decisions so the contested inputs survive the
+  residual (rev-1 leaked the input literal into the warboss `context` → all three
+  excluded → prediction #1 un-measurable). (2) Single shared `Ledger` into
+  `runE2` (rev 1 emitted two sidecars). The E4 live run is gated on H-26 landing.
 - **e3-needle-matcher rev-2 (spec defect, found by the H-25 grunt):** AC5 as
   written ("every needle is a contested literal OR contains a space/hyphen")
   CONTRADICTS the pinned needle lists, which include single-word needles
@@ -201,6 +189,52 @@ live spend.** Frozen-spec scope bodies live in each spec + the Log table below._
   ever committed, AC4 should read it directly.
 - **probe `signature` typed `unknown` (H-23):** `RawTask.signature` is `unknown`
   (not `string?`) so `loadTask` can validate + throw on a non-string. Intended.
+
+### H-26 · E4 rev 2 — prose-only owner decisions + shared ledger (unblocks the live E4 run) — `queued`
+
+**Spec (frozen):** [e4-battery-authoring.spec.md](specs/e4-battery-authoring.spec.md) rev 2.
+**Worktree:** your assigned worktree only — never the main checkout (rule 4).
+
+**Scope checklist:**
+
+- `src/experiment/e4.ts` rev 2:
+  - `renderOwnerDecisions(rulings)` → PROSE ONLY: one bullet per ruling = the
+    ruling's `decision` string verbatim, asset order. NO `entry(args)` form, NO
+    input literal, NO `===`. (Drop the rev-1 `<entry>(<args>) throws/=== <json>`
+    rendering and the `entry` param.)
+  - Self-leak guard (in `loadGodAnswers` or `renderOwnerDecisions`): throw if a
+    ruling's `decision` contains `JSON.stringify(<any input element>)` of its OWN
+    input — before any model call. `rationale` is exempt (never rendered).
+  - E4 owns ONE `Ledger` with a `jsonlFileSink`; pass it to `runE2` via the new
+    `ledger?` option so only ONE `cost-ledger-<ts>.jsonl` is written. Remove the
+    rev-1 `// UNDECIDED:` two-sidecar note.
+- `src/experiment/e2.ts` rev 4: add optional `ledger?: Ledger` to `RunE2Options`.
+  When present, `runE2` meters into it and opens NO sink of its own; absent →
+  byte-identical to rev 3 (every existing e2 test passes unmodified).
+- `src/experiment/task.ts` (god-answers schema): each ruling gains REQUIRED
+  `decision: string` (literal-free); `rationale` becomes optional + never
+  rendered. `loadGodAnswers` validates `decision` present + string + self-leak
+  guard. (If `loadGodAnswers`/types live in `e4.ts`, change there — pin to where
+  H-21 put them.)
+- `tasks/duration-parse/god-answers.json`: rewrite — add a literal-free
+  `decision` to each of the 3 rulings; move any input-literal phrasing into
+  `rationale`. Keep residual viable (≥1 happy + ≥1 error).
+- `test/e4.test.ts`: revise AC3 (prose-only render), AC7 (contested cases
+  SURVIVE), add AC8 (self-leak guard throws), AC9 (single shared sidecar — assert
+  `runE2` opened no second sink). Keep AC1/AC2/AC4/AC5/AC6/AC10.
+
+**Notes down:**
+
+- This is the experiment's load-bearing fix: with input literals out of the
+  warboss prompt, the warboss author picks its own example inputs and the
+  contested God-battery cases survive to be scored. Do NOT reintroduce the input
+  literal "for clarity" — the `decision` prose must stand alone.
+- The general E2 residual filter still runs as a backstop (a coincidental
+  warboss example == a God input excludes that one case + records it) — that is
+  fine; the self-leak guard only prevents the GUARANTEED leak from our own
+  rendering.
+- After H-26 lands, the live E4 run is unblocked (~$0.15, God-gated): the owner
+  must ensure `god-answers.json` has the `decision` fields first.
 
 _Full H-21…H-25 scope bodies: the frozen specs (`specs/`) + the Log table
 below. Per-item build outcomes recorded in the Log._
