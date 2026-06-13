@@ -1,6 +1,6 @@
 import { Contract, type ContractCase } from "./contract.ts";
 import { Agent } from "./agent.ts";
-import { gruntJudge, convergenceProbe } from "./gate.ts";
+import { convergenceProbe } from "./gate.ts";
 
 export class DecompositionParseError extends Error {
   constructor(
@@ -13,18 +13,27 @@ export class DecompositionParseError extends Error {
   }
 }
 
+// rev 4: fiat-flagging type
+export interface Resolution {
+  point: string;    // the behavior the intent leaves open, one sentence
+  chosen: string;   // the behavior the examples now pin, one phrase
+  basis: "intent" | "fiat"; // intent = forced by the intent text; fiat = warboss's coin flip
+}
+
 export interface RequirementDraft {
   id: string;
   requirement: string;
   entry: string;
   signature: string;
   examples: ContractCase[];
+  resolutions: Resolution[]; // rev 4: MANDATORY field (may be empty); shape-checked
 }
 
 export interface DraftSet {
   requirements: readonly RequirementDraft[];
   contracts: readonly Contract[];
   auditGaps: readonly string[];
+  escalations: readonly string[];  // rev 4: God-facing kick-back questions
   costUsd: number;
 }
 
@@ -36,11 +45,11 @@ export interface DecomposeOptions {
   tags?: Record<string, string | number>;
 }
 
+// rev 4: judgeAgent DELETED; probe REQUIRED
 export interface AdmitOptions {
-  judgeAgent: Agent;
-  probe?: {
+  probe: {
     agent: Agent;
-    probes: ReadonlyMap<string, readonly ContractCase[]>;
+    probes: ReadonlyMap<string, readonly ContractCase[]>; // requirement id → probe battery
     k?: number;
   };
   tags?: Record<string, string | number>;
@@ -52,11 +61,13 @@ export interface AdmissionReport {
   costUsd: number;
 }
 
+// rev 4: exact string from spec
 const DECOMPOSE_SYSTEM =
-  "You are a warboss: you convert intent into requirements so decided that the cheapest implementer cannot misread them. State every behavior as a mechanical rule (input → output), never as intent. A rule no example can falsify is forbidden. If a sentence allows two readings, add the example that kills the wrong one. If behavior depends on order or state (sequences, retries, resets), include one example per distinct transition. Output ONLY one fenced json block matching the requested schema. Every requirement must include at least one error-behavior example (invalid input → throws). No prose outside the fence.";
+  "You are a warboss: you convert intent into requirements so decided that the cheapest implementer cannot misread them. State every behavior as a mechanical rule (input → output), never as intent. A rule no example can falsify is forbidden. If a sentence allows two readings, add the example that kills the wrong one. If behavior depends on order or state (sequences, retries, resets), include one example per distinct transition. Where the intent does not decide a behavior and you chose one, you MUST record that choice in the requirement's resolutions array with basis \"fiat\"; record choices the intent itself forces with basis \"intent\". A choice baked into examples without a resolutions entry is a defect. Output ONLY one fenced json block matching the requested schema. Every requirement must include at least one error-behavior example (invalid input → throws). No prose outside the fence.";
 
+// rev 4: exact string from spec
 const AUDIT_SYSTEM =
-  'You wrote the following contracts. List every behavior a reasonable implementer could interpret in more than one way that the examples do not pin. Output ONLY one fenced json block: an array of {"id": "<requirement id>", "gap": "<one sentence>"}. Empty array if none.';
+  'You wrote the following contracts. List every behavior a reasonable implementer could interpret in more than one way that the examples do not pin. For each, decide whether the original intent (quoted after the contracts) determines the correct behavior. Output ONLY one fenced json block: an array of {"id": "<requirement id>", "gap": "<one sentence>", "intentDecides": true or false}. Empty array if none.';
 
 // Audit double parse-failure sentinel (spec rev 3, pinned — copied verbatim).
 const AUDIT_UNAVAILABLE_SENTINEL =
@@ -71,6 +82,9 @@ const SCHEMA_TEXT = `Output a JSON array of requirements. Schema for each item:
   "examples": [
     { "name": "example-name", "input": [...], "expected": <value> },
     { "name": "error-case-name", "input": [...], "expected": "<throws>", "throws": true }
+  ],
+  "resolutions": [
+    { "point": "one sentence describing the open behavior", "chosen": "one phrase describing the pinned behavior", "basis": "intent" or "fiat" }
   ]
 }`;
 
@@ -80,15 +94,57 @@ function extractFencedJson(text: string): string | null {
   return null;
 }
 
-interface RawDraft {
-  id: unknown;
-  requirement: unknown;
-  entry: unknown;
-  signature: unknown;
-  examples: unknown;
+// Intermediate type: after parse (stage 2) but before mechanical validation (stage 3).
+// resolutions is unknown here — it is shape-checked in validateDrafts (stage 3),
+// NOT in shapeCheckDrafts (stage 2). Per spec, resolutions validation is stage-3
+// mechanical validation; a failure there throws directly (no re-ask).
+interface ParsedDraft {
+  id: string;
+  requirement: string;
+  entry: string;
+  signature: string;
+  examples: ContractCase[];
+  resolutions: unknown; // validated in stage 3
 }
 
-function shapeCheckDrafts(parsed: unknown): RequirementDraft[] {
+function shapeCheckResolutions(resolutions: unknown, id: string): Resolution[] {
+  // rev 4 stage-3: resolutions must be present and an array
+  if (!Array.isArray(resolutions)) {
+    throw new Error(
+      `Validation failed: requirement '${id}' has missing or non-array 'resolutions' field`,
+    );
+  }
+  return resolutions.map((r: unknown, ri: number) => {
+    if (typeof r !== "object" || r === null) {
+      throw new Error(
+        `Validation failed: requirement '${id}', resolutions[${ri}]: not an object`,
+      );
+    }
+    const res = r as Record<string, unknown>;
+    if (typeof res["point"] !== "string") {
+      throw new Error(
+        `Validation failed: requirement '${id}', resolutions[${ri}]: 'point' must be a string`,
+      );
+    }
+    if (typeof res["chosen"] !== "string") {
+      throw new Error(
+        `Validation failed: requirement '${id}', resolutions[${ri}]: 'chosen' must be a string`,
+      );
+    }
+    if (res["basis"] !== "intent" && res["basis"] !== "fiat") {
+      throw new Error(
+        `Validation failed: requirement '${id}', resolutions[${ri}]: 'basis' must be exactly "intent" or "fiat", got ${JSON.stringify(res["basis"])}`,
+      );
+    }
+    return {
+      point: res["point"] as string,
+      chosen: res["chosen"] as string,
+      basis: res["basis"] as "intent" | "fiat",
+    };
+  });
+}
+
+function shapeCheckDrafts(parsed: unknown): ParsedDraft[] {
   if (!Array.isArray(parsed)) {
     throw new Error("Expected a JSON array of requirements");
   }
@@ -96,14 +152,14 @@ function shapeCheckDrafts(parsed: unknown): RequirementDraft[] {
     if (typeof item !== "object" || item === null) {
       throw new Error(`Item at index ${idx} is not an object`);
     }
-    const raw = item as RawDraft;
-    if (typeof raw.id !== "string") throw new Error(`Item ${idx}: 'id' must be a string`);
-    if (typeof raw.requirement !== "string") throw new Error(`Item ${idx}: 'requirement' must be a string`);
-    if (typeof raw.entry !== "string") throw new Error(`Item ${idx}: 'entry' must be a string`);
-    if (typeof raw.signature !== "string") throw new Error(`Item ${idx}: 'signature' must be a string`);
-    if (!Array.isArray(raw.examples)) throw new Error(`Item ${idx}: 'examples' must be an array`);
+    const raw = item as Record<string, unknown>;
+    if (typeof raw["id"] !== "string") throw new Error(`Item ${idx}: 'id' must be a string`);
+    if (typeof raw["requirement"] !== "string") throw new Error(`Item ${idx}: 'requirement' must be a string`);
+    if (typeof raw["entry"] !== "string") throw new Error(`Item ${idx}: 'entry' must be a string`);
+    if (typeof raw["signature"] !== "string") throw new Error(`Item ${idx}: 'signature' must be a string`);
+    if (!Array.isArray(raw["examples"])) throw new Error(`Item ${idx}: 'examples' must be an array`);
 
-    const examples: ContractCase[] = raw.examples.map((ex: unknown, ei: number) => {
+    const examples: ContractCase[] = (raw["examples"] as unknown[]).map((ex: unknown, ei: number) => {
       if (typeof ex !== "object" || ex === null) {
         throw new Error(`Item ${idx}, example ${ei}: not an object`);
       }
@@ -117,19 +173,21 @@ function shapeCheckDrafts(parsed: unknown): RequirementDraft[] {
       };
     });
 
+    // resolutions: pass through as unknown — shape-checked in validateDrafts (stage 3)
     return {
-      id: raw.id,
-      requirement: raw.requirement,
-      entry: raw.entry,
-      signature: raw.signature,
+      id: raw["id"] as string,
+      requirement: raw["requirement"] as string,
+      entry: raw["entry"] as string,
+      signature: raw["signature"] as string,
       examples,
+      resolutions: raw["resolutions"],
     };
   });
 }
 
 function parseWithReask(
   text: string,
-): { drafts: RequirementDraft[]; error?: undefined } | { drafts?: undefined; error: string } {
+): { drafts: ParsedDraft[]; error?: undefined } | { drafts?: undefined; error: string } {
   const jsonStr = extractFencedJson(text);
   if (jsonStr === null) {
     return { error: "No fenced JSON block found in response" };
@@ -143,18 +201,22 @@ function parseWithReask(
   }
 }
 
-function validateDrafts(drafts: RequirementDraft[], maxRequirements: number): void {
-  if (drafts.length === 0) {
+// Stage 3 mechanical validation: validates all fields including resolutions (rev 4),
+// returns fully-typed RequirementDraft[] (resolutions shape-checked here, not in stage 2).
+function validateDrafts(parsedDrafts: ParsedDraft[], maxRequirements: number): RequirementDraft[] {
+  if (parsedDrafts.length === 0) {
     throw new Error("Validation failed: requirements array is empty");
   }
-  if (drafts.length > maxRequirements) {
+  if (parsedDrafts.length > maxRequirements) {
     throw new Error(
-      `Validation failed: ${drafts.length} requirements exceeds maxRequirements (${maxRequirements})`,
+      `Validation failed: ${parsedDrafts.length} requirements exceeds maxRequirements (${maxRequirements})`,
     );
   }
 
   const idSet = new Set<string>();
-  for (const draft of drafts) {
+  const validated: RequirementDraft[] = [];
+
+  for (const draft of parsedDrafts) {
     if (idSet.has(draft.id)) {
       throw new Error(`Validation failed: duplicate id '${draft.id}'`);
     }
@@ -196,7 +258,21 @@ function validateDrafts(drafts: RequirementDraft[], maxRequirements: number): vo
         nameSet.add(ex.name);
       }
     }
+
+    // rev 4 stage-3: resolutions field is mandatory and shape-checked here (not in parse stage)
+    const resolutions = shapeCheckResolutions(draft.resolutions, draft.id);
+
+    validated.push({
+      id: draft.id,
+      requirement: draft.requirement,
+      entry: draft.entry,
+      signature: draft.signature,
+      examples: draft.examples,
+      resolutions,
+    });
   }
+
+  return validated;
 }
 
 async function callDecompose(
@@ -217,10 +293,13 @@ async function callDecompose(
 async function callAudit(
   agent: Agent,
   drafts: RequirementDraft[],
+  intent: string,
   tags: Record<string, string | number> | undefined,
 ): Promise<{ text: string; costUsd: number }> {
+  // rev 4: user prompt carries drafts JSON then the exact line `Original intent:` + intent text
+  const userPrompt = `${JSON.stringify(drafts)}\n\nOriginal intent:\n${intent}`;
   const result = await agent.generate({
-    prompt: JSON.stringify(drafts),
+    prompt: userPrompt,
     system: AUDIT_SYSTEM,
     maxTokens: 8192,
     kind: "warboss.audit",
@@ -235,6 +314,7 @@ async function callAmend(
   gaps: Array<{ id: string; gap: string }>,
   tags: Record<string, string | number> | undefined,
 ): Promise<{ text: string; costUsd: number }> {
+  // AC14, capture-asserted: only amendable (intentDecides: true) gaps are passed here
   const userPrompt =
     `Here are the requirement drafts:\n${JSON.stringify(drafts)}\n\nHere are the audit gaps:\n${JSON.stringify(gaps)}\n\nAdd examples to the requirements that pin each gap. Output the full amended RequirementDraft[] array in the same JSON schema.`;
   const result = await agent.generate({
@@ -247,19 +327,34 @@ async function callAmend(
   return { text: result.text, costUsd: result.costUsd };
 }
 
-function parseAuditGaps(text: string): Array<{ id: string; gap: string }> | null {
+interface RawGapEntry {
+  id: string;
+  gap: string;
+  intentDecides: boolean;
+}
+
+function parseAuditGaps(text: string): Array<RawGapEntry> | null {
   const jsonStr = extractFencedJson(text);
   if (jsonStr === null) return null;
   try {
     const parsed = JSON.parse(jsonStr);
     if (!Array.isArray(parsed)) return null;
-    return parsed.filter(
-      (item: unknown): item is { id: string; gap: string } =>
-        typeof item === "object" &&
-        item !== null &&
-        typeof (item as Record<string, unknown>)["id"] === "string" &&
-        typeof (item as Record<string, unknown>)["gap"] === "string",
-    );
+    // Drop entries missing string id or gap (rev 3 filtering, unchanged)
+    // intentDecides fail-closed: non-boolean → false (rev 4)
+    return parsed
+      .filter(
+        (item: unknown): item is Record<string, unknown> =>
+          typeof item === "object" &&
+          item !== null &&
+          typeof (item as Record<string, unknown>)["id"] === "string" &&
+          typeof (item as Record<string, unknown>)["gap"] === "string",
+      )
+      .map((item: Record<string, unknown>) => ({
+        id: item["id"] as string,
+        gap: item["gap"] as string,
+        // fail-closed: non-boolean → false → escalate
+        intentDecides: item["intentDecides"] === true,
+      }));
   } catch {
     return null;
   }
@@ -269,10 +364,14 @@ export async function decompose(opts: DecomposeOptions): Promise<DraftSet> {
   const maxRequirements = opts.maxRequirements ?? 8;
   let totalCost = 0;
 
+  // rev 4: requirement-count cap line injected into the user prompt (exact line from spec)
+  const capLine = `At most ${maxRequirements} requirement(s). If the intent needs more, it must be decomposed further UP the chain — do not exceed the cap.`;
+
   let userPrompt = opts.intent;
   if (opts.context) {
     userPrompt += "\n\n" + opts.context;
   }
+  userPrompt += "\n\n" + capLine;
   userPrompt += "\n\n" + SCHEMA_TEXT;
 
   // Stage 1 — Call 1: decompose
@@ -281,7 +380,7 @@ export async function decompose(opts: DecomposeOptions): Promise<DraftSet> {
 
   // Stage 2 — Parse with one re-ask
   const parse1 = parseWithReask(call1.text);
-  let drafts: RequirementDraft[];
+  let parsedDrafts: ParsedDraft[];
 
   if (parse1.error !== undefined) {
     const reaskPrompt =
@@ -297,24 +396,25 @@ export async function decompose(opts: DecomposeOptions): Promise<DraftSet> {
         call2.text,
       );
     }
-    drafts = parse2.drafts;
+    parsedDrafts = parse2.drafts;
   } else {
-    drafts = parse1.drafts;
+    parsedDrafts = parse1.drafts;
   }
 
-  // Stage 3 — Mechanical validation
-  validateDrafts(drafts, maxRequirements);
+  // Stage 3 — Mechanical validation (includes resolutions shape check, rev 4)
+  let drafts: RequirementDraft[] = validateDrafts(parsedDrafts, maxRequirements);
 
   let auditGaps: readonly string[] = [];
+  let escalations: readonly string[] = [];
 
   // Stage 4 — Call 2: self-audit
-  const auditCall1 = await callAudit(opts.agent, drafts, opts.tags);
+  const auditCall1 = await callAudit(opts.agent, drafts, opts.intent, opts.tags);
   totalCost += auditCall1.costUsd;
 
   let gaps = parseAuditGaps(auditCall1.text);
   if (gaps === null) {
     const reaskAuditPrompt =
-      `${JSON.stringify(drafts)}\n\nPrevious output (truncated):\n${auditCall1.text.slice(0, 2000)}\n\nPlease output ONLY one fenced json block of gaps.`;
+      `${JSON.stringify(drafts)}\n\nOriginal intent:\n${opts.intent}\n\nPrevious output (truncated):\n${auditCall1.text.slice(0, 2000)}\n\nPlease output ONLY one fenced json block of gaps.`;
     const auditCall2 = await opts.agent.generate({
       prompt: reaskAuditPrompt,
       system: AUDIT_SYSTEM,
@@ -334,34 +434,52 @@ export async function decompose(opts: DecomposeOptions): Promise<DraftSet> {
     }
   }
 
-  // Stage 5 — Call 3: amend (only if gaps != [])
+  // Stage 5 — Call 3: amend (only if amendable gaps != [])
+  // rev 4: Gap routing — partition by intentDecides
   if (gaps.length > 0) {
-    // Record pre-amend example counts per id to detect whether amend addressed each gap
-    const preAmendCounts = new Map<string, number>(
-      drafts.map((d) => [d.id, d.examples.length]),
+    const amendableGaps = gaps.filter((g) => g.intentDecides === true);
+    const undecidedGaps = gaps.filter((g) => g.intentDecides === false);
+
+    // intent-undecided gaps → escalations (NEVER amended)
+    const undecidedEscalations = undecidedGaps.map(
+      (g) => `${g.id}: intent-undecided — ${g.gap}`,
     );
 
-    const amendCall = await callAmend(opts.agent, drafts, gaps, opts.tags);
-    totalCost += amendCall.costUsd;
+    let remainingAuditGaps: string[] = [];
 
-    const amendedParse = parseWithReask(amendCall.text);
-    if (amendedParse.error === undefined) {
-      validateDrafts(amendedParse.drafts, maxRequirements);
-      drafts = amendedParse.drafts;
-      // A gap is considered unaddressed if the requirement's example count did not increase
-      const remainingGaps = gaps.filter((gap) => {
-        const req = drafts.find((d) => d.id === gap.id);
-        if (!req) return true;
-        return req.examples.length <= (preAmendCounts.get(gap.id) ?? 0);
-      });
-      auditGaps = remainingGaps.map((g) => `${g.id}: ${g.gap}`);
-    } else {
-      // Amend parse failed — carry all gaps forward, keep original drafts
-      auditGaps = gaps.map((g) => `${g.id}: ${g.gap}`);
+    if (amendableGaps.length > 0) {
+      // Record pre-amend example counts per id to detect whether amend addressed each gap
+      const preAmendCounts = new Map<string, number>(
+        drafts.map((d) => [d.id, d.examples.length]),
+      );
+
+      // Amend-prompt purity (AC14, capture-asserted): only amendable gaps passed
+      const amendCall = await callAmend(opts.agent, drafts, amendableGaps, opts.tags);
+      totalCost += amendCall.costUsd;
+
+      const amendedParse = parseWithReask(amendCall.text);
+      if (amendedParse.error === undefined) {
+        drafts = validateDrafts(amendedParse.drafts, maxRequirements);
+        // A gap is considered unaddressed if the requirement's example count did not increase
+        const stillUnpinned = amendableGaps.filter((gap) => {
+          const req = drafts.find((d) => d.id === gap.id);
+          if (!req) return true;
+          return req.examples.length <= (preAmendCounts.get(gap.id) ?? 0);
+        });
+        remainingAuditGaps = stillUnpinned.map((g) => `${g.id}: ${g.gap}`);
+      } else {
+        // Amend parse failed — carry all amendable gaps forward, keep original drafts
+        remainingAuditGaps = amendableGaps.map((g) => `${g.id}: ${g.gap}`);
+      }
     }
+
+    auditGaps = remainingAuditGaps;
+    // undecidedEscalations collected here; fiat escalations added below after freeze
+    escalations = undecidedEscalations;
   }
 
   // Stage 6 — Freeze
+  // resolutions is draft metadata — NOT part of Contract.freeze canonical form
   const contracts = drafts.map((draft) =>
     Contract.freeze({
       requirement: draft.requirement,
@@ -371,10 +489,26 @@ export async function decompose(opts: DecomposeOptions): Promise<DraftSet> {
     }),
   );
 
+  // rev 4: Escalations — fiat resolutions → escalations (fiat first, requirement order, then array order)
+  // Then intent-undecided entries (already in escalations from above)
+  const fiatEscalations: string[] = [];
+  for (const draft of drafts) {
+    for (const res of draft.resolutions) {
+      if (res.basis === "fiat") {
+        fiatEscalations.push(`${draft.id}: fiat — ${res.point} → ${res.chosen}`);
+      }
+    }
+  }
+
+  // Ordering: fiat entries first (requirement order, then array order within requirement),
+  // then intent-undecided entries in audit-output order
+  escalations = [...fiatEscalations, ...escalations];
+
   return {
     requirements: drafts,
     contracts,
     auditGaps,
+    escalations,
     costUsd: totalCost,
   };
 }
@@ -395,52 +529,51 @@ export async function admit(draft: DraftSet, opts: AdmitOptions): Promise<Admiss
 
   for (const contract of draft.contracts) {
     const prompt = buildAdmitPrompt(contract);
-    const verdict = await gruntJudge({
-      agent: opts.judgeAgent,
-      prompt,
-      kind: "gate.judge",
-      ...(opts.tags !== undefined ? { tags: opts.tags } : {}),
-    });
-    totalCost += verdict.costUsd;
 
-    if (!verdict.ready) {
-      kickedBack.push({ contract, questions: verdict.questions });
+    // rev 4: probe-only admission; gruntJudge is gone from this path
+    // Find the requirement id for this contract by re-freezing to match hash
+    const req = draft.requirements.find((r) => {
+      const frozen = Contract.freeze({
+        requirement: r.requirement,
+        entry: r.entry,
+        version: "1",
+        examples: r.examples,
+      });
+      return frozen.hash === contract.hash;
+    });
+
+    const reqId = req?.id;
+    const probeArr = reqId !== undefined ? opts.probe.probes.get(reqId) : undefined;
+
+    if (probeArr === undefined) {
+      // no probe battery for this id → kicked back, fail-closed (rev 4, exact string from spec)
+      kickedBack.push({
+        contract,
+        questions: [
+          `no probe battery supplied for '${reqId ?? contract.hash}' — admission is probe-only and fails closed`,
+        ],
+      });
       continue;
     }
 
-    if (opts.probe) {
-      const req = draft.requirements.find((r) => {
-        const frozen = Contract.freeze({
-          requirement: r.requirement,
-          entry: r.entry,
-          version: "1",
-          examples: r.examples,
-        });
-        return frozen.hash === contract.hash;
+    // Probe battery present → run convergenceProbe
+    const probeVerdict = await convergenceProbe({
+      agent: opts.probe.agent,
+      contract,
+      prompt,
+      probes: probeArr as ContractCase[],
+      ...(opts.probe.k !== undefined ? { k: opts.probe.k } : {}),
+      ...(opts.tags !== undefined ? { tags: opts.tags } : {}),
+    });
+    totalCost += probeVerdict.costUsd;
+
+    if (!probeVerdict.ready) {
+      const probeQuestions = probeVerdict.disagreements.map((d) => {
+        const splitJson = JSON.stringify(d.split);
+        return `probe disagreement on ${d.name ?? `probe ${d.probeIndex}`}: survivors split ${splitJson}`;
       });
-
-      const probeArr = req ? opts.probe.probes.get(req.id) : undefined;
-
-      if (probeArr !== undefined) {
-        const probeVerdict = await convergenceProbe({
-          agent: opts.probe.agent,
-          contract,
-          prompt,
-          probes: probeArr as ContractCase[],
-          ...(opts.probe.k !== undefined ? { k: opts.probe.k } : {}),
-          ...(opts.tags !== undefined ? { tags: opts.tags } : {}),
-        });
-        totalCost += probeVerdict.costUsd;
-
-        if (!probeVerdict.ready) {
-          const probeQuestions = probeVerdict.disagreements.map((d) => {
-            const splitJson = JSON.stringify(d.split);
-            return `probe disagreement on ${d.name ?? `probe ${d.probeIndex}`}: survivors split ${splitJson}`;
-          });
-          kickedBack.push({ contract, questions: probeQuestions });
-          continue;
-        }
-      }
+      kickedBack.push({ contract, questions: probeQuestions });
+      continue;
     }
 
     admitted.push(contract);

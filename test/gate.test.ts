@@ -1,4 +1,4 @@
-/** AC1–AC10 — gate instruments: gruntJudge and convergenceProbe */
+/** AC1–AC16 — gate instruments: gruntJudge, convergenceProbe, intentProbe */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -8,7 +8,7 @@ import { Ledger } from "../src/cost.ts";
 import { Contract, type ContractCase } from "../src/contract.ts";
 import { ContractHashMismatch } from "../src/runner.ts";
 import { TIERS } from "../src/models.ts";
-import { gruntJudge, convergenceProbe, deriveCheck } from "../src/gate.ts";
+import { gruntJudge, convergenceProbe, deriveCheck, intentProbe } from "../src/gate.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -621,4 +621,465 @@ test("derive AC4 deriveCheck DECIDED with stray bullets stays decided-empty", as
   assert.equal(verdict.ready, true);
   assert.deepEqual(verdict.undecided, []);
   assert.equal(verdict.malformed, false);
+});
+
+// ── AC11–AC16: intentProbe (rev 2) ──────────────────────────────────────────
+
+// Helpers: small inline impls for intentProbe tests.
+// Each impl is a fenced JS snippet that defines a function "fn".
+
+/** Returns the numeric parse of the string, or throws on non-numeric input. */
+const INTENT_IMPL_STRICT = fence(`
+function fn(s) {
+  const n = Number(s);
+  if (isNaN(n)) throw new Error('not a number: ' + s);
+  return n;
+}
+`);
+
+/** Returns 0 for everything — viable but trivially wrong. */
+const INTENT_IMPL_ZERO = fence(`
+function fn(s) { return 0; }
+`);
+
+/** Throws on "120" (parses it as "ambiguous"), returns Number(s) otherwise. */
+const INTENT_IMPL_THROW_120 = fence(`
+function fn(s) {
+  if (s === "120") throw new Error('ambiguous');
+  return Number(s);
+}
+`);
+
+/** Returns 120 for "120", otherwise Number(s). */
+const INTENT_IMPL_RETURN_120 = fence(`
+function fn(s) { return Number(s); }
+`);
+
+/** Syntactically broken — every execution throws. */
+const INTENT_IMPL_BROKEN = fence(`
+function fn(s) {
+  !!!syntaxerror!!!
+}
+`);
+
+/** Returns undefined for everything. */
+const INTENT_IMPL_UNDEFINED = fence(`
+function fn(s) { return undefined; }
+`);
+
+/** Throws with message "error A" for everything. */
+const INTENT_IMPL_THROW_A = fence(`
+function fn(s) { throw new Error("error A"); }
+`);
+
+/** Throws with message "error B" for everything. */
+const INTENT_IMPL_THROW_B = fence(`
+function fn(s) { throw new Error("error B"); }
+`);
+
+// ── AC11: intentProbe — split detection ──────────────────────────────────────
+
+test("AC11 intentProbe split detection", async () => {
+  // k=4: 2 impls return 120 for "120", 2 throw on "120";
+  // all 4 agree on every other input (say, "60" → 60 for all 4).
+  //
+  // Impls:
+  //   [0] INTENT_IMPL_RETURN_120  → fn("120")=120, fn("60")=60
+  //   [1] INTENT_IMPL_RETURN_120  → fn("120")=120, fn("60")=60
+  //   [2] INTENT_IMPL_THROW_120   → fn("120")=throw, fn("60")=60
+  //   [3] INTENT_IMPL_THROW_120   → fn("120")=throw, fn("60")=60
+  //
+  // inputs: [["60"], ["120"]]
+  // "60" → all 4 viable impls return 60 → no split
+  // "120" → 2 return 120, 2 throw → split
+
+  const inputs: readonly (readonly unknown[])[] = [["60"], ["120"]];
+  const responses = [
+    INTENT_IMPL_RETURN_120,
+    INTENT_IMPL_RETURN_120,
+    INTENT_IMPL_THROW_120,
+    INTENT_IMPL_THROW_120,
+  ];
+  const client = scriptedClient(responses);
+  const { agent } = makeAgent(client);
+
+  const verdict = await intentProbe({
+    agent,
+    prompt: "Implement fn(s) that parses a numeric string.",
+    entry: "fn",
+    inputs,
+    k: 4,
+  });
+
+  // All 4 have code; all 4 produce ≥1 non-throw outcome (fn("60") succeeds for all).
+  assert.equal(verdict.generated, 4);
+  assert.equal(verdict.viable, 4);
+  assert.equal(verdict.nonviable, 0);
+
+  // Only "120" (inputIndex 1) is a split.
+  assert.equal(verdict.splits.length, 1);
+  const s = verdict.splits[0]!;
+  assert.equal(s.inputIndex, 1);
+  assert.deepEqual(s.input, ["120"]);
+  // outcomes: 2 return 120 → "value:120", 2 throw → "throw"
+  assert.equal(s.outcomes["value:120"], 2);
+  assert.equal(s.outcomes["throw"], 2);
+  assert.equal(Object.keys(s.outcomes).length, 2);
+
+  // "60" is NOT in splits (all agree).
+  assert.ok(!verdict.splits.some((sp) => sp.inputIndex === 0));
+
+  // decidedRate = (2 - 1) / 2 = 0.5
+  assert.equal(verdict.decidedRate, 0.5);
+});
+
+// ── AC12: intentProbe — outcome keys ─────────────────────────────────────────
+
+test("AC12 intentProbe outcome keys — undefined and throw clustering", async () => {
+  // Two impls:
+  //   [0] returns undefined → key "value:undefined"
+  //   [1] also returns undefined → key "value:undefined"
+  // inputs: [["x"]]
+  // Both agree → no split; but we can check the outcome key is "value:undefined".
+  //
+  // To verify "throw" clustering (different error messages → same key):
+  //   [2] throws "error A" → key "throw"
+  //   [3] throws "error B" → key "throw"
+  // inputs: [["x"]]  — both throw → both nonviable → excluded from split, no throw raised.
+  //
+  // Combined test: 4 impls, inputs [["x"]]:
+  //   impls [0,1]: return undefined → viable, key "value:undefined"
+  //   impls [2,3]: throw on every input → nonviable (excluded from clustering)
+  // Splits: [0] undefined-only → only 1 distinct key among viable → no split.
+  // decidedRate: (1 - 0) / 1 = 1.
+
+  const inputs: readonly (readonly unknown[])[] = [["x"]];
+  const responses = [
+    INTENT_IMPL_UNDEFINED,
+    INTENT_IMPL_UNDEFINED,
+    INTENT_IMPL_THROW_A,
+    INTENT_IMPL_THROW_B,
+  ];
+  const client = scriptedClient(responses);
+  const { agent } = makeAgent(client);
+
+  const verdict = await intentProbe({
+    agent,
+    prompt: "Implement fn(s).",
+    entry: "fn",
+    inputs,
+    k: 4,
+  });
+
+  // [0] and [1] produce code; [2] and [3] produce code.
+  assert.equal(verdict.generated, 4);
+  // [0] and [1] return undefined → viable; [2] and [3] throw on all → nonviable.
+  assert.equal(verdict.viable, 2);
+  assert.equal(verdict.nonviable, 2);
+
+  // Among viable impls: both return undefined → outcome key "value:undefined".
+  // Only 1 distinct key → no split.
+  assert.equal(verdict.splits.length, 0);
+  assert.equal(verdict.decidedRate, 1);
+
+  // Verify the key "value:undefined" is what gets clustered: add a second impl
+  // that returns a real value to force a split and check the key.
+  // Use a sub-test fixture instead of a new call.
+  {
+    const responses2 = [INTENT_IMPL_UNDEFINED, INTENT_IMPL_ZERO];
+    const client2 = scriptedClient(responses2);
+    const { agent: agent2 } = makeAgent(client2);
+    const verdict2 = await intentProbe({
+      agent: agent2,
+      prompt: "Implement fn(s).",
+      entry: "fn",
+      inputs,
+      k: 2,
+    });
+    assert.equal(verdict2.splits.length, 1);
+    const sp = verdict2.splits[0]!;
+    // impl[0] → "value:undefined"; impl[1] → "value:0"
+    assert.ok("value:undefined" in sp.outcomes, "key must be value:undefined");
+    assert.ok("value:0" in sp.outcomes, "key must be value:0");
+  }
+
+  // Verify different error messages → same "throw" key (no message-based clustering):
+  // [2] throws "error A", [3] throws "error B" — but both are nonviable in the main run.
+  // Create a separate run where only the two throw impls run with a viable third.
+  {
+    // 3 impls: [0] returns 0 (viable), [1] throws A (viable-check: throws on ALL inputs),
+    // [2] throws B (viable-check: throws on ALL inputs).
+    // inputs: [["x"]]
+    // [0]: fn("x") = 0 → viable
+    // [1]: fn("x") = throw → nonviable
+    // [2]: fn("x") = throw → nonviable
+    // So no split, but both throw impls are counted nonviable.
+    // To see throw clustering: need [0] throw-A, [1] throw-B, plus [2] viable-return.
+    // Then [0] and [1] are nonviable, [2] is viable with outcome "value:0" — no split.
+    // Let's use a scenario where all three are viable but some throw on one input.
+    // inputs: [["x"], ["y"]]
+    // [0] INTENT_IMPL_ZERO: fn("x")=0, fn("y")=0 → viable
+    // [1] INTENT_IMPL_THROW_A: fn("x")=throw, fn("y")=throw → nonviable
+    // [2] INTENT_IMPL_THROW_B: fn("x")=throw, fn("y")=throw → nonviable
+    // → nonviable=2, viable=1, splits=[] (only 1 viable impl, no disagreement).
+    //
+    // Better: use 2 inputs where impl throws only on one.
+    // Build a "throws only on x" impl inline via scriptedClient with custom code.
+    const THROW_ON_X_A = fence(`
+function fn(s) {
+  if (s === "x") throw new Error("error A");
+  return 0;
+}
+`);
+    const THROW_ON_X_B = fence(`
+function fn(s) {
+  if (s === "x") throw new Error("error B");
+  return 0;
+}
+`);
+    const inputs3: readonly (readonly unknown[])[] = [["x"], ["y"]];
+    const responses3 = [THROW_ON_X_A, THROW_ON_X_B, INTENT_IMPL_ZERO];
+    const client3 = scriptedClient(responses3);
+    const { agent: agent3 } = makeAgent(client3);
+    const verdict3 = await intentProbe({
+      agent: agent3,
+      prompt: "Implement fn(s).",
+      entry: "fn",
+      inputs: inputs3,
+      k: 3,
+    });
+    // All 3 viable (fn("y")=0 for all).
+    assert.equal(verdict3.viable, 3);
+    // Split on "x": [0] → "throw", [1] → "throw", [2] → "value:0"
+    // Both throw impls cluster under same "throw" key (not by message).
+    const xSplit = verdict3.splits.find((sp) => sp.inputIndex === 0);
+    assert.ok(xSplit !== undefined, "split on inputIndex 0 expected");
+    assert.equal(xSplit!.outcomes["throw"], 2, "both error-A and error-B count under 'throw'");
+    assert.equal(xSplit!.outcomes["value:0"], 1);
+    assert.equal(Object.keys(xSplit!.outcomes).length, 2);
+    // No split on "y" (all return 0).
+    assert.ok(!verdict3.splits.some((sp) => sp.inputIndex === 1));
+  }
+});
+
+// ── AC13: intentProbe — viability screen ─────────────────────────────────────
+
+test("AC13 intentProbe viability screen — broken impl excluded", async () => {
+  // k=4: 1 syntactically broken (throws on every input), 3 viable and in full agreement.
+  // inputs: [["a"], ["b"]]
+  // broken: all throw → nonviable=1
+  // viable 3 all return 0 → agree → splits=[], decidedRate=1
+
+  const inputs: readonly (readonly unknown[])[] = [["a"], ["b"]];
+  const responses = [
+    INTENT_IMPL_BROKEN,
+    INTENT_IMPL_ZERO,
+    INTENT_IMPL_ZERO,
+    INTENT_IMPL_ZERO,
+  ];
+  const client = scriptedClient(responses);
+  const { agent } = makeAgent(client);
+
+  const verdict = await intentProbe({
+    agent,
+    prompt: "Implement fn(s).",
+    entry: "fn",
+    inputs,
+    k: 4,
+  });
+
+  assert.equal(verdict.generated, 4);
+  assert.equal(verdict.viable, 3);
+  assert.equal(verdict.nonviable, 1);
+  assert.equal(verdict.splits.length, 0);
+  assert.equal(verdict.decidedRate, 1);
+});
+
+test("AC13 intentProbe viability screen — all impls nonviable → viable=0, decidedRate=0", async () => {
+  // ALL impls throw on every input → viable=0, decidedRate=0, splits=[], no throw.
+  const inputs: readonly (readonly unknown[])[] = [["x"]];
+  const responses = [
+    INTENT_IMPL_THROW_A,
+    INTENT_IMPL_THROW_B,
+    INTENT_IMPL_THROW_A,
+    INTENT_IMPL_THROW_B,
+  ];
+  const client = scriptedClient(responses);
+  const { agent } = makeAgent(client);
+
+  const verdict = await intentProbe({
+    agent,
+    prompt: "Implement fn(s).",
+    entry: "fn",
+    inputs,
+    k: 4,
+  });
+
+  assert.equal(verdict.viable, 0);
+  assert.equal(verdict.decidedRate, 0);
+  assert.deepEqual(verdict.splits, []);
+  // No throw raised.
+});
+
+// ── AC14: intentProbe — empty inputs throws before any model call ─────────────
+
+test("AC14 intentProbe empty inputs throws before any model call", async () => {
+  let callCount = 0;
+  const client: MessagesClient = {
+    messages: {
+      create: async () => {
+        callCount++;
+        throw new Error("should not reach here");
+      },
+    },
+  };
+  const { agent } = makeAgent(client);
+
+  await assert.rejects(
+    () =>
+      intentProbe({
+        agent,
+        prompt: "Implement fn(s).",
+        entry: "fn",
+        inputs: [],
+        k: 2,
+      }),
+    (err: Error) => {
+      assert.ok(
+        err.message.includes("inputs"),
+        `error should name the field: "${err.message}"`,
+      );
+      return true;
+    },
+  );
+
+  assert.equal(callCount, 0, "no model call should be made");
+});
+
+// ── AC15: intentProbe — prompt verbatim, no contract section injected ──────────
+
+test("AC15 intentProbe prompt verbatim and system default", async () => {
+  const captured: Anthropic.MessageCreateParamsNonStreaming[] = [];
+  const k = 3;
+  const responses = Array.from({ length: k }, () => INTENT_IMPL_ZERO);
+  const client = scriptedClient(responses, (body, idx) => captured.push(body));
+  const { agent } = makeAgent(client);
+
+  const PROSE_PROMPT = "Given a string s, implement fn(s) that returns its length.";
+  const inputs: readonly (readonly unknown[])[] = [["hello"]];
+
+  await intentProbe({
+    agent,
+    prompt: PROSE_PROMPT,
+    entry: "fn",
+    inputs,
+    k,
+  });
+
+  // k requests total.
+  assert.equal(captured.length, k);
+
+  const EXPECTED_SYSTEM =
+    "Implement the requested function in JavaScript. Output ONLY one fenced code block. No prose.";
+
+  for (let i = 0; i < k; i++) {
+    const body = captured[i]!;
+    // user content === opts.prompt verbatim (no rewrapping, no contract section).
+    assert.equal(
+      body.messages[0]!.content as string,
+      PROSE_PROMPT,
+      `request ${i}: user content should be opts.prompt verbatim`,
+    );
+    // system === pinned neutral default when opts.system is omitted.
+    assert.equal(
+      body.system,
+      EXPECTED_SYSTEM,
+      `request ${i}: system should be PROBE_DEFAULT_SYSTEM`,
+    );
+  }
+});
+
+// ── AC16: intentProbe — metering ─────────────────────────────────────────────
+
+test("AC16 intentProbe metering — k ledger entries kind gate.intent; costUsd equals sum", async () => {
+  const k = 4;
+  const inputs: readonly (readonly unknown[])[] = [["x"]];
+  const responses = Array.from({ length: k }, () => INTENT_IMPL_ZERO);
+  const client = scriptedClient(responses);
+  const { agent, ledger } = makeAgent(client);
+
+  const verdict = await intentProbe({
+    agent,
+    prompt: "Implement fn(s).",
+    entry: "fn",
+    inputs,
+    k,
+    kind: "gate.intent",
+  });
+
+  const entries = ledger.all();
+  const intentEntries = entries.filter((e) => e.kind === "gate.intent");
+  assert.equal(intentEntries.length, k, `expected ${k} ledger entries`);
+
+  const ledgerSum = intentEntries.reduce((s, e) => s + e.costUsd, 0);
+  assert.ok(
+    Math.abs(verdict.costUsd - ledgerSum) < 1e-9,
+    `verdict.costUsd (${verdict.costUsd}) should equal ledger sum (${ledgerSum})`,
+  );
+});
+
+test("AC16 intentProbe metering — exhausted-retry generation excluded from generated, cost 0", async () => {
+  // A generation that fails all retries: code=undefined, costUsd=0.
+  // It should not count toward generated; the run should complete.
+  // We simulate this by using alwaysThrowsClient for 2 out of k=3 slots.
+  // But scriptedClient doesn't support per-slot error injection.
+  // Instead: use a client that throws on the 2nd and 3rd call only.
+
+  let callCount = 0;
+  const k = 3;
+  // Simulate: call 0 succeeds; calls 1-8 (retries for slots 1 and 2) throw.
+  // Note: each failing slot retries MAX_API_ATTEMPTS (3) times.
+  // So: slot 0 → 1 call (success), slot 1 → 3 calls (all throw), slot 2 → 3 calls (all throw).
+  // Total calls: up to 1 + 3 + 3 = 7, but concurrency may interleave.
+  // For simplicity: first call returns code, subsequent calls throw.
+  const client: MessagesClient = {
+    messages: {
+      create: async () => {
+        const idx = callCount++;
+        if (idx === 0) {
+          return {
+            content: [{ type: "text", text: INTENT_IMPL_ZERO }],
+            usage: { input_tokens: 100, output_tokens: 50 },
+          } as unknown as Anthropic.Message;
+        }
+        throw new Error("network failure");
+      },
+    },
+  };
+  const { agent, ledger } = makeAgent(client);
+
+  const inputs: readonly (readonly unknown[])[] = [["x"]];
+  const verdict = await intentProbe({
+    agent,
+    prompt: "Implement fn(s).",
+    entry: "fn",
+    inputs,
+    k,
+  });
+
+  // Slot 0 succeeds → generated=1, viable=1.
+  // Slots 1 and 2 exhaust retries → not generated, cost 0.
+  assert.equal(verdict.generated, 1);
+  assert.equal(verdict.viable, 1);
+  assert.equal(verdict.k, k);
+  // costUsd is just the cost of slot 0 (slots 1,2 return costUsd=0).
+  const entries = ledger.all();
+  const intentEntries = entries.filter((e) => e.kind === "gate.intent");
+  // Only 1 successful generation → 1 ledger entry.
+  assert.equal(intentEntries.length, 1);
+  const ledgerSum = intentEntries.reduce((s, e) => s + e.costUsd, 0);
+  assert.ok(
+    Math.abs(verdict.costUsd - ledgerSum) < 1e-9,
+    `verdict.costUsd (${verdict.costUsd}) should equal ledger sum (${ledgerSum})`,
+  );
 });

@@ -1,4 +1,4 @@
-/** AC1–AC11 — see specs/warboss-decomposition.spec.md */
+/** AC1–AC17 — see specs/warboss-decomposition.spec.md rev 4 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -32,6 +32,7 @@ function scriptedClient(
   };
 }
 
+// rev 4: all fixtures carry resolutions: [] (AC12 makes the field mandatory)
 const VALID_2REQ_JSON = JSON.stringify([
   {
     id: "parse-duration",
@@ -42,6 +43,7 @@ const VALID_2REQ_JSON = JSON.stringify([
       { name: "basic", input: ["1h30m"], expected: 5400 },
       { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
     ],
+    resolutions: [],
   },
   {
     id: "format-duration",
@@ -52,6 +54,7 @@ const VALID_2REQ_JSON = JSON.stringify([
       { name: "basic", input: [5400], expected: "1h30m" },
       { name: "negative", input: [-1], expected: "<throws>", throws: true },
     ],
+    resolutions: [],
   },
 ]);
 
@@ -114,6 +117,7 @@ test("AC2 — error-example mandate: no throws example → throws naming require
         { name: "basic", input: ["a,b"], expected: ["a", "b"] },
         { name: "empty", input: [""], expected: [] },
       ],
+      resolutions: [],
     },
   ]);
   const client = scriptedClient([{ text: "```json\n" + noThrowsJSON + "\n```" }]);
@@ -201,6 +205,7 @@ test("AC4 — validation catalogue", async () => {
           { name: "a", input: [1], expected: 1 },
           { name: "b", input: [-1], expected: "<throws>", throws: true },
         ],
+        resolutions: [],
       },
       {
         id: "dup",
@@ -211,6 +216,7 @@ test("AC4 — validation catalogue", async () => {
           { name: "a", input: [1], expected: 1 },
           { name: "b", input: [-1], expected: "<throws>", throws: true },
         ],
+        resolutions: [],
       },
     ],
     "duplicate ids",
@@ -229,6 +235,7 @@ test("AC4 — validation catalogue", async () => {
           { name: "a", input: [1], expected: 1 },
           { name: "b", input: [-1], expected: "<throws>", throws: true },
         ],
+        resolutions: [],
       },
     ],
     "bad entry identifier",
@@ -244,6 +251,7 @@ test("AC4 — validation catalogue", async () => {
         entry: "fn",
         signature: "(x:number)=>number",
         examples: [{ name: "a", input: [1], expected: 1, throws: true }],
+        resolutions: [],
       },
     ],
     "< 2 examples",
@@ -272,6 +280,7 @@ test("AC4 — validation catalogue", async () => {
       { name: "a", input: [1], expected: 1 },
       { name: "b", input: [-1], expected: "<throws>", throws: true },
     ],
+    resolutions: [],
   }));
   const clientMany = scriptedClient([{ text: "```json\n" + JSON.stringify(manyReqs) + "\n```" }]);
   const { agent: agentMany } = makeAgent(clientMany);
@@ -300,9 +309,11 @@ test("AC5 — audit/amend round: gap filled → auditGaps empty; gap not filled 
         { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
         { name: "pinned-gap", input: ["0s"], expected: 0 },
       ],
+      resolutions: [],
     },
   ]);
-  const gapResponse = '```json\n[{"id":"dur-parse","gap":"What happens when input is 0s?"}]\n```';
+  // rev 4: audit gap now carries intentDecides: true to be amendable
+  const gapResponse = '```json\n[{"id":"dur-parse","gap":"What happens when input is 0s?","intentDecides":true}]\n```';
   const amendedFenced = "```json\n" + durParseWithExtra + "\n```";
 
   // Variant A: amend fills the gap (no re-audit needed; auditGaps stays empty based on one-round rule)
@@ -316,6 +327,7 @@ test("AC5 — audit/amend round: gap filled → auditGaps empty; gap not filled 
         { name: "basic", input: ["1h"], expected: 3600 },
         { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
       ],
+      resolutions: [],
     }]) + "\n```" },
     { text: gapResponse },
     { text: amendedFenced },
@@ -344,6 +356,7 @@ test("AC5 — audit/amend round: gap filled → auditGaps empty; gap not filled 
       { name: "basic", input: ["1h"], expected: 3600 },
       { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
     ],
+    resolutions: [],
   }]);
   const clientB = scriptedClient([
     { text: "```json\n" + origDraftJson + "\n```" },
@@ -369,8 +382,10 @@ test("AC6 — amend re-validated: amend with mandate violation throws", async ()
       { name: "basic", input: ["1h"], expected: 3600 },
       { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
     ],
+    resolutions: [],
   }]);
-  const gapResponse = '```json\n[{"id":"dur-parse","gap":"ambiguous behavior"}]\n```';
+  // rev 4: intentDecides: true makes this amendable
+  const gapResponse = '```json\n[{"id":"dur-parse","gap":"ambiguous behavior","intentDecides":true}]\n```';
   // Amend returns draft without throws example — violates mandate
   const badAmend = JSON.stringify([{
     id: "dur-parse",
@@ -381,6 +396,7 @@ test("AC6 — amend re-validated: amend with mandate violation throws", async ()
       { name: "basic", input: ["1h"], expected: 3600 },
       { name: "extra", input: ["30m"], expected: 1800 },
     ],
+    resolutions: [],
   }]);
 
   const client = scriptedClient([
@@ -407,8 +423,162 @@ test("AC6 — amend re-validated: amend with mandate violation throws", async ()
   );
 });
 
-test("AC7 — admit partitions: READY → admitted, NOT READY → kickedBack with question", async () => {
-  // Build a DraftSet manually
+// rev 4: AC7 uses probe scripts only — no judgeAgent, no gate.judge calls
+test("AC7 — admit partitions (rev 4: probe-only): converging probe → admitted, split probe → kickedBack", async () => {
+  // Use simple contracts that the impls below can actually satisfy.
+  // parse-duration: parseDuration("1h") === 3600, throws on invalid
+  // format-duration: formatDuration(3600) === "1h", throws on negative
+  const contracts = [
+    Contract.freeze({
+      requirement: "Parse a duration string and return total seconds.",
+      entry: "parseDuration",
+      version: "1",
+      examples: [
+        { name: "basic", input: ["1h"], expected: 3600 },
+        { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
+      ],
+    }),
+    Contract.freeze({
+      requirement: "Format seconds as a duration string.",
+      entry: "formatDuration",
+      version: "1",
+      examples: [
+        { name: "basic", input: [3600], expected: "1h" },
+        { name: "negative", input: [-1], expected: "<throws>", throws: true },
+      ],
+    }),
+  ];
+
+  const draft: DraftSet = {
+    requirements: [
+      {
+        id: "parse-duration",
+        requirement: contracts[0]!.requirement,
+        entry: contracts[0]!.entry,
+        signature: "(s: string) => number",
+        examples: [...contracts[0]!.examples] as import("../src/contract.ts").ContractCase[],
+        resolutions: [],
+      },
+      {
+        id: "format-duration",
+        requirement: contracts[1]!.requirement,
+        entry: contracts[1]!.entry,
+        signature: "(n: number) => string",
+        examples: [...contracts[1]!.examples] as import("../src/contract.ts").ContractCase[],
+        resolutions: [],
+      },
+    ],
+    contracts,
+    auditGaps: [],
+    escalations: [],
+    costUsd: 0,
+  };
+
+  // parse-duration probe: "30m" → 1800 (NOT in frozen contract prompt)
+  // format-duration probe: 7200 → "2h" (NOT in frozen contract prompt)
+  const parseDurationProbe = { name: "probe-30m", input: ["30m"], expected: 1800 };
+  const formatDurationProbe = { name: "probe-7200", input: [7200], expected: "2h" };
+
+  const probes = new Map<string, import("../src/contract.ts").ContractCase[]>([
+    ["parse-duration", [parseDurationProbe]],
+    ["format-duration", [formatDurationProbe]],
+  ]);
+
+  // parse-duration impls: both correct — pass frozen contract AND probe (converge)
+  const correctParseImpl = `function parseDuration(s) {
+    if (/^-/.test(s)) throw new Error('invalid');
+    let total = 0;
+    const re = /(\\d+)([hms])/gi;
+    let match;
+    while ((match = re.exec(s)) !== null) {
+      const v = parseInt(match[1]);
+      const u = match[2].toLowerCase();
+      if (u === 'h') total += v * 3600;
+      else if (u === 'm') total += v * 60;
+      else total += v;
+    }
+    return total;
+  }`;
+
+  // format-duration impl 1: correct — passes frozen "3600→1h", throws on -1, AND passes probe "7200→2h"
+  const formatImpl1 = `function formatDuration(n) {
+    if (n < 0) throw new Error('invalid');
+    if (n % 3600 === 0) return (n / 3600) + 'h';
+    return n + 's';
+  }`;
+  // format-duration impl 2: passes frozen "3600→1h", throws on -1, but FAILS probe "7200→2h"
+  // (returns "7200s" instead of "2h" — hardcoded for 3600 only)
+  const formatImpl2 = `function formatDuration(n) {
+    if (n < 0) throw new Error('invalid');
+    if (n === 3600) return '1h';
+    return n + 's';
+  }`;
+
+  // k=2 for each contract
+  // parse-duration: 2 calls both return correctParseImpl (converge on probe)
+  // format-duration: 2 calls return formatImpl1 and formatImpl2 (split on probe)
+  const capturedPrompts: string[] = [];
+  const probeClient: MessagesClient = {
+    messages: {
+      create: async (body) => {
+        const msgs = body.messages;
+        const content = msgs[0]?.content;
+        const promptText = typeof content === "string" ? content : "";
+        capturedPrompts.push(promptText);
+        // Script: calls 0,1 for parse-duration (converge), calls 2,3 for format-duration (split)
+        const callIdx = capturedPrompts.length - 1;
+        let text: string;
+        if (callIdx < 2) {
+          text = "```js\n" + correctParseImpl + "\n```";
+        } else if (callIdx === 2) {
+          text = "```js\n" + formatImpl1 + "\n```";
+        } else {
+          text = "```js\n" + formatImpl2 + "\n```";
+        }
+        return {
+          content: [{ type: "text", text }],
+          usage: { input_tokens: 10, output_tokens: 5 },
+        } as unknown as Anthropic.Message;
+      },
+    },
+  };
+
+  const probeLedger = new Ledger();
+  const probeAgent = new Agent(TIERS.LOW, probeLedger, { client: probeClient });
+
+  const report = await admit(draft, {
+    probe: { agent: probeAgent, probes, k: 2 },
+  });
+
+  assert.equal(report.admitted.length, 1, "parse-duration admitted");
+  assert.equal(report.kickedBack.length, 1, "format-duration kicked back");
+  assert.equal(report.admitted[0]?.hash, contracts[0]?.hash, "parse-duration hash");
+  assert.equal(report.kickedBack[0]?.contract.hash, contracts[1]?.hash, "format-duration hash");
+
+  // kickedBack question should be probe disagreement
+  assert.ok(
+    report.kickedBack[0]?.questions[0]?.includes("probe disagreement"),
+    `expected probe disagreement, got: ${JSON.stringify(report.kickedBack[0]?.questions)}`,
+  );
+
+  // Capture-assert: probed prompts contain contract hash lines
+  assert.ok(
+    capturedPrompts.some((p) => p.includes(contracts[0]!.hash)),
+    `A prompt should include parse-duration hash ${contracts[0]!.hash}`,
+  );
+  assert.ok(
+    capturedPrompts.some((p) => p.includes(contracts[1]!.hash)),
+    `A prompt should include format-duration hash ${contracts[1]!.hash}`,
+  );
+
+  // Capture-assert: NO gate.judge-kind entries (gruntJudge is unwired)
+  const allLedgerEntries = probeLedger.all();
+  const judgeEntries = allLedgerEntries.filter((e) => e.kind === "gate.judge");
+  assert.equal(judgeEntries.length, 0, "no gate.judge calls — gruntJudge is unwired");
+});
+
+// rev 4: AC8 — admit fails closed without a battery
+test("AC8 — admit fails closed without a battery (rev 4)", async () => {
   const contracts = [
     Contract.freeze({
       requirement: "Parse a duration string like '1h30m' and return total seconds.",
@@ -438,6 +608,7 @@ test("AC7 — admit partitions: READY → admitted, NOT READY → kickedBack wit
         entry: contracts[0]!.entry,
         signature: "(s: string) => number",
         examples: [...contracts[0]!.examples] as import("../src/contract.ts").ContractCase[],
+        resolutions: [],
       },
       {
         id: "format-duration",
@@ -445,87 +616,23 @@ test("AC7 — admit partitions: READY → admitted, NOT READY → kickedBack wit
         entry: contracts[1]!.entry,
         signature: "(n: number) => string",
         examples: [...contracts[1]!.examples] as import("../src/contract.ts").ContractCase[],
+        resolutions: [],
       },
     ],
     contracts,
     auditGaps: [],
+    escalations: [],
     costUsd: 0,
   };
 
-  const capturedPrompts: string[] = [];
-  const judgeClient = scriptedClient([
-    { text: "READY" },
-    { text: "NOT READY\n- what does overflow mean?" },
+  // Probe battery only for parse-duration; format-duration has no battery
+  const parseProbe = { name: "probe-30m", input: ["30m"], expected: 1800 };
+  const probes = new Map<string, import("../src/contract.ts").ContractCase[]>([
+    ["parse-duration", [parseProbe]],
+    // format-duration intentionally absent
   ]);
-  const judgeLedger = new Ledger();
-  const judgeAgent = new Agent(TIERS.LOW, judgeLedger, {
-    client: {
-      messages: {
-        create: async (body) => {
-          capturedPrompts.push(
-            typeof body.messages[0]?.content === "string"
-              ? body.messages[0].content
-              : "",
-          );
-          return (judgeClient.messages.create as (b: typeof body) => Promise<Anthropic.Message>)(body);
-        },
-      },
-    },
-  });
 
-  const report = await admit(draft, { judgeAgent });
-
-  assert.equal(report.admitted.length, 1);
-  assert.equal(report.kickedBack.length, 1);
-  assert.equal(report.admitted[0]?.hash, contracts[0]?.hash);
-  assert.equal(report.kickedBack[0]?.contract.hash, contracts[1]?.hash);
-  assert.deepEqual(report.kickedBack[0]?.questions, ["what does overflow mean?"]);
-
-  // Prompts must contain contract hash lines
-  assert.ok(
-    capturedPrompts[0]?.includes(contracts[0]!.hash),
-    `First prompt should include hash ${contracts[0]!.hash}`,
-  );
-  assert.ok(
-    capturedPrompts[1]?.includes(contracts[1]!.hash),
-    `Second prompt should include hash ${contracts[1]!.hash}`,
-  );
-});
-
-test("AC8 — admit probe backstop: disagreement → kickedBack; convergence → admitted", async () => {
-  const contract = Contract.freeze({
-    requirement: "Parse a duration string like '1h30m' and return total seconds.",
-    entry: "parseDuration",
-    version: "1",
-    examples: [
-      { name: "basic", input: ["1h30m"], expected: 5400 },
-      { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
-    ],
-  });
-
-  const draft: DraftSet = {
-    requirements: [
-      {
-        id: "parse-duration",
-        requirement: contract.requirement,
-        entry: contract.entry,
-        signature: "(s: string) => number",
-        examples: [...contract.examples] as import("../src/contract.ts").ContractCase[],
-      },
-    ],
-    contracts: [contract],
-    auditGaps: [],
-    costUsd: 0,
-  };
-
-  const probeCase = { name: "probe-case", input: ["30m"], expected: 1800 };
-  const probes = new Map([["parse-duration", [probeCase]]]);
-
-  // Sub-test A: probe disagrees → kickedBack
-  // Judge says READY, then we need k=2 probe generations
-  // Impl 1: correct for frozen contract (parseDuration passes), but probe case: returns 1800 (pass)
-  // Impl 2: correct for frozen contract, but probe case: returns 999 (fail)
-  // → survivors=2, probe vectors differ → not ready
+  // k=2 for parse-duration (both converge)
   const correctImpl = `function parseDuration(s) {
     s = s.trim();
     if (/^-/.test(s)) throw new Error('invalid');
@@ -542,59 +649,43 @@ test("AC8 — admit probe backstop: disagreement → kickedBack; convergence →
     return total;
   }`;
 
-  // An impl that passes the frozen contract but fails the probe
-  const wrongProbeImpl = `function parseDuration(s) {
-    if (s === '1h30m') return 5400;
-    throw new Error('invalid');
-  }`;
-
-  const judgeClientA = scriptedClient([{ text: "READY" }]);
-  const judgeLedgerA = new Ledger();
-  const judgeAgentA = new Agent(TIERS.LOW, judgeLedgerA, { client: judgeClientA });
-
-  // probe agent: k=2 → one correct, one that only knows 1h30m
-  const probeClientA = scriptedClient([
+  const probeLedger = new Ledger();
+  // Only parse-duration will trigger model calls (k=2); format-duration gets no call
+  const probeClient = scriptedClient([
     { text: "```js\n" + correctImpl + "\n```" },
-    { text: "```js\n" + wrongProbeImpl + "\n```" },
+    { text: "```js\n" + correctImpl + "\n```" },
   ]);
-  const probeLedgerA = new Ledger();
-  const probeAgentA = new Agent(TIERS.LOW, probeLedgerA, { client: probeClientA });
+  const probeAgent = new Agent(TIERS.LOW, probeLedger, { client: probeClient });
 
-  const reportA = await admit(draft, {
-    judgeAgent: judgeAgentA,
-    probe: { agent: probeAgentA, probes, k: 2 },
+  const ledgerBefore = probeLedger.all().length;
+
+  const report = await admit(draft, {
+    probe: { agent: probeAgent, probes, k: 2 },
   });
 
-  assert.equal(reportA.admitted.length, 0, "should not be admitted (probe disagreement)");
-  assert.equal(reportA.kickedBack.length, 1);
-  assert.ok(
-    reportA.kickedBack[0]?.questions[0]?.includes("probe disagreement"),
-    `expected probe disagreement question, got: ${reportA.kickedBack[0]?.questions[0]}`,
+  // parse-duration admitted (probe converges)
+  assert.equal(report.admitted.length, 1, "parse-duration admitted");
+  assert.equal(report.kickedBack.length, 1, "format-duration kicked back");
+  assert.equal(report.admitted[0]?.hash, contracts[0]?.hash);
+
+  // format-duration question is the exact no-battery string
+  const kb = report.kickedBack[0];
+  assert.ok(kb !== undefined);
+  assert.equal(kb.contract.hash, contracts[1]?.hash);
+  assert.equal(kb.questions.length, 1);
+  assert.equal(
+    kb.questions[0],
+    "no probe battery supplied for 'format-duration' — admission is probe-only and fails closed",
+    "exact no-battery question string",
   );
 
-  // Sub-test B: converging probe → admitted
-  const judgeClientB = scriptedClient([{ text: "READY" }]);
-  const judgeLedgerB = new Ledger();
-  const judgeAgentB = new Agent(TIERS.LOW, judgeLedgerB, { client: judgeClientB });
-
-  // Both impls agree on probe
-  const probeClientB = scriptedClient([
-    { text: "```js\n" + correctImpl + "\n```" },
-    { text: "```js\n" + correctImpl + "\n```" },
-  ]);
-  const probeLedgerB = new Ledger();
-  const probeAgentB = new Agent(TIERS.LOW, probeLedgerB, { client: probeClientB });
-
-  const reportB = await admit(draft, {
-    judgeAgent: judgeAgentB,
-    probe: { agent: probeAgentB, probes, k: 2 },
-  });
-
-  assert.equal(reportB.admitted.length, 1, "should be admitted (converging probe)");
-  assert.equal(reportB.kickedBack.length, 0);
+  // NO model call was made for format-duration (ledger count asserted)
+  const ledgerAfter = probeLedger.all().length;
+  // parse-duration: k=2 → 2 model calls; format-duration: 0 calls
+  assert.equal(ledgerAfter - ledgerBefore, 2, "exactly 2 model calls (parse-duration only)");
 });
 
-test("AC9 — cost accounting: DraftSet.costUsd equals ledger sum; AdmissionReport.costUsd equals judge ledger sum", async () => {
+test("AC9 — cost accounting: DraftSet.costUsd equals ledger sum; AdmissionReport.costUsd equals probe ledger sum", async () => {
   // DraftSet cost
   const decomposeClient = scriptedClient([
     { text: VALID_2REQ_FENCED },
@@ -610,24 +701,25 @@ test("AC9 — cost accounting: DraftSet.costUsd equals ledger sum; AdmissionRepo
     `DraftSet.costUsd ${draft.costUsd} should equal ledger sum ${ledgerTotal}`,
   );
 
-  // AdmissionReport cost
-  const contracts = draft.contracts;
-  const judgeClient = scriptedClient([
-    { text: "READY" },
-    { text: "READY" },
-  ]);
-  const judgeLedger = new Ledger();
-  const judgeAgent = new Agent(TIERS.LOW, judgeLedger, { client: judgeClient });
+  // AdmissionReport cost: probe-only, no batteries → 0 model calls
+  const probeProbes = new Map<string, import("../src/contract.ts").ContractCase[]>();
+  const probeLedger = new Ledger();
+  const probeClient = scriptedClient([]);
+  const probeAgent = new Agent(TIERS.LOW, probeLedger, { client: probeClient });
 
-  const report = await admit(draft, { judgeAgent });
-  const judgeLedgerTotal = judgeLedger.totals().costUsd;
+  const report = await admit(draft, {
+    probe: { agent: probeAgent, probes: probeProbes },
+  });
+  const probeLedgerTotal = probeLedger.totals().costUsd;
   assert.ok(
-    Math.abs(report.costUsd - judgeLedgerTotal) < 1e-9,
-    `AdmissionReport.costUsd ${report.costUsd} should equal judge ledger sum ${judgeLedgerTotal}`,
+    Math.abs(report.costUsd - probeLedgerTotal) < 1e-9,
+    `AdmissionReport.costUsd ${report.costUsd} should equal probe ledger sum ${probeLedgerTotal}`,
   );
 
-  assert.equal(contracts.length, 2, "two contracts to judge");
-  assert.equal(report.admitted.length, 2, "both admitted");
+  // Both contracts kick back (no batteries) — costUsd is 0
+  assert.equal(draft.contracts.length, 2);
+  assert.equal(report.kickedBack.length, 2, "both kicked back (no batteries)");
+  assert.equal(report.admitted.length, 0);
 });
 
 test("AC10 — audit unavailable sentinel: double audit parse-failure → sentinel, no amend", async () => {
@@ -688,11 +780,13 @@ test("AC11 — auditGaps entry format: carried gap is the exact string `${id}: $
         { name: "basic", input: ["1h"], expected: 3600 },
         { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
       ],
+      resolutions: [],
     },
   ]);
   const gapSentence = "What happens when input is 0s?";
+  // rev 4: intentDecides: true makes it amendable
   const gapResponse =
-    "```json\n" + JSON.stringify([{ id: "dur-parse", gap: gapSentence }]) + "\n```";
+    "```json\n" + JSON.stringify([{ id: "dur-parse", gap: gapSentence, intentDecides: true }]) + "\n```";
   const client = scriptedClient([
     { text: "```json\n" + origDraftJson + "\n```" },
     { text: gapResponse },
@@ -706,4 +800,487 @@ test("AC11 — auditGaps entry format: carried gap is the exact string `${id}: $
   assert.equal(draft.auditGaps.length, 1);
   assert.equal(draft.auditGaps[0], `dur-parse: ${gapSentence}`);
   assert.deepEqual(draft.auditGaps, [`dur-parse: ${gapSentence}`]);
+});
+
+// AC12 — resolutions shape validation (rev 4)
+test("AC12 — resolutions shape validation (rev 4)", async () => {
+  // Each of these should throw with a descriptive error naming the offending requirement/field
+
+  // Missing resolutions field
+  const missingResolutions = JSON.stringify([
+    {
+      id: "dur-parse",
+      requirement: "r",
+      entry: "fn",
+      signature: "(x: string) => number",
+      examples: [
+        { name: "a", input: ["1h"], expected: 3600 },
+        { name: "b", input: ["bad"], expected: "<throws>", throws: true },
+      ],
+      // resolutions intentionally absent
+    },
+  ]);
+  const c1 = scriptedClient([{ text: "```json\n" + missingResolutions + "\n```" }]);
+  const { agent: a1, ledger: l1 } = makeAgent(c1);
+  await assert.rejects(
+    () => decompose({ agent: a1, intent: "test" }),
+    (err: Error) => {
+      assert.ok(
+        err.message.toLowerCase().includes("resolutions"),
+        `should mention resolutions: ${err.message}`,
+      );
+      return true;
+    },
+    "missing resolutions field",
+  );
+  assert.equal(l1.all().length, 1, "no audit call when resolutions missing");
+
+  // resolutions not an array
+  const resolutionsNotArray = JSON.stringify([
+    {
+      id: "dur-parse",
+      requirement: "r",
+      entry: "fn",
+      signature: "(x: string) => number",
+      examples: [
+        { name: "a", input: ["1h"], expected: 3600 },
+        { name: "b", input: ["bad"], expected: "<throws>", throws: true },
+      ],
+      resolutions: "not-an-array",
+    },
+  ]);
+  const c2 = scriptedClient([{ text: "```json\n" + resolutionsNotArray + "\n```" }]);
+  const { agent: a2, ledger: l2 } = makeAgent(c2);
+  await assert.rejects(
+    () => decompose({ agent: a2, intent: "test" }),
+    (err: Error) => {
+      assert.ok(
+        err.message.toLowerCase().includes("resolutions"),
+        `should mention resolutions: ${err.message}`,
+      );
+      return true;
+    },
+    "resolutions not an array",
+  );
+  assert.equal(l2.all().length, 1, "no audit call when resolutions not array");
+
+  // entry with non-string point
+  const badPoint = JSON.stringify([
+    {
+      id: "dur-parse",
+      requirement: "r",
+      entry: "fn",
+      signature: "(x: string) => number",
+      examples: [
+        { name: "a", input: ["1h"], expected: 3600 },
+        { name: "b", input: ["bad"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [{ point: 42, chosen: "throws", basis: "fiat" }],
+    },
+  ]);
+  const c3 = scriptedClient([{ text: "```json\n" + badPoint + "\n```" }]);
+  const { agent: a3, ledger: l3 } = makeAgent(c3);
+  await assert.rejects(
+    () => decompose({ agent: a3, intent: "test" }),
+    (err: Error) => {
+      assert.ok(
+        err.message.toLowerCase().includes("point"),
+        `should mention point: ${err.message}`,
+      );
+      return true;
+    },
+    "non-string point",
+  );
+  assert.equal(l3.all().length, 1, "no audit call when point invalid");
+
+  // basis: "guess" (not "intent" or "fiat")
+  const badBasis = JSON.stringify([
+    {
+      id: "dur-parse",
+      requirement: "r",
+      entry: "fn",
+      signature: "(x: string) => number",
+      examples: [
+        { name: "a", input: ["1h"], expected: 3600 },
+        { name: "b", input: ["bad"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [{ point: "some point", chosen: "throws", basis: "guess" }],
+    },
+  ]);
+  const c4 = scriptedClient([{ text: "```json\n" + badBasis + "\n```" }]);
+  const { agent: a4, ledger: l4 } = makeAgent(c4);
+  await assert.rejects(
+    () => decompose({ agent: a4, intent: "test" }),
+    (err: Error) => {
+      assert.ok(
+        err.message.toLowerCase().includes("basis"),
+        `should mention basis: ${err.message}`,
+      );
+      return true;
+    },
+    "basis: guess",
+  );
+  assert.equal(l4.all().length, 1, "no audit call when basis invalid");
+
+  // Variant: resolutions: [] is valid — run proceeds
+  const emptyResolutions = JSON.stringify([
+    {
+      id: "dur-parse",
+      requirement: "r",
+      entry: "fn",
+      signature: "(x: string) => number",
+      examples: [
+        { name: "a", input: ["1h"], expected: 3600 },
+        { name: "b", input: ["bad"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    },
+  ]);
+  const c5 = scriptedClient([
+    { text: "```json\n" + emptyResolutions + "\n```" },
+    { text: EMPTY_GAPS_FENCED },
+  ]);
+  const { agent: a5 } = makeAgent(c5);
+  const result = await decompose({ agent: a5, intent: "test" });
+  assert.equal(result.requirements.length, 1, "empty resolutions: [] is valid");
+});
+
+// AC13 — fiat resolutions escalate (rev 4)
+test("AC13 — fiat resolutions escalate (rev 4)", async () => {
+  const durParseWithFiat = JSON.stringify([
+    {
+      id: "dur-parse",
+      requirement: "Parse a duration string.",
+      entry: "parseDuration",
+      signature: "(s: string) => number",
+      examples: [
+        { name: "basic", input: ["1h"], expected: 3600 },
+        { name: "bare-throws", input: ["120"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [
+        { point: "bare numeric input", chosen: "throws", basis: "fiat" },
+        { point: "whitespace trimming", chosen: "trim and parse", basis: "intent" },
+      ],
+    },
+  ]);
+
+  const client = scriptedClient([
+    { text: "```json\n" + durParseWithFiat + "\n```" },
+    { text: EMPTY_GAPS_FENCED },
+  ]);
+  const { agent } = makeAgent(client);
+
+  const draft = await decompose({ agent, intent: "Parse duration strings" });
+
+  // escalations: exactly the fiat entry (not the intent entry)
+  assert.deepEqual(
+    draft.escalations,
+    ["dur-parse: fiat — bare numeric input → throws"],
+    "full-string fiat escalation",
+  );
+
+  // auditGaps: [] (empty audit)
+  assert.deepEqual(draft.auditGaps, []);
+
+  // contracts still frozen
+  assert.equal(draft.contracts.length, 1);
+});
+
+// AC14 — audit gap routing (rev 4)
+test("AC14 — audit gap routing (rev 4): intentDecides:true → amend; intentDecides:false → escalation", async () => {
+  const origDraftJson = JSON.stringify([
+    {
+      id: "dur-parse",
+      requirement: "Parse a duration string.",
+      entry: "parseDuration",
+      signature: "(s: string) => number",
+      examples: [
+        { name: "basic", input: ["1h"], expected: 3600 },
+        { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    },
+  ]);
+  const amendableGapText = "What happens for 0-duration inputs?";
+  const undecidedGapText = "What happens for bare numeric inputs like 120?";
+  const twoGaps = JSON.stringify([
+    { id: "dur-parse", gap: amendableGapText, intentDecides: true },
+    { id: "dur-parse", gap: undecidedGapText, intentDecides: false },
+  ]);
+  const gapResponse = "```json\n" + twoGaps + "\n```";
+
+  // Amend returns a draft with one more example (addresses the amendable gap)
+  const amendedDraftJson = JSON.stringify([
+    {
+      id: "dur-parse",
+      requirement: "Parse a duration string.",
+      entry: "parseDuration",
+      signature: "(s: string) => number",
+      examples: [
+        { name: "basic", input: ["1h"], expected: 3600 },
+        { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
+        { name: "zero", input: ["0s"], expected: 0 },
+      ],
+      resolutions: [],
+    },
+  ]);
+
+  let capturedAmendPrompt = "";
+  const captureClient: MessagesClient = {
+    messages: {
+      create: async (body) => {
+        const msgs = body.messages;
+        const content = msgs[0]?.content;
+        const text = typeof content === "string" ? content : "";
+        // The 3rd call is the amend call (decompose=1, audit=2, amend=3)
+        // We track by kind if possible, but since we can't here, track by call order
+        // Actually we detect it by checking if it contains gap text
+        if (text.includes("audit gaps") || text.includes("gaps")) {
+          capturedAmendPrompt = text;
+        }
+        // Return scripted responses in order
+        const callN = captureState.n++;
+        const responses: string[] = [
+          "```json\n" + origDraftJson + "\n```",
+          gapResponse,
+          "```json\n" + amendedDraftJson + "\n```",
+        ];
+        return {
+          content: [{ type: "text", text: responses[callN] ?? "" }],
+          usage: { input_tokens: 10, output_tokens: 5 },
+        } as unknown as Anthropic.Message;
+      },
+    },
+  };
+  const captureState = { n: 0 };
+
+  const { agent } = makeAgent(captureClient);
+  const draft = await decompose({ agent, intent: "Parse duration" });
+
+  // Amend prompt capture-asserted: contains amendable gap, does NOT contain undecided gap
+  assert.ok(
+    capturedAmendPrompt.includes(amendableGapText),
+    `amend prompt should contain amendable gap: ${capturedAmendPrompt.slice(0, 200)}`,
+  );
+  assert.ok(
+    !capturedAmendPrompt.includes(undecidedGapText),
+    `amend prompt must NOT contain undecided gap: ${capturedAmendPrompt.slice(0, 200)}`,
+  );
+
+  // escalations contains the undecided gap
+  assert.deepEqual(
+    draft.escalations,
+    [`dur-parse: intent-undecided — ${undecidedGapText}`],
+    "undecided gap escalated",
+  );
+
+  // Variant: gap entry with intentDecides missing → routed to escalations (fail-closed)
+  const missingIntentDecides = JSON.stringify([
+    { id: "dur-parse", gap: undecidedGapText },  // no intentDecides field
+  ]);
+  const missingGapResponse = "```json\n" + missingIntentDecides + "\n```";
+
+  const { client: clientB, ledger: ledgerB } = (() => {
+    const l = new Ledger();
+    const c = scriptedClient([
+      { text: "```json\n" + origDraftJson + "\n```" },
+      { text: missingGapResponse },
+    ]);
+    return { client: c, ledger: l };
+  })();
+  const agentB = new Agent(TIERS.HIGH, ledgerB, { client: clientB });
+  const draftB = await decompose({ agent: agentB, intent: "Parse duration" });
+
+  // Gap with missing intentDecides → fail-closed → escalation, amend NOT called
+  assert.deepEqual(
+    draftB.escalations,
+    [`dur-parse: intent-undecided — ${undecidedGapText}`],
+    "missing intentDecides escalated (fail-closed)",
+  );
+  assert.equal(
+    ledgerB.all().filter((e) => e.kind === "warboss.amend").length,
+    0,
+    "no amend call when no amendable gaps remain",
+  );
+});
+
+// AC15 — audit sees the intent (rev 4)
+test("AC15 — audit sees the intent (rev 4): audit call user content contains drafts + 'Original intent:' + intent text", async () => {
+  const intentText = "Parse duration strings in the format 1h30m and return seconds";
+
+  let capturedAuditPrompt = "";
+  let callN = 0;
+  const captureClient: MessagesClient = {
+    messages: {
+      create: async (body) => {
+        const msgs = body.messages;
+        const content = msgs[0]?.content;
+        const text = typeof content === "string" ? content : "";
+        const n = callN++;
+        if (n === 1) {
+          // Second call is the audit call
+          capturedAuditPrompt = text;
+        }
+        const responses: string[] = [
+          "```json\n" + VALID_2REQ_JSON + "\n```",
+          EMPTY_GAPS_FENCED,
+        ];
+        return {
+          content: [{ type: "text", text: responses[n] ?? "" }],
+          usage: { input_tokens: 10, output_tokens: 5 },
+        } as unknown as Anthropic.Message;
+      },
+    },
+  };
+
+  const { agent } = makeAgent(captureClient);
+  await decompose({ agent, intent: intentText });
+
+  // capture-asserted: audit prompt contains drafts JSON and the exact line + intent text
+  assert.ok(
+    capturedAuditPrompt.includes("Original intent:"),
+    `audit prompt should contain 'Original intent:' literal: ${capturedAuditPrompt.slice(0, 300)}`,
+  );
+  assert.ok(
+    capturedAuditPrompt.includes(intentText),
+    `audit prompt should contain verbatim intent: ${capturedAuditPrompt.slice(0, 300)}`,
+  );
+  // Drafts JSON also present
+  assert.ok(
+    capturedAuditPrompt.includes("parse-duration"),
+    `audit prompt should contain drafts JSON: ${capturedAuditPrompt.slice(0, 300)}`,
+  );
+});
+
+// AC16 — requirement cap in the decompose prompt (rev 4)
+test("AC16 — requirement cap in the decompose prompt (rev 4)", async () => {
+  let capturedPrompts: string[] = [];
+  let callN = 0;
+
+  function makeCapturingClient(responses: string[]): MessagesClient {
+    return {
+      messages: {
+        create: async (body) => {
+          const msgs = body.messages;
+          const content = msgs[0]?.content;
+          capturedPrompts.push(typeof content === "string" ? content : "");
+          const n = callN++;
+          return {
+            content: [{ type: "text", text: responses[n] ?? "" }],
+            usage: { input_tokens: 10, output_tokens: 5 },
+          } as unknown as Anthropic.Message;
+        },
+      },
+    };
+  }
+
+  // Run 1: explicit maxRequirements: 1
+  capturedPrompts = [];
+  callN = 0;
+  const singleReqJson = JSON.stringify([
+    {
+      id: "dur-parse",
+      requirement: "Parse a duration string.",
+      entry: "parseDuration",
+      signature: "(s: string) => number",
+      examples: [
+        { name: "basic", input: ["1h"], expected: 3600 },
+        { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    },
+  ]);
+  const client1 = makeCapturingClient([
+    "```json\n" + singleReqJson + "\n```",
+    EMPTY_GAPS_FENCED,
+  ]);
+  const ledger1 = new Ledger();
+  const agent1 = new Agent(TIERS.HIGH, ledger1, { client: client1 });
+  await decompose({ agent: agent1, intent: "Parse durations", maxRequirements: 1 });
+
+  const decomposePrompt1 = capturedPrompts[0] ?? "";
+  const capLine1 = "At most 1 requirement(s). If the intent needs more, it must be decomposed further UP the chain — do not exceed the cap.";
+  assert.ok(
+    decomposePrompt1.includes(capLine1),
+    `prompt should contain exact cap line for maxRequirements=1:\n${decomposePrompt1.slice(0, 500)}`,
+  );
+
+  // Run 2: default maxRequirements (8)
+  capturedPrompts = [];
+  callN = 0;
+  const client2 = makeCapturingClient([
+    "```json\n" + VALID_2REQ_JSON + "\n```",
+    EMPTY_GAPS_FENCED,
+  ]);
+  const ledger2 = new Ledger();
+  const agent2 = new Agent(TIERS.HIGH, ledger2, { client: client2 });
+  await decompose({ agent: agent2, intent: "Parse and format durations" });
+
+  const decomposePrompt2 = capturedPrompts[0] ?? "";
+  const capLine8 = "At most 8 requirement(s). If the intent needs more, it must be decomposed further UP the chain — do not exceed the cap.";
+  assert.ok(
+    decomposePrompt2.includes(capLine8),
+    `prompt should contain exact cap line for default maxRequirements=8:\n${decomposePrompt2.slice(0, 500)}`,
+  );
+});
+
+// AC17 — escalations ordering + cost (rev 4)
+test("AC17 — escalations ordering + cost (rev 4): fiat first, then intent-undecided; costUsd equals ledger sum", async () => {
+  const twoReqWithFiat = JSON.stringify([
+    {
+      id: "dur-parse",
+      requirement: "Parse a duration string.",
+      entry: "parseDuration",
+      signature: "(s: string) => number",
+      examples: [
+        { name: "basic", input: ["1h"], expected: 3600 },
+        { name: "bare-throws", input: ["120"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [
+        { point: "bare numeric input", chosen: "throws", basis: "fiat" },
+      ],
+    },
+    {
+      id: "dur-format",
+      requirement: "Format seconds as a duration string.",
+      entry: "formatDuration",
+      signature: "(n: number) => string",
+      examples: [
+        { name: "basic", input: [3600], expected: "1h" },
+        { name: "negative", input: [-1], expected: "<throws>", throws: true },
+      ],
+      resolutions: [
+        { point: "fractional hours", chosen: "use minutes", basis: "fiat" },
+      ],
+    },
+  ]);
+
+  // One intent-undecided audit gap
+  const undecidedGapText = "What happens for bare decimals like 1.5h?";
+  const oneGap = JSON.stringify([
+    { id: "dur-parse", gap: undecidedGapText, intentDecides: false },
+  ]);
+  const gapResponse = "```json\n" + oneGap + "\n```";
+
+  const client = scriptedClient([
+    { text: "```json\n" + twoReqWithFiat + "\n```" },
+    { text: gapResponse },
+  ]);
+  const { agent, ledger } = makeAgent(client);
+
+  const draft = await decompose({ agent, intent: "Duration utility" });
+
+  // Ordering: fiat entries first (req order: dur-parse fiat, dur-format fiat), then undecided
+  assert.deepEqual(draft.escalations, [
+    "dur-parse: fiat — bare numeric input → throws",
+    "dur-format: fiat — fractional hours → use minutes",
+    `dur-parse: intent-undecided — ${undecidedGapText}`,
+  ]);
+
+  // costUsd equals ledger sum
+  const ledgerTotal = ledger.totals().costUsd;
+  assert.ok(
+    Math.abs(draft.costUsd - ledgerTotal) < 1e-9,
+    `DraftSet.costUsd ${draft.costUsd} should equal ledger sum ${ledgerTotal}`,
+  );
 });

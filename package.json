@@ -18,6 +18,7 @@
     "calibrate-derive": "node --env-file=.env --import tsx src/experiment/calibrate-derive.ts",
     "decompose": "node --env-file=.env --import tsx src/experiment/decompose-run.ts",
     "viz": "node --env-file=.env --import tsx scripts/viz.ts",
+    "e3": "node --env-file=.env --import tsx src/experiment/e3.ts",
     "rescore": "tsx src/experiment/rescore.ts"
   },
   "dependencies": {

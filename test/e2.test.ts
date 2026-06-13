@@ -136,6 +136,7 @@ function makeArtifact(
     entry: contract.entry,
     signature: `${contract.entry}(s: string): number`,
     examples: [...contract.examples],
+    resolutions: [],  // rev 4: mandatory field
   }));
   return {
     intent: "parse a duration string",
@@ -147,6 +148,7 @@ function makeArtifact(
       version: contract.version,
     })),
     auditGaps: [],
+    escalations: [],  // rev 4
     admission: { admitted: [contract.hash], kickedBack: [] },
     ledger: [],
     totalCostUsd,
