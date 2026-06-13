@@ -87,6 +87,7 @@ export interface RunE2Options {
   tasksDir?: string; // default the repo tasks dir (e1b idiom)
   e1aArmD?: E1aArmDStats; // optional secondary reference (reused type)
   live?: boolean; // CLI true, tests false
+  hiddenOverride?: readonly HiddenCase[]; // rev 3: when present, replaces task.hidden as the scoring battery
 }
 
 export interface RunE2Result {
@@ -372,6 +373,9 @@ export async function runE2(opts: RunE2Options = {}): Promise<RunE2Result> {
 
   const humanContract = task.grader;
 
+  // rev 3: hiddenOverride replaces task.hidden as the scoring battery when present
+  const scoringHidden: readonly HiddenCase[] = opts.hiddenOverride ?? task.hidden;
+
   // ── Prompts (e1a/e1b Arm-B format) ──────────────────────────────────────────
   const humanPrompt =
     task.prose +
@@ -388,9 +392,9 @@ export async function runE2(opts: RunE2Options = {}): Promise<RunE2Result> {
       warbossContract.hash,
     );
 
-  // ── Contamination-disjoint residual battery (rev 2) ────────────────────────
+  // ── Contamination-disjoint residual battery (rev 2/rev 3) ──────────────────
   const { residual, hiddenBattery } = buildResidualBattery(
-    task.hidden,
+    scoringHidden,
     humanPrompt,
     warbossPrompt,
   );
