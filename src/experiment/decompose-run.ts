@@ -7,7 +7,7 @@
  * semantics live in `specs/warboss-decomposition.spec.md`; this module never
  * re-validates or re-parses model output.
  *
- * Spec: specs/decompose-run.spec.md (rev 1; rev 4 warboss call-site update).
+ * Spec: specs/decompose-run.spec.md (rev 2).
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -16,6 +16,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent, type MessagesClient } from "../agent.ts";
 import { Ledger, type LedgerEntry } from "../cost.ts";
+import { jsonlFileSink } from "../ledger-sink.ts";
 import { TIERS } from "../models.ts";
 import {
   decompose,
@@ -65,7 +66,20 @@ export async function runDecompose(
   opts: DecomposeRunOptions,
 ): Promise<RunDecomposeResult> {
   const outDir = opts.out ?? "runs";
-  const ledger = new Ledger();
+
+  // Compute ts once — shared by both the artifact filename and the sidecar filename (AC7).
+  const ts = new Date()
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
+
+  // mkdir before the sink first flushes (jsonlFileSink calls mkdirSync internally,
+  // but the artifact mkdir is deferred; do it here so the sink directory exists).
+  await mkdir(outDir, { recursive: true });
+
+  const ledger = new Ledger(
+    jsonlFileSink(join(outDir, `cost-ledger-${ts}.jsonl`)),
+  );
   const clientOpt = opts.client !== undefined ? { client: opts.client } : {};
 
   const decomposeAgent = new Agent(TIERS.HIGH, ledger, clientOpt);
@@ -127,18 +141,12 @@ export async function runDecompose(
     },
     ledger: ledger.toJSON(),
     totalCostUsd,
-    // UNDECIDED: spec pins `"deadRun": true` stamped on dead runs only; the
-    // artifact example carries no deadRun key, so healthy runs omit it.
+    // Healthy runs omit the deadRun key; only dead runs stamp "deadRun": true.
     ...(deadRun ? { deadRun: true as const } : {}),
   };
 
-  const ts = new Date()
-    .toISOString()
-    .replace(/[-:]/g, "")
-    .replace(/\.\d{3}Z$/, "Z");
   const artifactPath = join(outDir, `decompose-${ts}.json`);
 
-  await mkdir(outDir, { recursive: true });
   await writeFile(artifactPath, JSON.stringify(artifact, null, 2));
 
   // Human-facing summary — pinned shape, nothing else; the artifact is the record.
@@ -193,20 +201,28 @@ export function parseCliArgs(argv: readonly string[]): DecomposeRunOptions {
   const intent =
     intentInline !== undefined
       ? intentInline
-      : // UNDECIDED: "a final-newline strip" — CRLF endings treated as one
-        // final newline (\r\n stripped as a unit).
+      : // Strip a single trailing newline, treating \r\n as one unit (canonical).
         readFileSync(intentFile!, "utf8").replace(/\r?\n$/, "");
 
   const context = getArg("--context");
   const maxRequirementsRaw = getArg("--max-requirements");
   const out = getArg("--out");
 
+  let maxRequirements: number | undefined;
+  if (maxRequirementsRaw !== undefined) {
+    const parsed = parseInt(maxRequirementsRaw, 10);
+    if (Number.isNaN(parsed) || parsed < 1) {
+      throw new Error(
+        `--max-requirements must be a positive integer; got: ${JSON.stringify(maxRequirementsRaw)}`,
+      );
+    }
+    maxRequirements = parsed;
+  }
+
   return {
     intent,
     ...(context !== undefined ? { context } : {}),
-    ...(maxRequirementsRaw !== undefined
-      ? { maxRequirements: parseInt(maxRequirementsRaw, 10) }
-      : {}),
+    ...(maxRequirements !== undefined ? { maxRequirements } : {}),
     ...(out !== undefined ? { out } : {}),
   };
 }
