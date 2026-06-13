@@ -1,7 +1,7 @@
-/** AC1–AC6 — see specs/decompose-run.spec.md (rev 1; rev 4 warboss call-site update). Offline, fake client. */
+/** AC1–AC9 — see specs/decompose-run.spec.md (rev 2). Offline, fake client. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -306,4 +306,163 @@ test("AC6 — dead-run guard: live + zero cost → deadRun stamped; live false �
   });
   assert.equal(offlineResult.deadRun, false);
   assert.equal(offlineResult.artifact.deadRun, undefined, "no deadRun stamp when not live");
+});
+
+test("AC7 — jsonl sidecar: one sidecar beside artifact, matching ts, one line per call, cost sum == totalCostUsd", async () => {
+  const { client } = scriptedClient([
+    { text: VALID_2REQ_FENCED },
+    { text: EMPTY_GAPS_FENCED },
+  ]);
+  const out = await freshOutDir();
+
+  const result = await runDecompose({
+    client,
+    intent: "Parse and format durations",
+    out,
+  });
+
+  const files = await readdir(out);
+
+  // Exactly one artifact file and exactly one sidecar
+  const artifactFiles = files.filter(
+    (f) => f.startsWith("decompose-") && f.endsWith(".json"),
+  );
+  const sidecarFiles = files.filter(
+    (f) => f.startsWith("cost-ledger-") && f.endsWith(".jsonl"),
+  );
+  assert.equal(artifactFiles.length, 1, "exactly one artifact file");
+  assert.equal(sidecarFiles.length, 1, "exactly one sidecar file");
+
+  // Timestamps match between artifact and sidecar
+  const artifactTs = artifactFiles[0]!.replace("decompose-", "").replace(".json", "");
+  const sidecarTs = sidecarFiles[0]!.replace("cost-ledger-", "").replace(".jsonl", "");
+  assert.equal(artifactTs, sidecarTs, "artifact and sidecar share the same timestamp");
+
+  // Sidecar has one JSON line per metered model call
+  const sidecarContent = await readFile(join(out, sidecarFiles[0]!), "utf8");
+  const sidecarLines = sidecarContent.trim().split("\n").filter((l) => l.trim().length > 0);
+  assert.ok(sidecarLines.length > 0, "sidecar has at least one line");
+
+  // Sum of sidecar costUsd equals artifact totalCostUsd
+  const sidecarEntries = sidecarLines.map((line) => JSON.parse(line) as { costUsd: number });
+  const sidecarCostSum = sidecarEntries.reduce((acc, e) => acc + e.costUsd, 0);
+  assert.ok(
+    Math.abs(sidecarCostSum - result.artifact.totalCostUsd) < 1e-9,
+    `sidecar costUsd sum ${sidecarCostSum} should equal artifact totalCostUsd ${result.artifact.totalCostUsd}`,
+  );
+
+  // Artifact ledger length equals sidecar line count
+  assert.equal(
+    result.artifact.ledger.length,
+    sidecarLines.length,
+    "artifact ledger length equals sidecar line count",
+  );
+});
+
+test("AC8 — --max-requirements NaN/range guard: bad values throw at parse time, valid integer passes", () => {
+  const { calls } = scriptedClient([]);
+
+  // "abc" is not a number → throw naming the bad value
+  assert.throws(
+    () => parseCliArgs(["--intent", "x", "--max-requirements", "abc"]),
+    (err: Error) => {
+      assert.ok(
+        err.message.includes("abc"),
+        `error names the bad value: ${err.message}`,
+      );
+      return true;
+    },
+    "--max-requirements abc should throw",
+  );
+
+  // "0" is < 1 → throw
+  assert.throws(
+    () => parseCliArgs(["--intent", "x", "--max-requirements", "0"]),
+    (err: Error) => {
+      assert.ok(
+        err.message.includes("0"),
+        `error names the bad value: ${err.message}`,
+      );
+      return true;
+    },
+    "--max-requirements 0 should throw",
+  );
+
+  // "-3" is < 1 → throw
+  assert.throws(
+    () => parseCliArgs(["--intent", "x", "--max-requirements", "-3"]),
+    (err: Error) => {
+      assert.ok(
+        err.message.includes("-3"),
+        `error names the bad value: ${err.message}`,
+      );
+      return true;
+    },
+    "--max-requirements -3 should throw",
+  );
+
+  // No model call happened at parse time
+  assert.equal(calls(), 0, "zero model calls for all bad-value cases");
+
+  // "5" is a valid positive integer → parses cleanly
+  const opts = parseCliArgs(["--intent", "x", "--max-requirements", "5"]);
+  assert.equal(opts.maxRequirements, 5, "--max-requirements 5 parses to 5");
+});
+
+test("AC9 — CRLF strip + healthy deadRun key omission", async () => {
+  // CRLF strip: content ending "a\r\nb\r\n" → "a\r\nb" (interior \r\n preserved)
+  const intentFileDir = await freshOutDir();
+  const intentFilePath = join(intentFileDir, "intent.txt");
+  // Write "a\r\nb\r\n" as raw bytes
+  await writeFile(intentFilePath, Buffer.from("a\r\nb\r\n"));
+  const opts = parseCliArgs(["--intent-file", intentFilePath]);
+  assert.equal(opts.intent, "a\r\nb", "trailing \\r\\n stripped as one unit; interior preserved");
+
+  // Pure LF ending also stripped
+  await writeFile(intentFilePath, Buffer.from("hello\n"));
+  const optsLF = parseCliArgs(["--intent-file", intentFilePath]);
+  assert.equal(optsLF.intent, "hello", "trailing \\n stripped");
+
+  // Healthy run: artifact has NO deadRun key
+  const { client: healthyClient } = scriptedClient([
+    { text: VALID_2REQ_FENCED },
+    { text: EMPTY_GAPS_FENCED },
+  ]);
+  const outHealthy = await freshOutDir();
+  const healthyResult = await runDecompose({
+    client: healthyClient,
+    intent: "Parse durations",
+    out: outHealthy,
+  });
+  assert.equal(
+    healthyResult.artifact.deadRun,
+    undefined,
+    "healthy run artifact has no deadRun key",
+  );
+  const healthyOnDisk = JSON.parse(
+    await readFile(healthyResult.artifactPath, "utf8"),
+  ) as Record<string, unknown>;
+  assert.ok(
+    !Object.prototype.hasOwnProperty.call(healthyOnDisk, "deadRun"),
+    "healthy run artifact on disk has no deadRun key (grep-level absence)",
+  );
+
+  // Dead run: artifact stamps deadRun: true
+  const zero = { input_tokens: 0, output_tokens: 0 };
+  const { client: deadClient } = scriptedClient([
+    { text: VALID_2REQ_FENCED, usage: zero },
+    { text: EMPTY_GAPS_FENCED, usage: zero },
+  ]);
+  const outDead = await freshOutDir();
+  const deadResult = await runDecompose({
+    client: deadClient,
+    intent: "durations",
+    out: outDead,
+    live: true,
+  });
+  assert.equal(deadResult.artifact.deadRun, true, "dead run stamps deadRun: true");
+  const deadOnDisk = JSON.parse(
+    await readFile(deadResult.artifactPath, "utf8"),
+  ) as Record<string, unknown>;
+  assert.equal(deadOnDisk["deadRun"], true, "dead run on-disk artifact has deadRun: true");
 });
