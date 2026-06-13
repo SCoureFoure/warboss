@@ -2,6 +2,7 @@
   "name": "duration-parse",
   "entry": "parseDuration",
   "version": "1",
+  "signature": "(input: string) => number",
   "examples": [
     { "name": "basic-hm",      "input": ["1h30m"],    "expected": 5400 },
     { "name": "bare-minutes",  "input": ["90m"],      "expected": 5400 },

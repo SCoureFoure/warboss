@@ -102,9 +102,11 @@ export interface IntentProbeVerdict {
   k: number;
   /** Impls that produced code (extractCode non-undefined). */
   generated: number;
+  /** Generated impls that never defined the entry as a callable function. */
+  noEntry: number;
   /** Generated impls with ≥1 non-throw outcome (counted in clusters). */
   viable: number;
-  /** Generated impls that threw on EVERY input (excluded from clustering). */
+  /** Generated impls that threw on EVERY input (entry callable but all-reject). */
   nonviable: number;
   /** Only inputs where viable impls disagree — the kick-back payload. */
   splits: readonly {
@@ -126,7 +128,7 @@ const DERIVE_SYSTEM =
   "You are the implementer who will receive this task. Do NOT rate your confidence. Mechanically enumerate the concrete inputs whose exact required output you cannot derive from the task text alone. First line of your reply: exactly DECIDED if you can derive the output for every input, or exactly UNDECIDED otherwise. If UNDECIDED, list each underivable input as a \"- \" bullet — the concrete input value followed by the one behavior the task leaves open — one per line, nothing else.";
 
 const PROBE_DEFAULT_SYSTEM =
-  "Implement the requested function in JavaScript. Output ONLY one fenced code block. No prose.";
+  "Implement the requested function in JavaScript. Define it as a top-level named function with exactly the requested name. Output ONLY one fenced code block. No prose.";
 
 const MAX_API_ATTEMPTS = 3;
 const PROBE_CONCURRENCY = 4;
@@ -439,35 +441,63 @@ export async function intentProbe(
   // Outcome key: "value:<JSON.stringify(run.value)>" on success, "throw" on failure.
   // Special case: JSON.stringify(undefined) returns undefined (the JS value undefined),
   // so we emit "value:undefined" (the string) — the key is literally "value:undefined".
+  //
+  // Three-way classification (rev 3):
+  //   noEntry   — run input[0]; if !ok AND error === "entry function '<entry>' is not defined"
+  //               → classify noEntry, STOP. Excluded from clustering + viable count.
+  //   viable    — entry callable AND ≥1 non-throw over all inputs.
+  //   nonviable — entry callable but threw on EVERY input (genuine all-reject).
+  // Invariant: generated === noEntry + viable + nonviable.
 
   interface ImplOutcomes {
     outcomes: string[]; // one per input, indexed same as opts.inputs
   }
 
   let generatedCount = 0;
+  let noEntryCount = 0;
   let viableCount = 0;
   let nonviableCount = 0;
   const viableImplOutcomes: ImplOutcomes[] = [];
+
+  const noEntrySentinel = `entry function '${opts.entry}' is not defined`;
 
   for (const gen of genResults) {
     if (gen.code === undefined) continue; // no extractable code → not generated
     generatedCount++;
 
-    // Execute over all candidate inputs.
+    // Check input[0] for the missing-entry sentinel.
+    const firstInput = opts.inputs[0]!;
+    const firstRun = runImpl(gen.code, opts.entry, firstInput);
+    if (!firstRun.ok && firstRun.error === noEntrySentinel) {
+      // noEntry: structural — entry never defined; remaining inputs would all yield same sentinel.
+      noEntryCount++;
+      continue;
+    }
+
+    // Entry is callable (input[0] was ok, OR !ok with a different error).
+    // Run ALL inputs to determine viable vs nonviable.
     const outcomes: string[] = [];
     let hasNonThrow = false;
-    for (const input of opts.inputs) {
+
+    // Record outcome for input[0] first (already run).
+    if (firstRun.ok) {
+      const jsonVal = JSON.stringify(firstRun.value);
+      outcomes.push("value:" + (jsonVal === undefined ? "undefined" : jsonVal));
+      hasNonThrow = true;
+    } else {
+      outcomes.push("throw");
+    }
+
+    // Run remaining inputs (index 1 onward).
+    for (let ii = 1; ii < opts.inputs.length; ii++) {
+      const input = opts.inputs[ii]!;
       const run = runImpl(gen.code, opts.entry, input);
       if (run.ok) {
-        // Successful execution: key is "value:" + JSON.stringify(value).
-        // JSON.stringify(undefined) returns undefined (not a string), so use
-        // the literal "undefined" string — key becomes "value:undefined".
         const jsonVal = JSON.stringify(run.value);
         const key = "value:" + (jsonVal === undefined ? "undefined" : jsonVal);
         outcomes.push(key);
         hasNonThrow = true;
       } else {
-        // Threw: single key "throw" regardless of error message.
         outcomes.push("throw");
       }
     }
@@ -516,6 +546,7 @@ export async function intentProbe(
   return {
     k,
     generated: generatedCount,
+    noEntry: noEntryCount,
     viable: viableCount,
     nonviable: nonviableCount,
     splits,

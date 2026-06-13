@@ -46,9 +46,23 @@ export const E3_CANDIDATE_INPUTS: readonly (readonly [string])[] = [
 ];
 
 export const E3_NEEDLES: Record<string, readonly string[]> = {
-  "bare-number": ["120", "bare", "unitless", "unit-less", "no unit", "without unit", "digits only", "number only", "numeric only"],
-  "whitespace":  ["whitespace", "white space", "space", "trim", "padded", "padding", "leading", "trailing"],
-  "decimal":     ["decimal", "1.5", "fraction", "non-integer", "float"],
+  "bare-number": [
+    "120",            // the contested input literal
+    "bare number", "bare numeric",
+    "unitless", "unit-less", "no unit", "without unit", "missing unit",
+    "digits only", "number only", "numeric only", "number without a unit",
+  ],
+  "whitespace":  [
+    " 1h 30m ",       // the contested input literal (with its padding)
+    "whitespace", "white space",
+    "leading space", "trailing space", "surrounding space", "surrounding whitespace",
+    "padded", "padding", "trim", "trimmed",
+  ],
+  "decimal":     [
+    "1.5",            // the contested input literal
+    "fractional", "fraction of", "decimal point", "decimal hour",
+    "non-integer", "non integer", "floating point", "fractional hour",
+  ],
 };
 
 // ── Known underdetermined points (pinned from spec) ───────────────────────────
@@ -105,6 +119,9 @@ export function evaluateE3Criterion(
 ): E3Criterion {
   // Degenerate guard: viable === 0 → dead probe
   if (probe.viable === 0) {
+    const noEntryPart = probe.noEntry !== undefined && probe.noEntry > 0
+      ? `, noEntry=${probe.noEntry}`
+      : "";
     return {
       pass: false,
       perKnown: KNOWNS.map(({ id }) => ({
@@ -114,7 +131,7 @@ export function evaluateE3Criterion(
         surfaced: false,
       })),
       detail:
-        `degenerate probe: viable=0 (k=${probe.k}, generated=${probe.generated}, nonviable=${probe.nonviable}); ` +
+        `degenerate probe: viable=0 (k=${probe.k}, generated=${probe.generated}${noEntryPart}, nonviable=${probe.nonviable}); ` +
         `no split data available — probe measured nothing`,
     };
   }
@@ -204,12 +221,9 @@ export async function runE3(opts: RunE3Options = {}): Promise<RunE3Result> {
   // Probe prompt: task prose + exact "Implement: ${entry}${signature}" line
   // NO contract section, no === example lines, no word "contract" (AC8)
   // Entry comes from task.grader.entry (loaded from task.json's entry field).
-  // UNDECIDED: signature field — TaskDef has no top-level signature field;
-  // using empty string. The spec format is `Implement: ${entry}${signature}`
-  // with "signature" from the task; task.json only has entry, not signature.
+  // signature comes from task.signature (TaskDef top-level field, defaults to "").
   const entry = task.grader.entry;
-  // UNDECIDED: signature field — not present in TaskDef; using empty string
-  const signature = "";
+  const signature = task.signature;
 
   const probePrompt =
     task.prose + "\n" + `Implement: ${entry}${signature}`;
@@ -279,7 +293,7 @@ export async function runE3(opts: RunE3Options = {}): Promise<RunE3Result> {
   // ── Console summary ───────────────────────────────────────────────────────
   console.log(`\n=== E3 Results — ${taskName} (k=${k}) ===\n`);
   console.log(`Author arm: requirements=${draftSet.requirements.length} escalations=${draftSet.escalations.length} auditGaps=${draftSet.auditGaps.length}`);
-  console.log(`Probe arm: generated=${probeVerdict.generated} viable=${probeVerdict.viable} splits=${probeVerdict.splits.length} decidedRate=${probeVerdict.decidedRate.toFixed(3)}`);
+  console.log(`Probe arm: generated=${probeVerdict.generated} noEntry=${probeVerdict.noEntry} viable=${probeVerdict.viable} nonviable=${probeVerdict.nonviable} splits=${probeVerdict.splits.length} decidedRate=${probeVerdict.decidedRate.toFixed(3)}`);
   console.log(`\nE3 criterion: ${e3Criterion.pass ? "PASS" : "FAIL"} — ${e3Criterion.detail}`);
   console.log(`\nArtifact:        ${join(outDir, fileName)}`);
   console.log(`Cost log:        ${join(outDir, `cost-ledger-${ts}.jsonl`)}`);
