@@ -44,20 +44,18 @@
    HEAD (H-12 lesson: a grunt was dispatched against uncommitted planner
    files and had to copy them over by hand).
 
-**Standing notes for the next leg** (Leg 6 closed offline; carried forward):
+**Standing notes for Leg 7** (Leg 6 closed offline; E3 ran 2026-06-13):
 
-- **E3 VERDICT RUN — God-gated, unblocked, the leg's payoff (~$0.20).** Run
-  fresh (the 2026-06-12 decompose artifact predates the `resolutions` schema
-  — do NOT reuse it):
-  `node --env-file=.env --import tsx src/experiment/e3.ts --k 8`
-  Pre-registered prediction (`specs/e3-intent-divergence.spec.md`): all three
-  known E2 misses — `"120"`, `" 1h 30m "`, `"1.5h"` — surface by fiat-flag OR
-  prose-probe split, where every introspective instrument was blind. Sharp
-  sub-predictions: `whitespace` by AUTHOR (warboss demonstrably noticed it in
-  E2), `bare-number` by PROBE, `decimal` is the live question (both E2
-  populations converged on failing it — prose-level divergence unknown).
-  Verdict → `reports/e3-verdict.md`. FAIL autopsy paths pinned in the spec's
-  Verifies-with.
+- **E3 VERDICT RUN — DONE 2026-06-13, PASS** ($0.087, artifact
+  `runs/e3-20260613T191532Z.json`, verdict `reports/e3-verdict.md`). All three
+  E2-known inputs surfaced; on GENUINE signal the arms are DISJOINT (author
+  caught bare-number + whitespace by fiat escalation; decimal caught by PROBE
+  ALONE). The artifact's `surfacedByAuthor:true` for decimal is a **needle false
+  positive** (`"decimal"` substring-matched an unrelated Unicode-digits
+  escalation) — PASS robust, attribution not. Probe nonviable rate 4/8.
+  **Leg 7 = the five follow-on items below (H-21…H-25), specced and queued
+  2026-06-13.** Only H-21 (battery-authoring) carries live spend (~$0.15,
+  God-gated on the owner authoring `god-answers.json`); H-22…H-25 are offline.
 - **e3 rev-2 gap (H-20 fail-up):** the probe-prompt format
   `Implement: ${entry}${signature}` has no signature source — `loadTask`'s
   TaskDef carries none, and the per-requirement signature is author-arm
@@ -166,13 +164,152 @@ three funded live runs of 2026-06-11:**
 
 ## Active items
 
-_Leg 6 (the kick-back leg) closed offline 2026-06-12 PM — H-18 + H-19 + H-20
-all built, merged, accepted; main at 204/204, typecheck clean, zero live
-spend. The leg moved the kick-back to the AUTHOR tier, pre-freeze (E2 proved
-post-freeze instruments can't detect fiat resolutions; introspective judges
-triple-falsified). **One God-gated live run now unblocked + sequenced: the E3
-verdict run (~$0.20) — see standing notes.** Bodies in
-[HANDOFF-archive.md](HANDOFF-archive.md)._
+_Leg 7 (post-E3 follow-on) — five items specced + queued 2026-06-13, all
+dispatch-ready. Each points at a frozen spec. **Dispatch plan below — read it
+before spawning grunts: H-23/H-24/H-25 all edit `src/experiment/e3.ts` and
+`test/e3.test.ts`, so they CANNOT run as three independent parallel worktrees
+without a three-way merge conflict.**_
+
+> **Dispatch plan (planner).** Two parallel-safe groups + one serialized cluster:
+> - **Parallel group A (fully isolated, dispatch together):** **H-21**
+>   (`e2.ts` + new `e4.ts` + new task asset) and **H-22** (`decompose-run.ts`).
+>   No shared files; no conflict.
+> - **e3 cluster (H-23, H-24, H-25 — SERIALIZE, do NOT parallelize):** all three
+>   touch `e3.ts` + `test/e3.test.ts`; H-24 also touches `gate.ts` (isolated),
+>   H-23 also touches `task.ts` + `task.json` (isolated). Run them in order
+>   **H-23 → H-24 → H-25** (each branches from the prior's merged HEAD), OR
+>   assign all three to ONE grunt as a single change set. Recommended: one grunt,
+>   one PR, since the e3.ts edits are small and adjacent. Per the recurring
+>   branch-point lesson, whichever grunt builds these MUST `git checkout main --`
+>   its dep files first (compute via `git diff --name-only <branch-point> main`).
+> - Every dispatched grunt: worktree only (rule 4); `git checkout main --` its
+>   spec + HANDOFF at start; invoke runners via `node` directly (npm eats
+>   `--flags` on Windows); cannot `git merge` (sync via `git checkout main --`).
+
+### H-21 · E4 battery-authoring (close the kick-back loop) — `queued`
+
+**Spec (frozen):** [e4-battery-authoring.spec.md](specs/e4-battery-authoring.spec.md) rev 1.
+**Worktree:** your assigned worktree only — never the main checkout (rule 4).
+
+**Scope checklist:**
+
+- `src/experiment/e4.ts`: `runE4(opts)` + CLI guarded like e2/e3. Composes a
+  HIGH re-author (`decompose`, `maxRequirements: 1`, God rulings rendered into
+  `context`) + a `runE2` re-run scored against the God battery. Exports
+  `runE4`, `RunE4Options`, `loadGodAnswers`, `buildGodBattery`,
+  `renderOwnerDecisions`, `evaluateE4Criterion`.
+- `src/experiment/e2.ts` rev 3: add ONLY the optional
+  `hiddenOverride?: readonly HiddenCase[]` field; when present it replaces
+  `task.hidden` everywhere (residual filter, audit, scoring, coverage,
+  criterion). Omitted → byte-identical rev-2 behavior (every existing e2 test
+  passes unmodified).
+- `tasks/duration-parse/god-answers.json`: the owner's rulings — **NOTE DOWN:
+  the owner (God) writes this by hand before the live run; for the offline test
+  use a fixture asset in a temp dir.** Must cover the three E3 knowns and keep
+  the residual viable (≥1 happy + ≥1 error after exclusion).
+- `test/e4.test.ts`: AC1–AC9, offline, fake client + fixture god-answers +
+  fixture decompose artifact.
+- `package.json`: add `"e4": "node --env-file=.env --import tsx src/experiment/e4.ts"`.
+
+**Notes down:**
+
+- The treatment is ASYMMETRIC by design (only warboss gets God's answers; the
+  human contract is a frozen asset). The spec's criterion + verdict name this —
+  do not "fix" it by trying to re-author the human contract.
+- God rulings reach the warboss prompt via `context` bullets, so the residual
+  filter will exclude any contested input the bullet restates — expected, recorded
+  in `godBattery`/`excluded`, NOT fatal (it only shrinks the oracle).
+- `loadGodAnswers` throws if fewer than the three E3 knowns are present, or on a
+  duplicate `input` tuple (AC1).
+
+### H-22 · decompose-run rev 2 — `queued`
+
+**Spec (frozen):** [decompose-run.spec.md](specs/decompose-run.spec.md) rev 2.
+**Worktree:** your assigned worktree only — never the main checkout (rule 4).
+
+**Scope checklist:**
+
+- `src/experiment/decompose-run.ts`: (1) construct `Ledger` with a
+  `jsonlFileSink` → one `cost-ledger-<ts>.jsonl` beside the artifact, shared
+  `<ts>`; (2) NaN/range guard on `--max-requirements` in `parseCliArgs` (reject
+  non-int or `< 1` before any model call); (3) remove the two `// UNDECIDED:`
+  comments — the readings (deadRun-key omitted on healthy runs; single-trailing-
+  newline CRLF strip) are now blessed canonical.
+- `test/decompose-run.test.ts`: AC7–AC9 (beside existing AC1–AC6).
+
+**Notes down:**
+
+- The prior "`--max-requirements` never reaches the prompt" gap is ALREADY
+  closed by warboss rev 4 (`capLine`, `warboss.ts`). Do NOT re-touch it — just
+  pass the cap through unchanged.
+- Match the jsonl-sidecar idiom exactly as e1b/e2/e3 do (`jsonlFileSink` import
+  from `../ledger-sink.ts`).
+
+### H-23 · probe signature (task-asset signature → intent probe) — `queued`
+
+**Spec (frozen):** [probe-signature.spec.md](specs/probe-signature.spec.md) rev 1.
+**Worktree:** your assigned worktree only. **e3 cluster — see dispatch plan.**
+
+**Scope checklist:**
+
+- `src/experiment/task.ts`: `RawTask` gains `signature?: string`; `TaskDef`
+  gains `signature: string`; `loadTask` sets `taskRaw.signature ?? ""` and
+  throws on a non-string `signature`.
+- `src/experiment/e3.ts`: replace the two `// UNDECIDED:` lines + `const
+  signature = ""` with `const signature = task.signature;`. No other change.
+- `tasks/duration-parse/task.json`: add `"signature": "(input: string) => number"`.
+- `test/task.test.ts` (AC1, AC2, AC5) + `test/e3.test.ts` (AC3, AC4).
+
+**Notes down:**
+
+- `signature` is a top-level `TaskDef` field, NOT on the grader `Contract`
+  (adding it to the Contract canonical form would change every existing hash).
+- Absent signature → `Implement: <entry>` byte-identical to today.
+
+### H-24 · intent-probe viability (split nonviable; scaffold) — `queued`
+
+**Spec (frozen):** [intent-probe-viability.spec.md](specs/intent-probe-viability.spec.md) rev 1.
+**Worktree:** your assigned worktree only. **e3 cluster — see dispatch plan.**
+
+**Scope checklist:**
+
+- `src/gate.ts`: `intentProbe` (rev 3) — classify each generated impl into
+  `noEntry` / `viable` / `nonviable` keyed on the sandbox sentinel
+  `entry function '<entry>' is not defined` (input-independent — check input[0]).
+  Add `noEntry` to `IntentProbeVerdict`; `nonviable` now = entry-callable-but-
+  all-throw only. Strengthen `PROBE_DEFAULT_SYSTEM` to the rev-3 string.
+- `src/experiment/e3.ts`: console summary gains `noEntry=<n>`; `e3Criterion.detail`
+  names `noEntry` when `viable === 0`. (e3 cluster file.)
+- `test/gate.test.ts` (AC1–AC5) + `test/e3.test.ts` (AC6).
+
+**Notes down:**
+
+- Invariant `generated === noEntry + viable + nonviable` (AC3).
+- vm compile errors / timeouts are NOT the missing-entry sentinel → they stay in
+  viable/nonviable by run outcome, not noEntry (kills the "fold all failures"
+  reading).
+- `convergenceProbe` shares `PROBE_DEFAULT_SYSTEM`; the stronger string is
+  compatible — its tests stand.
+
+### H-25 · E3 needle matcher rev 2 (kill the substring FP) — `queued`
+
+**Spec (frozen):** [e3-needle-matcher.spec.md](specs/e3-needle-matcher.spec.md) rev 1.
+**Worktree:** your assigned worktree only. **e3 cluster — see dispatch plan.**
+
+**Scope checklist:**
+
+- `src/experiment/e3.ts`: replace `E3_NEEDLES` with the tightened lists
+  (literals + unambiguous phrases only; drop bare `"decimal"`/`"space"`/
+  `"leading"`/`"trailing"`/`"bare"`/`"float"`). Matcher shape unchanged.
+- `test/e3.test.ts`: AC1–AC5, incl. the recorded-run regression
+  (`runs/e3-20260613T191532Z.json` escalations → decimal author `false`,
+  bare-number/whitespace `true`, overall `pass: true`).
+
+**Notes down:**
+
+- Tightening can only make the criterion harder to pass — never chase a PASS.
+- The recorded-run regression is the load-bearing test: decimal's author credit
+  MUST flip from `true` (rev 1 FP) to `false`; PASS survives via the probe split.
 
 <!-- ARCHIVED — bodies moved to HANDOFF-archive.md on acceptance
 ### H-15 · E2 contract-authorship runner — `queued`
@@ -257,7 +394,7 @@ verdict run (~$0.20) — see standing notes.** Bodies in
 
 | Item | What | Outcome |
 | --- | --- | --- |
-| **H-20** · E3 intent-divergence runner | `runE3` + `evaluateE3Criterion` + pinned `E3_CANDIDATE_INPUTS`/`E3_NEEDLES` (`src/experiment/e3.ts`), AC1–AC8 | accepted 2026-06-12, 204/204; ONE fail-up gap (probe-prompt signature source — TaskDef has none → `signature=""`, `// UNDECIDED:`) → e3 rev 2 candidate; live verdict run pending (God-gated) |
+| **H-20** · E3 intent-divergence runner | `runE3` + `evaluateE3Criterion` + pinned `E3_CANDIDATE_INPUTS`/`E3_NEEDLES` (`src/experiment/e3.ts`), AC1–AC8 | accepted 2026-06-12, 204/204; **live verdict DONE 2026-06-13 — E3 PASS $0.087** (`reports/e3-verdict.md`); spawned Leg 7 items H-21…H-25 (signature fail-up → H-23, nonviable 4/8 → H-24, needle FP → H-25) |
 | **H-19** · readiness-gate rev 2 — `intentProbe` | contract-free K-grunt pre-freeze divergence instrument (`src/gate.ts`), AC11–AC16 | accepted 2026-06-12, 185/185 at merge; zero deviations/gaps |
 | **H-18** · warboss-decomposition rev 4 | fiat-flagging `resolutions` + escalation channel + probe-only admission + prompt-injected req cap (`src/warboss.ts`, `src/experiment/decompose-run.ts`), AC1–AC17 | accepted 2026-06-12, 191/191 at merge; zero deviations/gaps; grunt correctly placed `resolutions` validation at stage 3 (AC12 ledger-count forces it) |
 | **H-17** · E2 rev-2 residual battery | `buildResidualBattery` exclusion stage + viability guard (`src/experiment/e2.ts`), `AnalyzableSession` loosening (`e1b.ts`), AC11–AC13 | accepted 2026-06-12, 177/177, zero gaps; unblocked E2 attempt 2 same day (criterion FAIL 0.667, error path 1.000 vs 0.000) |
