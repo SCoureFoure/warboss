@@ -1025,3 +1025,68 @@ examples are the likely cause (entropy mandates earning their keep).
 Enabled the same-day E2 attempt-2 live run: criterion FAIL 0.667 < 0.700 but
 error path fully closed (warboss 1.000 vs human 0.000) — full reading in
 `reports/e2-verdict.md` attempt-2 section.
+
+---
+
+### H-18 · warboss-decomposition rev 4 — fiat-flagging + escalations + probe-only admission — accepted 2026-06-12
+
+**Spec:** warboss-decomposition.spec.md rev 4. **Commit:** `86ea878` (merged `743419b`).
+
+The kick-back leg's author-tier half. Shipped: `Resolution` type + mandatory
+`resolutions` field on `RequirementDraft`; `DraftSet.escalations` (God-facing
+kick-back channel, fiat-first ordering); rev-4 `DECOMPOSE_SYSTEM`/`AUDIT_SYSTEM`
+strings; requirement cap injected into the decompose prompt (closes the H-14
+post-validation-only gap); audit gaps classified `intentDecides` (fail-closed:
+non-boolean → false → escalate, never self-amend); `admit` reworked probe-only +
+fail-closed (no-battery → kicked back), `judgeAgent`/`gruntJudge` unwired from the
+decision path. `decompose-run.ts` call-site updated (every contract now kicks back
+no-battery until probe-battery authoring exists — reported honestly, a known
+accepted consequence). AC1–AC17, offline.
+
+**Report:** zero deviations, zero gaps. Verify: typecheck clean, 191/191 at merge.
+Judgment call (ruled correct at review): the grunt moved `resolutions` shape-check
+from stage-2 parse to stage-3 validation because AC12's "ledger has 1 entry, no
+re-ask" assertion forces stage-3 placement — a genuine constraint catch, properly
+reported. `Contract.freeze` left unchanged (resolutions is draft metadata, not
+canonical) → hash stability / AC1 determinism intact.
+
+### H-19 · readiness-gate rev 2 — `intentProbe` pre-freeze divergence instrument — accepted 2026-06-12
+
+**Spec:** readiness-gate.spec.md rev 2. **Commit:** `0e434c1` (fast-forward).
+
+The kick-back leg's behavioral half. Shipped `intentProbe` beside the existing
+instruments: contract-free K-grunt generation from PROSE intent (reuses the shared
+`dispatchGeneration`/`runWithConcurrency` helpers — no duplication), `runImpl`
+execution per candidate input, outcome-key clustering (single `throw` key —
+messages not clustered; `value:<json>`, `value:undefined` for undefined returns),
+viable-only screen (all-throw impls → `nonviable`, excluded), `splits` =
+disagreement payload, `decidedRate` (forced 0 when `viable===0`, fail closed). No
+`ready` boolean, no threshold (E3 calibrates first — the gruntJudge lesson:
+don't pin gate semantics before measurement). AC11–AC16, offline.
+
+**Report:** zero deviations, zero gaps. Verify: typecheck clean, 185/185 at merge.
+Review confirmed the fakeable pins are genuinely asserted (AC12: `value:undefined`
+key + `error A`/`error B` → one `throw` key; AC13: viability screen). Doc-comment
+on the module updated (it omitted `deriveCheck`/`intentProbe` — factually stale).
+
+### H-20 · E3 intent-divergence runner — accepted 2026-06-12
+
+**Spec:** e3-intent-divergence.spec.md rev 1. **Commit:** `02ec47b` (merged `95184c0`).
+
+The leg's falsification experiment. Shipped `runE3` (author arm = rev-4 `decompose`
+maxRequirements:1 on duration-parse prose; probe arm = `intentProbe` k=8 over the
+pinned 12-input `E3_CANDIDATE_INPUTS`), pure exported `evaluateE3Criterion`
+(`surfacedByProbe` = split deep-equals known tuple; `surfacedByAuthor` = needle
+match over `escalations` ONLY, auditGaps untouched; PASS iff all three knowns
+surfaced; `viable===0` degenerate guard), artifact + jsonl sidecar + dead-run
+guard, split authoring/probing costs. `E3_CANDIDATE_INPUTS`/`E3_NEEDLES` copied
+verbatim (pre-registered). AC1–AC8, offline. Live verdict run God-gated (~$0.20).
+
+**Report:** zero deviations; ONE fail-up gap (textbook): the probe-prompt format
+`Implement: ${entry}${signature}` has no signature source (TaskDef carries none;
+per-requirement signature is author-arm output, can't cross to the probe arm) →
+resolved to `signature=""`, marked `// UNDECIDED:`, reported → e3 rev-2 candidate.
+Verify: typecheck clean, 204/204. **Process note:** attempt 1 (`a53ac2db`) stopped
+— worktree branched from stale HEAD `85b4549`, missing rev-4/intentProbe deps;
+re-dispatched with a 7-file `git checkout main --` dep-sync as enforced step 1 →
+clean pass. Branch-point lesson promoted to a hard dispatch rule (standing notes).
