@@ -1,0 +1,22 @@
+{
+  "task": "duration-parse",
+  "answeredAgainstArtifact": "e3-run (see reports/e3-verdict.md)",
+  "rulings": [
+    {
+      "input": ["120"],
+      "expected": "<throws>",
+      "throws": true,
+      "rationale": "a bare number with no unit is invalid — the intent says 'duration string' implying a unit is required; '120' is ambiguous seconds vs minutes vs anything"
+    },
+    {
+      "input": [" 1h 30m "],
+      "expected": 5400,
+      "rationale": "leading/trailing whitespace and internal spaces are accepted; the function should trim and normalize — '1h30m' = 5400s"
+    },
+    {
+      "input": ["1.5h"],
+      "expected": 5400,
+      "rationale": "fractional hours are accepted: 1.5h = 1.5 * 3600 = 5400s"
+    }
+  ]
+}

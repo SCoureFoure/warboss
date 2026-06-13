@@ -19,6 +19,7 @@
     "decompose": "node --env-file=.env --import tsx src/experiment/decompose-run.ts",
     "viz": "node --env-file=.env --import tsx scripts/viz.ts",
     "e3": "node --env-file=.env --import tsx src/experiment/e3.ts",
+    "e4": "node --env-file=.env --import tsx src/experiment/e4.ts",
     "rescore": "tsx src/experiment/rescore.ts"
   },
   "dependencies": {
