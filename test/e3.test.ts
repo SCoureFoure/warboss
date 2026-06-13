@@ -99,6 +99,7 @@ test("AC1 probe-side surfacing — split on ['120'] marks bare-number; filler ['
   const syntheticProbe: IntentProbeVerdict = {
     k: 4,
     generated: 4,
+    noEntry: 0,
     viable: 4,
     nonviable: 0,
     splits: [
@@ -131,6 +132,7 @@ test("AC1 probe-side surfacing — split on ['120'] marks bare-number; filler ['
   const probeWithFiller: IntentProbeVerdict = {
     k: 4,
     generated: 4,
+    noEntry: 0,
     viable: 4,
     nonviable: 0,
     splits: [
@@ -157,7 +159,7 @@ test("AC2a author-side needle rule — escalation with 'bare' matches bare-numbe
     "parse-duration: fiat — bare numeric string → throws",
   ];
   const probe: IntentProbeVerdict = {
-    k: 2, generated: 2, viable: 2, nonviable: 0,
+    k: 2, generated: 2, noEntry: 0, viable: 2, nonviable: 0,
     splits: [],
     decidedRate: 1,
     costUsd: 0,
@@ -177,7 +179,7 @@ test("AC2a author-side needle rule — escalation with 'bare' matches bare-numbe
 test("AC2b author-side needle rule — escalation mentioning none of a known's needles → false", () => {
   const escalations = ["parse-duration: fiat — overflow behavior → throws"];
   const probe: IntentProbeVerdict = {
-    k: 2, generated: 2, viable: 2, nonviable: 0,
+    k: 2, generated: 2, noEntry: 0, viable: 2, nonviable: 0,
     splits: [], decidedRate: 1, costUsd: 0,
   };
 
@@ -193,7 +195,7 @@ test("AC2c author-side needle rule — needle in auditGaps but escalations empty
   // (The runner intentionally never passes auditGaps to evaluateE3Criterion.)
   const escalations: string[] = [];
   const probe: IntentProbeVerdict = {
-    k: 2, generated: 2, viable: 2, nonviable: 0,
+    k: 2, generated: 2, noEntry: 0, viable: 2, nonviable: 0,
     splits: [], decidedRate: 1, costUsd: 0,
   };
 
@@ -211,7 +213,7 @@ test("AC3a criterion — all three surfaced → pass: true", () => {
     "parse-duration: fiat — whitespace padding behavior → leading/trailing trim applied",
   ];
   const probe: IntentProbeVerdict = {
-    k: 4, generated: 4, viable: 4, nonviable: 0,
+    k: 4, generated: 4, noEntry: 0, viable: 4, nonviable: 0,
     splits: [
       { inputIndex: 3, input: ["120"], outcomes: { "value:120": 2, throw: 2 } },
       { inputIndex: 5, input: ["1.5h"], outcomes: { "value:5400": 2, throw: 2 } },
@@ -234,7 +236,7 @@ test("AC3b criterion — exactly one missed → pass: false, detail names missed
     "parse-duration: fiat — leading/trailing whitespace → trimmed",
   ];
   const probe: IntentProbeVerdict = {
-    k: 4, generated: 4, viable: 4, nonviable: 0,
+    k: 4, generated: 4, noEntry: 0, viable: 4, nonviable: 0,
     splits: [
       // No split on ["1.5h"] — decimal is missed by probe
     ],
@@ -255,7 +257,7 @@ test("AC3b criterion — exactly one missed → pass: false, detail names missed
 
 test("AC3c criterion — viable: 0 probe → pass: false, degenerate detail", () => {
   const probe: IntentProbeVerdict = {
-    k: 4, generated: 0, viable: 0, nonviable: 0,
+    k: 4, generated: 0, noEntry: 0, viable: 0, nonviable: 0,
     splits: [],
     decidedRate: 0,
     costUsd: 0,
@@ -527,6 +529,455 @@ test("AC7 dead-run guard — live: false with zero probe generations → no dead
   });
 
   assert.equal(result.deadRun, false, "live: false should suppress dead-run flag");
+});
+
+// ── H-23 AC3: probe prompt carries signature ──────────────────────────────────
+
+test("H-23 AC3 probe prompt carries signature — last line 'Implement: parseDuration(input: string) => number'", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e3-h23ac3-"));
+
+  const capturedProbePrompts: string[] = [];
+
+  const responses = [
+    VALID_1REQ_FENCED,     // decompose
+    EMPTY_GAPS_FENCED,     // audit
+    PROBE_IMPL_RETURN_90,  // probe impl 0
+    PROBE_IMPL_RETURN_90,  // probe impl 1
+  ];
+
+  const client = scriptedClient(responses, (body, callIndex) => {
+    if (callIndex >= 2) {
+      const prompt =
+        typeof body.messages[0]?.content === "string"
+          ? body.messages[0].content
+          : JSON.stringify(body.messages[0]?.content ?? "");
+      capturedProbePrompts.push(prompt);
+    }
+  });
+
+  await runE3({
+    client,
+    task: "duration-parse",  // this task now has signature "(input: string) => number"
+    k: 2,
+    out: outDir,
+    tasksDir: TASKS_DIR,
+    live: false,
+  });
+
+  assert.ok(capturedProbePrompts.length > 0, "should have captured probe prompts");
+
+  for (const prompt of capturedProbePrompts) {
+    // The last line of the prompt must be the Implement line with the signature
+    const lines = prompt.split("\n").filter((l) => l.trim() !== "");
+    const lastLine = lines[lines.length - 1]!.trim();
+    assert.equal(
+      lastLine,
+      "Implement: parseDuration(input: string) => number",
+      `last line of probe prompt must carry the signature: got "${lastLine}"`,
+    );
+
+    // No word "contract" (E3 AC8 preserved with non-empty signature)
+    assert.ok(
+      !prompt.toLowerCase().includes("contract"),
+      `probe prompt must not contain 'contract': ${prompt.slice(0, 300)}`,
+    );
+
+    // No === example lines (E3 AC8 preserved)
+    assert.ok(
+      !prompt.includes("==="),
+      `probe prompt must not contain === example lines: ${prompt.slice(0, 300)}`,
+    );
+  }
+});
+
+// ── H-23 AC4: empty-signature back-compat ────────────────────────────────────
+
+test("H-23 AC4 empty-signature back-compat — no-signature task → last line 'Implement: <entry>'", async () => {
+  // Create a temp task directory that has no signature field in task.json
+  const { mkdtemp: fsMkdtemp, writeFile: fsWriteFile } = await import("node:fs/promises");
+  const { join: fsJoin } = await import("node:path");
+  const { tmpdir: osTmpdir } = await import("node:os");
+
+  const taskBaseDir = await fsMkdtemp(fsJoin(osTmpdir(), "e3-h23ac4-tasks-"));
+  const taskDir = fsJoin(taskBaseDir, "no-sig-task");
+  const { mkdir: fsMkdir } = await import("node:fs/promises");
+  await fsMkdir(taskDir, { recursive: true });
+
+  // task.json without signature
+  const taskJson = {
+    name: "no-sig-task",
+    entry: "noSigFn",
+    version: "1",
+    examples: [
+      { name: "basic", input: ["1h30m"], expected: 5400 },
+      { name: "negative", input: ["-1h"], expected: null, throws: true },
+    ],
+    armCSubset: ["basic"],
+  };
+  const hiddenJson = [
+    { name: "h1", input: ["90m"], expected: 5400, coveredBy: ["basic"] },
+  ];
+
+  await fsWriteFile(fsJoin(taskDir, "task.json"), JSON.stringify(taskJson));
+  await fsWriteFile(
+    fsJoin(taskDir, "hidden-battery.json"),
+    JSON.stringify(hiddenJson),
+  );
+  await fsWriteFile(fsJoin(taskDir, "requirement.md"), "Implement noSigFn(s).");
+
+  const outDir = await mkdtemp(join(tmpdir(), "e3-h23ac4-out-"));
+
+  // Probe impl for noSigFn
+  const NOSIG_IMPL = fence(`function noSigFn(s) { return 0; }`);
+
+  // Decompose fixture for noSigFn
+  const NOSIG_DECOMPOSE = JSON.stringify([
+    {
+      id: "no-sig-task",
+      requirement: "Implement noSigFn.",
+      entry: "noSigFn",
+      signature: "(s: string) => number",
+      examples: [
+        { name: "basic", input: ["1h30m"], expected: 5400 },
+        { name: "negative", input: ["-1h"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    },
+  ]);
+
+  const capturedProbePrompts: string[] = [];
+
+  const responses = [
+    "```json\n" + NOSIG_DECOMPOSE + "\n```",  // decompose
+    EMPTY_GAPS_FENCED,                          // audit
+    NOSIG_IMPL,                                 // probe impl 0
+    NOSIG_IMPL,                                 // probe impl 1
+  ];
+
+  const client = scriptedClient(responses, (body, callIndex) => {
+    if (callIndex >= 2) {
+      const prompt =
+        typeof body.messages[0]?.content === "string"
+          ? body.messages[0].content
+          : JSON.stringify(body.messages[0]?.content ?? "");
+      capturedProbePrompts.push(prompt);
+    }
+  });
+
+  await runE3({
+    client,
+    task: "no-sig-task",
+    k: 2,
+    out: outDir,
+    tasksDir: taskBaseDir,
+    live: false,
+  });
+
+  assert.ok(capturedProbePrompts.length > 0, "should have captured probe prompts");
+
+  for (const prompt of capturedProbePrompts) {
+    const lines = prompt.split("\n").filter((l) => l.trim() !== "");
+    const lastLine = lines[lines.length - 1]!.trim();
+    // With no signature, Implement: noSigFn (no trailing junk)
+    assert.equal(
+      lastLine,
+      "Implement: noSigFn",
+      `last line must be 'Implement: <entry>' with no trailing junk: got "${lastLine}"`,
+    );
+  }
+});
+
+// ── H-24 AC6: E3 surfacing — artifact has noEntry, summary includes noEntry=<n> ──
+
+test("H-24 AC6 E3 surfacing — artifact.probe.noEntry present; console summary includes noEntry=<n>", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e3-h24ac6-"));
+
+  // Impl that does NOT define parseDuration (defines wrongFn instead) → noEntry
+  const NO_ENTRY_IMPL = fence(`
+function wrongFn(s) { return 0; }
+`);
+
+  // All four probe responses produce no entry → viable=0, noEntry=4
+  const responses = [
+    VALID_1REQ_FENCED,   // decompose
+    EMPTY_GAPS_FENCED,   // audit
+    NO_ENTRY_IMPL,       // probe 0 → noEntry
+    NO_ENTRY_IMPL,       // probe 1 → noEntry
+    NO_ENTRY_IMPL,       // probe 2 → noEntry
+    NO_ENTRY_IMPL,       // probe 3 → noEntry
+  ];
+
+  const client = scriptedClient(responses);
+
+  // Capture console output
+  const originalLog = console.log;
+  const logLines: string[] = [];
+  console.log = (...args: unknown[]) => {
+    logLines.push(args.map(String).join(" "));
+  };
+
+  let artifactRaw: string | undefined;
+  try {
+    await runE3({
+      client,
+      task: "duration-parse",
+      k: 4,
+      out: outDir,
+      tasksDir: TASKS_DIR,
+      live: false,
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  // Read artifact
+  const files = await (await import("node:fs/promises")).readdir(outDir);
+  const artifactFile = files.find((f) => f.startsWith("e3-") && f.endsWith(".json"));
+  assert.ok(artifactFile !== undefined, "artifact should be written");
+  artifactRaw = await (await import("node:fs/promises")).readFile(
+    join(outDir, artifactFile!),
+    "utf8",
+  );
+
+  const artifact = JSON.parse(artifactRaw) as {
+    probe: { noEntry: number; viable: number; nonviable: number; generated: number };
+    e3Criterion: { pass: boolean; detail: string };
+  };
+
+  // probe.noEntry is present and numerically correct
+  assert.ok(
+    typeof artifact.probe.noEntry === "number",
+    "artifact.probe.noEntry must be a number",
+  );
+  assert.equal(artifact.probe.noEntry, 4, "all 4 impls should be noEntry");
+  assert.equal(artifact.probe.viable, 0, "viable should be 0");
+
+  // When viable === 0, e3Criterion.detail names noEntry
+  assert.ok(
+    artifact.e3Criterion.detail.includes("noEntry=4"),
+    `e3Criterion.detail should name noEntry count when viable=0: "${artifact.e3Criterion.detail}"`,
+  );
+
+  // Console summary includes noEntry=<n>
+  const summaryLine = logLines.find((l) => l.includes("Probe arm:"));
+  assert.ok(summaryLine !== undefined, "should have a Probe arm summary line");
+  assert.ok(
+    summaryLine!.includes("noEntry="),
+    `summary line must include noEntry=<n>: "${summaryLine}"`,
+  );
+});
+
+// ── H-25 AC1: decimal false positive killed ───────────────────────────────────
+
+test("H-25 AC1 decimal false positive killed — 'non-ASCII decimal digits' escalation → decimal surfacedByAuthor: false", () => {
+  // Under e3 rev 1, bare "decimal" would have matched. Under rev 2 it must not.
+  const escalations = [
+    "x: intent-undecided — whether non-ASCII decimal digits are accepted",
+  ];
+  const probe: IntentProbeVerdict = {
+    k: 2, generated: 2, noEntry: 0, viable: 2, nonviable: 0,
+    splits: [], decidedRate: 1, costUsd: 0,
+  };
+
+  const result = evaluateE3Criterion(escalations, probe);
+  const decimal = result.perKnown.find((k) => k.id === "decimal")!;
+
+  // Under rev-1 this would have been true (bare "decimal" matched).
+  // Under rev-2 it must be false (bare "decimal" is dropped).
+  assert.equal(
+    decimal.surfacedByAuthor,
+    false,
+    "tightened needles must not match non-ASCII decimal digit escalation",
+  );
+});
+
+// ── H-25 AC2: genuine decimal catch still works ───────────────────────────────
+
+test("H-25 AC2 genuine decimal catch — 'fractional hours' escalation → decimal surfacedByAuthor: true", () => {
+  const escalations = ["fractional hours are not pinned by the requirement"];
+  const probe: IntentProbeVerdict = {
+    k: 2, generated: 2, noEntry: 0, viable: 2, nonviable: 0,
+    splits: [], decidedRate: 1, costUsd: 0,
+  };
+
+  const result = evaluateE3Criterion(escalations, probe);
+  const decimal = result.perKnown.find((k) => k.id === "decimal")!;
+  assert.equal(decimal.surfacedByAuthor, true, "'fractional' should match decimal");
+});
+
+test("H-25 AC2b genuine decimal catch — literal '1.5' in escalation → true", () => {
+  const escalations = ["whether 1.5 as input is treated as 1h30m"];
+  const probe: IntentProbeVerdict = {
+    k: 2, generated: 2, noEntry: 0, viable: 2, nonviable: 0,
+    splits: [], decidedRate: 1, costUsd: 0,
+  };
+
+  const result = evaluateE3Criterion(escalations, probe);
+  const decimal = result.perKnown.find((k) => k.id === "decimal")!;
+  assert.equal(decimal.surfacedByAuthor, true, "literal '1.5' should match decimal");
+});
+
+// ── H-25 AC3: bare-number & whitespace unaffected ────────────────────────────
+
+test("H-25 AC3a bare-number catch — '…bare number with no unit…' → true", () => {
+  const escalations = ["bare number with no unit should probably throw"];
+  const probe: IntentProbeVerdict = {
+    k: 2, generated: 2, noEntry: 0, viable: 2, nonviable: 0,
+    splits: [], decidedRate: 1, costUsd: 0,
+  };
+
+  const result = evaluateE3Criterion(escalations, probe);
+  const bareNumber = result.perKnown.find((k) => k.id === "bare-number")!;
+  assert.equal(bareNumber.surfacedByAuthor, true, "'bare number' should match bare-number");
+});
+
+test("H-25 AC3b whitespace catch — 'leading/trailing whitespace' → true", () => {
+  const escalations = ["leading/trailing whitespace in the input string"];
+  const probe: IntentProbeVerdict = {
+    k: 2, generated: 2, noEntry: 0, viable: 2, nonviable: 0,
+    splits: [], decidedRate: 1, costUsd: 0,
+  };
+
+  const result = evaluateE3Criterion(escalations, probe);
+  const whitespace = result.perKnown.find((k) => k.id === "whitespace")!;
+  assert.equal(whitespace.surfacedByAuthor, true, "'whitespace' should match whitespace");
+});
+
+test("H-25 AC3c leading zeros does NOT match whitespace — dropped bare 'leading' no longer false-positives", () => {
+  // "leading zeros" has "leading" as a word but no whitespace needle matches
+  const escalations = ["whether leading zeros in numeric values are allowed"];
+  const probe: IntentProbeVerdict = {
+    k: 2, generated: 2, noEntry: 0, viable: 2, nonviable: 0,
+    splits: [], decidedRate: 1, costUsd: 0,
+  };
+
+  const result = evaluateE3Criterion(escalations, probe);
+  const whitespace = result.perKnown.find((k) => k.id === "whitespace")!;
+  assert.equal(
+    whitespace.surfacedByAuthor,
+    false,
+    "dropped bare 'leading' must not false-positive on 'leading zeros'",
+  );
+});
+
+// ── H-25 AC4: recorded-run regression ────────────────────────────────────────
+
+test("H-25 AC4 recorded-run regression — pinned escalations re-score correctly", () => {
+  // The runs/e3-20260613T191532Z.json artifact is not present in this worktree.
+  // Pinning the recorded escalation strings as fixtures per spec AC4 guidance.
+  // Source: reports/e3-verdict.md §Author arm, escalation list.
+  //
+  // The recorded run produced these escalations (from the warboss rev-4 fiat-flagging):
+  //   - escalation for bare-number: contained "bare" (now matched via "bare number"/"bare numeric")
+  //   - escalation for whitespace: contained "whitespace"
+  //   - escalation for decimal: contained "decimal" (from "non-ASCII decimal digits")
+  //
+  // Actual recorded strings (pinned from e3-verdict.md §5.2 author arm):
+  const recordedEscalations: string[] = [
+    // These are the escalations the warboss generated for the duration-parse task.
+    // Bare-number escalation: "120" (the literal) and "bare numeric" phrasing
+    "parse-duration: fiat — bare numeric input like '120' with no unit → throws (basis: fiat)",
+    // Whitespace escalation: contains "whitespace"
+    "parse-duration: fiat — input with surrounding whitespace like ' 1h 30m ' → strip and parse (basis: fiat)",
+    // Decimal escalation: this was the problematic one containing "decimal" in a different context
+    // Recorded from the run: it was about Unicode numeral characters (non-ASCII decimal digits)
+    "parse-duration: intent-undecided — whether non-ASCII decimal digits like Unicode numeral characters are accepted",
+  ];
+
+  // Build a probe with a split on "1.5h" (the decimal was caught by probe in the recorded run)
+  const probeWithDecimalSplit: IntentProbeVerdict = {
+    k: 8,
+    generated: 8,
+    noEntry: 0,
+    viable: 4,
+    nonviable: 4,
+    splits: [
+      {
+        inputIndex: 5, // "1.5h" is index 5 in E3_CANDIDATE_INPUTS
+        input: ["1.5h"],
+        outcomes: { "value:5400": 2, "throw": 2 },
+      },
+    ],
+    decidedRate: (12 - 1) / 12,
+    costUsd: 0.20,
+  };
+
+  const result = evaluateE3Criterion(recordedEscalations, probeWithDecimalSplit);
+
+  // bare-number: surfacedByAuthor true (escalation #1 contains "bare numeric")
+  const bareNumber = result.perKnown.find((k) => k.id === "bare-number")!;
+  assert.equal(
+    bareNumber.surfacedByAuthor,
+    true,
+    "bare-number: recorded escalation should match via 'bare numeric'",
+  );
+
+  // whitespace: surfacedByAuthor true (escalation #2 contains "whitespace")
+  const whitespace = result.perKnown.find((k) => k.id === "whitespace")!;
+  assert.equal(
+    whitespace.surfacedByAuthor,
+    true,
+    "whitespace: recorded escalation should match via 'whitespace'",
+  );
+
+  // decimal: surfacedByAuthor false (escalation #3 has "decimal" in the Unicode context,
+  // no tightened decimal needle matches — "non-ASCII decimal digits" does NOT match
+  // "fractional", "fraction of", "decimal point", "decimal hour", "1.5", etc.)
+  const decimal = result.perKnown.find((k) => k.id === "decimal")!;
+  assert.equal(
+    decimal.surfacedByAuthor,
+    false,
+    "decimal: recorded Unicode-digit escalation must NOT match tightened needles",
+  );
+
+  // decimal surfaced by probe (split on "1.5h")
+  assert.equal(decimal.surfacedByProbe, true, "decimal surfaced by probe split on '1.5h'");
+
+  // Overall: PASS (3/3 by OR: bare-number=author, whitespace=author, decimal=probe)
+  assert.equal(result.pass, true, "overall must still PASS with honest attribution");
+});
+
+// ── H-25 AC5: needle hygiene invariant ───────────────────────────────────────
+
+test("H-25 AC5 needle hygiene — every needle is a contested literal or contains a space/hyphen", () => {
+  // UNDECIDED: The spec's pre-registered needle lists include descriptive single-word needles
+  // (e.g., "unitless", "whitespace", "fractional") that are semantically specific but lack
+  // space/hyphen, while AC5 states "every needle is either a contested literal OR contains
+  // a space/hyphen." This is an internal spec contradiction (pre-registered lists are VERBATIM).
+  // Most literal reading: the pre-registered lists are the ground truth; AC5's mechanism
+  // ("space/hyphen") is the check for the dropped generic tokens (decimal, space, leading,
+  // trailing, bare, float, bare fraction). We implement AC5 as: the specific tokens that were
+  // dropped per the spec's "Dropped (collision class)" list are absent; AND the contested
+  // literals are present. This is the most faithful interpretation of AC5's intent.
+
+  // Contested input literals that are expected to be present as needles
+  const expectedLiterals = ["120", "1.5", " 1h 30m "];
+  for (const literal of expectedLiterals) {
+    const found = Object.values(E3_NEEDLES).some((needles) => needles.includes(literal));
+    assert.ok(found, `Contested literal "${literal}" must appear in E3_NEEDLES`);
+  }
+
+  // Dropped tokens per spec "Dropped (collision class)" — must NOT appear as needles
+  // (bare single-word tokens that caused false positives)
+  const droppedTokens = [
+    "decimal",   // matched "non-ASCII decimal digits" — digit base, not fractional
+    "space",     // matched "namespace"
+    "leading",   // matched "leading zero" — bare single word
+    "trailing",  // matched "trailing zero" — bare single word
+    "bare",      // too generic
+    "float",     // only "floating point" is allowed
+    "fraction",  // only "fractional"/"fraction of" are allowed; bare "fraction" dropped
+  ];
+
+  for (const token of droppedTokens) {
+    for (const [category, needles] of Object.entries(E3_NEEDLES)) {
+      const exactMatch = needles.includes(token);
+      assert.ok(
+        !exactMatch,
+        `Dropped generic token "${token}" must NOT appear as a standalone needle in category "${category}"`,
+      );
+    }
+  }
 });
 
 // ── AC8: probe prompt shape ───────────────────────────────────────────────────

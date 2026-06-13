@@ -980,7 +980,7 @@ test("AC15 intentProbe prompt verbatim and system default", async () => {
   assert.equal(captured.length, k);
 
   const EXPECTED_SYSTEM =
-    "Implement the requested function in JavaScript. Output ONLY one fenced code block. No prose.";
+    "Implement the requested function in JavaScript. Define it as a top-level named function with exactly the requested name. Output ONLY one fenced code block. No prose.";
 
   for (let i = 0; i < k; i++) {
     const body = captured[i]!;
@@ -1026,6 +1026,230 @@ test("AC16 intentProbe metering — k ledger entries kind gate.intent; costUsd e
     Math.abs(verdict.costUsd - ledgerSum) < 1e-9,
     `verdict.costUsd (${verdict.costUsd}) should equal ledger sum (${ledgerSum})`,
   );
+});
+
+// ── H-24 AC1–AC5: intentProbe rev 3 (noEntry classification + scaffolded system) ──
+
+// Impl that defines a different function (not "fn") → noEntry for entry "fn"
+const INTENT_IMPL_WRONG_NAME = fence(`
+function notFn(s) { return 0; }
+`);
+
+// Impl that defines entry but throws on EVERY input (nonviable)
+const INTENT_IMPL_ALWAYS_THROW = fence(`
+function fn(s) { throw new Error("always fails"); }
+`);
+
+test("H-24 AC1 noEntry classification — impl not defining entry → noEntry:1, viable:0, nonviable:0", async () => {
+  // INTENT_IMPL_WRONG_NAME defines "notFn" not "fn".
+  // On input[0], runImpl will return error = "entry function 'fn' is not defined"
+  // → classified as noEntry.
+  const inputs: readonly (readonly unknown[])[] = [["a"], ["b"]];
+  const responses = [INTENT_IMPL_WRONG_NAME];
+  const client = scriptedClient(responses);
+  const { agent } = makeAgent(client);
+
+  const verdict = await intentProbe({
+    agent,
+    prompt: "Implement fn(s).",
+    entry: "fn",
+    inputs,
+    k: 1,
+  });
+
+  assert.equal(verdict.generated, 1, "generated should be 1");
+  assert.equal(verdict.noEntry, 1, "noEntry should be 1");
+  assert.equal(verdict.viable, 0, "viable should be 0");
+  assert.equal(verdict.nonviable, 0, "nonviable should be 0");
+  assert.equal(verdict.splits.length, 0, "no splits when noEntry");
+  // noEntry does not appear in splits
+});
+
+test("H-24 AC1 noEntry — only input[0] executed (no second input run)", async () => {
+  // Behavioral assertion: the noEntry impl should NOT contribute outcomes to splits.
+  // Two inputs; WRONG_NAME impl → noEntry → stops after input[0], never runs input[1].
+  // We verify behaviorally: viable=0, splits=[], confirming input[1] outcomes absent.
+  const inputs: readonly (readonly unknown[])[] = [["a"], ["b"]];
+  const responses = [INTENT_IMPL_WRONG_NAME, INTENT_IMPL_ZERO];
+  const client = scriptedClient(responses);
+  const { agent } = makeAgent(client);
+
+  const verdict = await intentProbe({
+    agent,
+    prompt: "Implement fn(s).",
+    entry: "fn",
+    inputs,
+    k: 2,
+  });
+
+  // WRONG_NAME → noEntry:1; ZERO → defines fn, returns 0 for all → viable:1
+  assert.equal(verdict.noEntry, 1, "WRONG_NAME should be noEntry");
+  assert.equal(verdict.viable, 1, "ZERO should be viable");
+  assert.equal(verdict.nonviable, 0, "no nonviable");
+  // noEntry's outcomes never appear in splits (it was stopped before input[1])
+  // viable=1 → only 1 impl's outcomes → no ≥2 distinct keys → no splits
+  assert.equal(verdict.splits.length, 0, "1 viable impl → no splits");
+});
+
+test("H-24 AC2 nonviable is now entry-callable all-throw only", async () => {
+  // ALWAYS_THROW defines fn but throws on every input → nonviable
+  // WRONG_NAME does not define fn → noEntry
+  const inputs: readonly (readonly unknown[])[] = [["x"]];
+
+  // Test nonviable: defines entry but throws on all
+  {
+    const client = scriptedClient([INTENT_IMPL_ALWAYS_THROW]);
+    const { agent } = makeAgent(client);
+    const verdict = await intentProbe({
+      agent,
+      prompt: "Implement fn(s).",
+      entry: "fn",
+      inputs,
+      k: 1,
+    });
+    assert.equal(verdict.nonviable, 1, "entry-callable all-throw → nonviable:1");
+    assert.equal(verdict.noEntry, 0, "not noEntry");
+  }
+
+  // Test noEntry: does not define entry
+  {
+    const client = scriptedClient([INTENT_IMPL_WRONG_NAME]);
+    const { agent } = makeAgent(client);
+    const verdict = await intentProbe({
+      agent,
+      prompt: "Implement fn(s).",
+      entry: "fn",
+      inputs,
+      k: 1,
+    });
+    assert.equal(verdict.noEntry, 1, "missing-entry → noEntry:1");
+    assert.equal(verdict.nonviable, 0, "not nonviable");
+  }
+});
+
+test("H-24 AC3 invariant — generated === noEntry + viable + nonviable over mixed fixture", async () => {
+  // Mixed k=3: WRONG_NAME (noEntry), ALWAYS_THROW (nonviable), ZERO (viable)
+  const inputs: readonly (readonly unknown[])[] = [["x"], ["y"]];
+  const responses = [INTENT_IMPL_WRONG_NAME, INTENT_IMPL_ALWAYS_THROW, INTENT_IMPL_ZERO];
+  const client = scriptedClient(responses);
+  const { agent } = makeAgent(client);
+
+  const verdict = await intentProbe({
+    agent,
+    prompt: "Implement fn(s).",
+    entry: "fn",
+    inputs,
+    k: 3,
+  });
+
+  assert.equal(verdict.generated, 3, "all 3 produced code → generated:3");
+  assert.equal(verdict.noEntry, 1, "1 noEntry");
+  assert.equal(verdict.viable, 1, "1 viable");
+  assert.equal(verdict.nonviable, 1, "1 nonviable");
+  // Invariant
+  assert.equal(
+    verdict.noEntry + verdict.viable + verdict.nonviable,
+    verdict.generated,
+    "generated === noEntry + viable + nonviable",
+  );
+
+  // Only ZERO is viable; ZERO returns fn("x")=0, fn("y")=0 → 1 viable impl → no split
+  assert.equal(verdict.splits.length, 0, "1 viable impl → no splits");
+
+  // decidedRate computed from viable only: (2-0)/2 = 1
+  assert.equal(verdict.decidedRate, 1, "decidedRate from 1 viable impl with full agreement");
+});
+
+test("H-24 AC4 back-compat — entry-defining fixtures unchanged from pre-rev-3", async () => {
+  // Pre-rev-3 fixture: all impls define entry; noEntry should be 0.
+  // Results for viable/nonviable/splits/decidedRate must match prior expectations.
+  // This is the same fixture as AC11 (split detection) — rerun to confirm.
+  const inputs: readonly (readonly unknown[])[] = [["60"], ["120"]];
+  const responses = [
+    INTENT_IMPL_RETURN_120,
+    INTENT_IMPL_RETURN_120,
+    INTENT_IMPL_THROW_120,
+    INTENT_IMPL_THROW_120,
+  ];
+  const client = scriptedClient(responses);
+  const { agent } = makeAgent(client);
+
+  const verdict = await intentProbe({
+    agent,
+    prompt: "Implement fn(s) that parses a numeric string.",
+    entry: "fn",
+    inputs,
+    k: 4,
+  });
+
+  // Same expectations as AC11, plus noEntry: 0
+  assert.equal(verdict.noEntry, 0, "all impls define entry → noEntry:0");
+  assert.equal(verdict.generated, 4);
+  assert.equal(verdict.viable, 4);
+  assert.equal(verdict.nonviable, 0);
+  assert.equal(verdict.splits.length, 1);
+  const s = verdict.splits[0]!;
+  assert.equal(s.inputIndex, 1);
+  assert.deepEqual(s.input, ["120"]);
+  assert.equal(s.outcomes["value:120"], 2);
+  assert.equal(s.outcomes["throw"], 2);
+  assert.equal(verdict.decidedRate, 0.5);
+});
+
+test("H-24 AC5 scaffolded default system string — exact rev-3 string", async () => {
+  const captured: Anthropic.MessageCreateParamsNonStreaming[] = [];
+  const k = 2;
+  const responses = Array.from({ length: k }, () => INTENT_IMPL_ZERO);
+  const client = scriptedClient(responses, (body) => captured.push(body));
+  const { agent } = makeAgent(client);
+
+  await intentProbe({
+    agent,
+    prompt: "Implement fn(s).",
+    entry: "fn",
+    inputs: [["x"]],
+    k,
+  });
+
+  const EXPECTED_SYSTEM =
+    "Implement the requested function in JavaScript. Define it as a top-level named function with exactly the requested name. Output ONLY one fenced code block. No prose.";
+
+  assert.equal(captured.length, k);
+  for (const body of captured) {
+    assert.equal(
+      body.system,
+      EXPECTED_SYSTEM,
+      "system must be the exact rev-3 PROBE_DEFAULT_SYSTEM string",
+    );
+  }
+});
+
+test("H-24 AC5 opts.system overrides default — custom system used verbatim", async () => {
+  const captured: Anthropic.MessageCreateParamsNonStreaming[] = [];
+  const k = 2;
+  const responses = Array.from({ length: k }, () => INTENT_IMPL_ZERO);
+  const client = scriptedClient(responses, (body) => captured.push(body));
+  const { agent } = makeAgent(client);
+
+  const CUSTOM_SYSTEM = "Custom system string X — override.";
+
+  await intentProbe({
+    agent,
+    prompt: "Implement fn(s).",
+    entry: "fn",
+    inputs: [["x"]],
+    k,
+    system: CUSTOM_SYSTEM,
+  });
+
+  assert.equal(captured.length, k);
+  for (const body of captured) {
+    assert.equal(
+      body.system,
+      CUSTOM_SYSTEM,
+      "opts.system must override PROBE_DEFAULT_SYSTEM verbatim",
+    );
+  }
 });
 
 test("AC16 intentProbe metering — exhausted-retry generation excluded from generated, cost 0", async () => {

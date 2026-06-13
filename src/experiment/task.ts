@@ -17,6 +17,7 @@ export interface TaskDef {
   readonly hidden: readonly HiddenCase[];
   readonly armCSubset: readonly string[];
   readonly isolation: "vm" | "process";
+  readonly signature: string;
 }
 
 interface RawExample {
@@ -33,6 +34,7 @@ interface RawTask {
   examples: RawExample[];
   armCSubset: string[];
   isolation?: string;
+  signature?: unknown;
 }
 
 interface RawHiddenCase {
@@ -56,6 +58,14 @@ export function loadTask(dir: string): TaskDef {
   if (isolation !== "vm" && isolation !== "process") {
     throw new Error(`task.json: isolation must be "vm" or "process", got "${isolation}"`);
   }
+
+  // signature is optional; if present must be a string; defaults to ""
+  if (taskRaw.signature !== undefined && typeof taskRaw.signature !== "string") {
+    throw new Error(
+      `task.json: signature must be a string, got ${typeof taskRaw.signature}`,
+    );
+  }
+  const signature: string = typeof taskRaw.signature === "string" ? taskRaw.signature : "";
 
   if (!taskRaw.examples || taskRaw.examples.length === 0) {
     throw new Error("task.json: examples array is empty");
@@ -133,7 +143,7 @@ export function loadTask(dir: string): TaskDef {
     ...(c.throws ? { throws: true as const } : {}),
   }));
 
-  return { prose, grader, partial, hidden, armCSubset: taskRaw.armCSubset, isolation: isolation as "vm" | "process" };
+  return { prose, grader, partial, hidden, armCSubset: taskRaw.armCSubset, isolation: isolation as "vm" | "process", signature };
 }
 
 export function auditNoContamination(
