@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { MessagesClient } from "../src/agent.ts";
 import { Contract } from "../src/contract.ts";
+import { loadTask } from "../src/experiment/task.ts";
 import type { HiddenCase } from "../src/experiment/task.ts";
 import type { FeedbackArmAnalysis } from "../src/experiment/e1b.ts";
 import type { DecomposeArtifact } from "../src/experiment/decompose-run.ts";
@@ -226,8 +227,9 @@ test("AC1 variant: asset missing '1.5h' → descriptive throw naming the missing
   });
   const path = await writeGodAnswers(dir, missing);
 
+  // Pass requiredInputs explicitly so coverage check runs (H-29: loadGodAnswers now takes requiredInputs param)
   await assert.rejects(
-    loadGodAnswers(path),
+    loadGodAnswers(path, [["120"], [" 1h 30m "], ["1.5h"]]),
     /1\.5h|missing/i,
   );
 });
@@ -1463,4 +1465,321 @@ test("AC12 loadGodAnswers — full asset with ordering rulings loads cleanly (5 
   const reversedRuling = rulings.find((r) => JSON.stringify(r.input) === JSON.stringify(["30m1h"]));
   assert.ok(reversedRuling !== undefined, "reversed-order ruling present");
   assert.equal(reversedRuling!.expected, 5400, "reversed-order expected is 5400");
+});
+
+// ── AC-MT1: contested.json drives coverage; E3_KNOWN_INPUTS gone ─────────────
+
+test("AC-MT1 loadGodAnswers — requiredInputs=three tuples, asset covering all → rulings returned", async () => {
+  // Use the duration-parse god-answers.json which covers the 3 original E3 inputs + 2 ordering
+  const godAnswersPath = join(TASKS_DIR, "duration-parse", "god-answers.json");
+  const required: readonly (readonly unknown[])[] = [["120"], [" 1h 30m "], ["1.5h"]];
+  const rulings = await loadGodAnswers(godAnswersPath, required);
+  assert.ok(rulings.length >= 3, "rulings returned (≥3 for duration-parse asset)");
+});
+
+test("AC-MT1 loadGodAnswers — requiredInputs=[]: no coverage constraint, minimal valid asset loads", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "e4-mt1-noconstraint-"));
+  // An asset with only one ruling (would fail if E3 coverage check ran)
+  const minimalAsset = JSON.stringify({
+    task: "anything",
+    rulings: [
+      { input: ["foo"], expected: 42, decision: "The simplest input returns forty-two.", rationale: "ok" },
+    ],
+  });
+  const path = join(dir, "god-answers.json");
+  await writeFile(path, minimalAsset);
+
+  // requiredInputs=[] → no constraint → must not throw
+  const rulings = await loadGodAnswers(path, []);
+  assert.equal(rulings.length, 1, "single ruling loaded with no coverage constraint");
+});
+
+test("AC-MT1 loadGodAnswers — asset missing one required tuple → descriptive throw naming the missing tuple", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "e4-mt1-missing-"));
+  const asset = JSON.stringify({
+    task: "test",
+    rulings: [
+      { input: ["foo"], expected: 1, decision: "A well-formed input returns a positive integer.", rationale: "x" },
+      { input: ["bar"], expected: "<throws>", throws: true, decision: "A non-numeric string must throw.", rationale: "y" },
+      // missing: ["baz"]
+    ],
+  });
+  const path = join(dir, "god-answers.json");
+  await writeFile(path, asset);
+
+  await assert.rejects(
+    loadGodAnswers(path, [["foo"], ["bar"], ["baz"]]),
+    (err: Error) => {
+      assert.ok(
+        /missing|baz/i.test(err.message),
+        `error must name the missing tuple 'baz': ${err.message}`,
+      );
+      return true;
+    },
+    "loadGodAnswers must throw naming the missing required tuple",
+  );
+});
+
+test("AC-MT1 E3_KNOWN_INPUTS constant is gone from e4.ts source", async () => {
+  // Grep-assert: the constant must not appear in the compiled module exports
+  // We verify by checking the module has no E3_KNOWN_INPUTS export
+  const e4Module = await import("../src/experiment/e4.ts");
+  assert.ok(
+    !("E3_KNOWN_INPUTS" in e4Module),
+    "E3_KNOWN_INPUTS must not be exported from e4.ts (it is deleted)",
+  );
+});
+
+// ── AC-MT2: runE4 reads contested.json ───────────────────────────────────────
+
+test("AC-MT2 runE4 — fixture task dir with contested.json: inputs passed as requiredInputs (coverage runs)", async () => {
+  // Set up a minimal custom task fixture dir
+  const outDir = await mkdtemp(join(tmpdir(), "e4-mt2-contested-"));
+  const fixtureDir = join(outDir, "tasks");
+  const taskDir = join(fixtureDir, "fake-task");
+  const { mkdir: fsMkdir } = await import("node:fs/promises");
+  await fsMkdir(taskDir, { recursive: true });
+
+  // Task assets
+  await writeFile(join(taskDir, "requirement.md"), "Write a function `fakeTask(x)` that returns x plus one.");
+  await writeFile(join(taskDir, "task.json"), JSON.stringify({
+    name: "fake-task",
+    entry: "fakeTask",
+    version: "1",
+    signature: "(x: number) => number",
+    examples: [
+      { name: "add-one", input: [1], expected: 2 },
+      { name: "add-zero", input: [0], expected: 1, },
+      { name: "throws-str", input: ["bad"], expected: "<throws>", throws: true },
+    ],
+    armCSubset: ["add-one"],
+  }));
+  await writeFile(join(taskDir, "hidden-battery.json"), JSON.stringify([
+    { name: "h1", input: [5], expected: 6, coveredBy: ["add-one"] },
+    { name: "h2", input: ["x"], expected: "<throws>", throws: true, coveredBy: ["throws-str"] },
+  ]));
+
+  // contested.json with two required inputs
+  const contestedInputs = [[99], [100]];
+  await writeFile(join(taskDir, "contested.json"), JSON.stringify({ inputs: contestedInputs }));
+
+  // god-answers.json covering both contested inputs
+  await writeFile(join(taskDir, "god-answers.json"), JSON.stringify({
+    task: "fake-task",
+    rulings: [
+      { input: [99], expected: 100, decision: "A large positive integer increments to the next integer.", rationale: "99+1=100" },
+      { input: [100], expected: 101, decision: "One hundred increments to one hundred and one.", rationale: "100+1=101" },
+    ],
+  }));
+
+  const fakeImpl = "function fakeTask(x) { if (typeof x !== 'number') throw new Error('bad'); return x + 1; }";
+  const fencedImpl = "```js\n" + fakeImpl + "\n```";
+
+  const fakeResponses = [
+    "```json\n" + JSON.stringify([{
+      id: "fake-task",
+      requirement: "Fake task — increment input by one.",
+      entry: "fakeTask",
+      signature: "(x: number) => number",
+      examples: [
+        { name: "basic", input: [1], expected: 2 },
+        { name: "throws-string", input: ["z"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    }]) + "\n```",
+    "```json\n[]\n```",
+    ...Array(2).fill(fencedImpl), // n=1 → 2 grinding calls (human + warboss)
+  ];
+
+  const client = scriptedClient(fakeResponses);
+
+  // Must complete without throwing (contested.json present + god-answers covers both)
+  await runE4({
+    client,
+    task: "fake-task",
+    n: 1,
+    out: outDir,
+    tasksDir: fixtureDir,
+    live: false,
+  });
+
+  const files = await readdir(outDir);
+  const e4File = files.find((f) => f.startsWith("e4-") && f.endsWith(".json"));
+  assert.ok(e4File !== undefined, "e4 artifact written");
+
+  const e4Raw = await readFile(join(outDir, e4File!), "utf8");
+  const e4Artifact = JSON.parse(e4Raw) as { config: { task: string } };
+  assert.equal(e4Artifact.config.task, "fake-task", "artifact config.task is 'fake-task'");
+});
+
+test("AC-MT2 runE4 — fixture task dir WITHOUT contested.json → descriptive throw before any model call", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e4-mt2-nocontested-"));
+  const fixtureDir = join(outDir, "tasks");
+  const taskDir = join(fixtureDir, "no-contested");
+  const { mkdir: fsMkdir } = await import("node:fs/promises");
+  await fsMkdir(taskDir, { recursive: true });
+
+  // Task assets — no contested.json
+  await writeFile(join(taskDir, "requirement.md"), "Write a function `noContested(x)` that returns x.");
+  await writeFile(join(taskDir, "task.json"), JSON.stringify({
+    name: "no-contested",
+    entry: "noContested",
+    version: "1",
+    signature: "(x: number) => number",
+    examples: [{ name: "identity", input: [1], expected: 1 }],
+    armCSubset: ["identity"],
+  }));
+  await writeFile(join(taskDir, "hidden-battery.json"), JSON.stringify([
+    { name: "h1", input: [2], expected: 2, coveredBy: ["identity"] },
+  ]));
+  // NOTE: no contested.json is created
+
+  // Client that should never be called (throw should happen first)
+  let clientCalled = false;
+  const client: import("../src/agent.ts").MessagesClient = {
+    messages: {
+      create: async () => {
+        clientCalled = true;
+        return { content: [{ type: "text", text: "" }], usage: { input_tokens: 0, output_tokens: 0 } } as unknown as import("@anthropic-ai/sdk").default.Message;
+      },
+    },
+  };
+
+  await assert.rejects(
+    runE4({ client, task: "no-contested", n: 1, out: outDir, tasksDir: fixtureDir, live: false }),
+    (err: Error) => {
+      assert.ok(
+        /no-contested.*E4-eligible|E4-eligible.*no-contested|missing contested\.json/i.test(err.message),
+        `error must name the task and mention E4-eligibility or missing contested.json: ${err.message}`,
+      );
+      return true;
+    },
+    "runE4 must throw descriptively when contested.json is missing",
+  );
+
+  assert.equal(clientCalled, false, "no model call was made before the throw");
+});
+
+test("AC-MT2 tasks/duration-parse/contested.json exists with three inputs (back-compat)", async () => {
+  const path = join(TASKS_DIR, "duration-parse", "contested.json");
+  const raw = await readFile(path, "utf8");
+  const parsed = JSON.parse(raw) as { inputs: unknown[][] };
+  assert.ok(Array.isArray(parsed.inputs), "inputs is an array");
+  assert.equal(parsed.inputs.length, 3, "three contested inputs for duration-parse");
+  // Verify the three E3 inputs
+  assert.deepEqual(parsed.inputs[0], ["120"], "first input is ['120']");
+  assert.deepEqual(parsed.inputs[1], [" 1h 30m "], "second input is [' 1h 30m ']");
+  assert.deepEqual(parsed.inputs[2], ["1.5h"], "third input is ['1.5h']");
+});
+
+// ── AC-MT3: parse-range loads via loadTask + runs offline through runE4 ───────
+
+test("AC-MT3 loadTask(tasks/parse-range) — valid TaskDef: pure entry, ≥2 examples incl. throws, non-empty hidden", () => {
+  const taskDef = loadTask(join(TASKS_DIR, "parse-range"));
+
+  // Has prose
+  assert.ok(typeof taskDef.prose === "string" && taskDef.prose.length > 0, "prose is non-empty");
+
+  // grader has ≥2 examples including ≥1 throws
+  const examples = taskDef.grader.examples;
+  assert.ok(examples.length >= 2, `grader has ≥2 examples: ${examples.length}`);
+  const throwsEx = examples.filter((c: { throws?: boolean }) => c.throws === true);
+  assert.ok(throwsEx.length >= 1, "at least one throws example in public examples");
+
+  // Non-empty hidden battery with ≥1 happy and ≥1 error
+  assert.ok(taskDef.hidden.length > 0, "hidden battery is non-empty");
+  const happyHidden = taskDef.hidden.filter((c: { throws?: boolean }) => c.throws !== true);
+  const errorHidden = taskDef.hidden.filter((c: { throws?: boolean }) => c.throws === true);
+  assert.ok(happyHidden.length >= 1, "hidden battery has ≥1 happy case");
+  assert.ok(errorHidden.length >= 1, "hidden battery has ≥1 error case");
+});
+
+test("AC-MT3 runE4 parse-range offline — e4 artifact has config.task='parse-range', God battery from parse-range assets", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e4-mt3-parse-range-"));
+
+  // A correct parseRange implementation (pure, synchronous)
+  // Uses distinct inputs so no contested/God inputs are leaked
+  const CORRECT_PARSE_RANGE_IMPL = `
+function parseRange(spec) {
+  if (!spec || spec.trim() === '') throw new Error('empty spec');
+  const result = new Set();
+  const parts = spec.split(',');
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed === '') throw new Error('empty segment');
+    const dashIdx = trimmed.lastIndexOf('-', trimmed.length - 1);
+    if (dashIdx > 0) {
+      const start = parseInt(trimmed.slice(0, dashIdx), 10);
+      const end = parseInt(trimmed.slice(dashIdx + 1), 10);
+      if (isNaN(start) || isNaN(end) || start < 0 || end < 0) throw new Error('invalid bounds');
+      if (start > end) throw new Error('reversed bound');
+      for (let i = start; i <= end; i++) result.add(i);
+    } else {
+      const n = parseInt(trimmed, 10);
+      if (isNaN(n) || n < 0) throw new Error('invalid value');
+      result.add(n);
+    }
+  }
+  return [...result].sort((a, b) => a - b);
+}
+`.trim();
+
+  const fencedParseRange = "```js\n" + CORRECT_PARSE_RANGE_IMPL + "\n```";
+
+  // Safe decompose response: uses inputs distinct from any God/contested inputs
+  const safeParseRangeDecomposeJson = JSON.stringify([
+    {
+      id: "parse-range",
+      requirement: "Parse a range spec and return sorted integers.",
+      entry: "parseRange",
+      signature: "(spec: string) => number[]",
+      examples: [
+        { name: "simple-range", input: ["20-22"], expected: [20, 21, 22] },
+        { name: "single", input: ["30"], expected: [30] },
+        { name: "empty-throws", input: [""], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    },
+  ]);
+  const safeParseRangeDecomposeFenced = "```json\n" + safeParseRangeDecomposeJson + "\n```";
+
+  const parseRangeResponses = [
+    safeParseRangeDecomposeFenced, // call 0: decompose
+    "```json\n[]\n```",            // call 1: audit
+    fencedParseRange,              // call 2: human grinding (n=1)
+    fencedParseRange,              // call 3: warboss grinding (n=1)
+  ];
+
+  const client = scriptedClient(parseRangeResponses);
+
+  const result = await runE4({
+    client,
+    task: "parse-range",
+    n: 1,
+    out: outDir,
+    tasksDir: TASKS_DIR,
+    live: false,
+  });
+
+  assert.equal(result.deadRun, false, "parse-range offline run is not a dead run");
+
+  const files = await readdir(outDir);
+  const e4File = files.find((f) => f.startsWith("e4-") && f.endsWith(".json"));
+  assert.ok(e4File !== undefined, "e4 artifact written for parse-range");
+
+  const e4Raw = await readFile(join(outDir, e4File!), "utf8");
+  const e4Artifact = JSON.parse(e4Raw) as {
+    config: { task: string };
+    e2: {
+      hiddenBattery: { total: number; happyCount: number; errorCount: number };
+    };
+  };
+
+  assert.equal(e4Artifact.config.task, "parse-range", "artifact config.task is 'parse-range'");
+
+  // God battery is built from parse-range hidden cases + god-answers rulings
+  const hb = e4Artifact.e2.hiddenBattery;
+  assert.ok(hb.total > 0, "God battery is non-empty");
+  assert.ok(hb.happyCount >= 1, "God battery has ≥1 happy case");
+  assert.ok(hb.errorCount >= 1, "God battery has ≥1 error case");
 });

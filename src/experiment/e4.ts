@@ -67,24 +67,21 @@ export interface E4Criterion {
 
 // ── Pure helpers (exported for unit tests AC1–AC5) ────────────────────────────
 
-// The three E3-known contested inputs (pinned from spec)
-const E3_KNOWN_INPUTS: readonly (readonly string[])[] = [
-  ["120"],
-  [" 1h 30m "],
-  ["1.5h"],
-];
-
 /**
  * Load and validate the God-answers asset from `path`.
  *
  * Throws a descriptive error if:
  * - File cannot be read or is not valid JSON
- * - Any of the three E3-known inputs is missing from the rulings
+ * - Any tuple in `requiredInputs` is missing from the rulings (coverage check)
  * - Duplicate input tuples are present within the asset
  *
+ * `requiredInputs` defaults to [] (no coverage constraint).
  * Returns the rulings verbatim (throws ruling's expected is "<throws>").
  */
-export async function loadGodAnswers(path: string): Promise<readonly GodRuling[]> {
+export async function loadGodAnswers(
+  path: string,
+  requiredInputs: readonly (readonly unknown[])[] = [],
+): Promise<readonly GodRuling[]> {
   let raw: string;
   try {
     raw = await readFile(path, "utf8");
@@ -195,17 +192,17 @@ export async function loadGodAnswers(path: string): Promise<readonly GodRuling[]
     }
   }
 
-  // Check that all three E3 known inputs are covered
+  // Check that all required inputs (from contested.json) are covered
   const missingKnowns: string[] = [];
-  for (const known of E3_KNOWN_INPUTS) {
-    const knownKey = JSON.stringify(known);
-    if (!seenCanonical.includes(knownKey)) {
-      missingKnowns.push(JSON.stringify(known));
+  for (const required of requiredInputs) {
+    const requiredKey = JSON.stringify(required);
+    if (!seenCanonical.includes(requiredKey)) {
+      missingKnowns.push(requiredKey);
     }
   }
   if (missingKnowns.length > 0) {
     throw new Error(
-      `loadGodAnswers: asset must cover the three E3-known contested inputs; ` +
+      `loadGodAnswers: asset must cover every required contested input; ` +
       `missing: ${missingKnowns.join(", ")} in "${path}"`,
     );
   }
@@ -504,8 +501,21 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
   const godAnswersPath =
     opts.godAnswers ?? join(tasksDir, taskName, "god-answers.json");
 
+  // ── Load contested.json (required for E4-eligibility) ────────────────────
+  const contestedPath = join(tasksDir, taskName, "contested.json");
+  let contestedRaw: string;
+  try {
+    contestedRaw = await readFile(contestedPath, "utf8");
+  } catch {
+    throw new Error(
+      `task ${taskName} is not E4-eligible: missing contested.json at "${contestedPath}"`,
+    );
+  }
+  const contestedParsed = JSON.parse(contestedRaw) as { inputs: readonly (readonly unknown[])[] };
+  const requiredInputs: readonly (readonly unknown[])[] = contestedParsed.inputs;
+
   // ── Load God answers ──────────────────────────────────────────────────────
-  const rulings = await loadGodAnswers(godAnswersPath);
+  const rulings = await loadGodAnswers(godAnswersPath, requiredInputs);
 
   // ── Build God battery ─────────────────────────────────────────────────────
   const godBattery = buildGodBattery(task.hidden, rulings);

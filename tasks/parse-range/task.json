@@ -1,0 +1,13 @@
+{
+  "name": "parse-range",
+  "entry": "parseRange",
+  "version": "1",
+  "signature": "(spec: string) => number[]",
+  "examples": [
+    { "name": "basic-range",   "input": ["1-3,5,8-10"], "expected": [1,2,3,5,8,9,10] },
+    { "name": "single-value",  "input": ["7"],           "expected": [7] },
+    { "name": "multiple-ranges", "input": ["2-4,6-8"],  "expected": [2,3,4,6,7,8] },
+    { "name": "empty-spec",    "input": [""],            "expected": "<throws>", "throws": true }
+  ],
+  "armCSubset": ["basic-range", "single-value"]
+}

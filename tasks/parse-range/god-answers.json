@@ -1,0 +1,38 @@
+{
+  "task": "parse-range",
+  "rulings": [
+    {
+      "input": ["5-1"],
+      "expected": "<throws>",
+      "throws": true,
+      "decision": "A range whose start bound is greater than its end bound is invalid input and must throw.",
+      "rationale": "reversed bounds are not a valid range; descending expansion is not defined"
+    },
+    {
+      "input": ["1-3,2-4"],
+      "expected": [1,2,3,4],
+      "decision": "When ranges overlap, each integer in the union appears exactly once in the output; duplicates are deduplicated and the result is sorted.",
+      "rationale": "overlapping ranges produce a set union: {1,2,3} union {2,3,4} = {1,2,3,4}"
+    },
+    {
+      "input": [" 1 - 3 "],
+      "expected": [1,2,3],
+      "decision": "A range specification with surrounding or internal whitespace is accepted; whitespace around integers and the dash separator is ignored.",
+      "rationale": "whitespace tolerance: ' 1 - 3 ' parses the same as '1-3'"
+    },
+    {
+      "input": ["1,,3"],
+      "expected": "<throws>",
+      "throws": true,
+      "decision": "An empty segment produced by consecutive commas is invalid input and must throw.",
+      "rationale": "empty segment between commas has no well-defined value"
+    },
+    {
+      "input": ["-2-2"],
+      "expected": "<throws>",
+      "throws": true,
+      "decision": "A range specification containing a negative bound is invalid input and must throw.",
+      "rationale": "negative bounds are not supported; the grammar only defines non-negative integers"
+    }
+  ]
+}
