@@ -172,12 +172,20 @@ live spend.** Frozen-spec scope bodies live in each spec + the Log table below._
 
 **Standing notes carried from Leg 7 (rev-2 candidates surfaced at build/merge):**
 
-- **e4 rev-2 → H-26 DONE & accepted 2026-06-14 (main 252/252).** Prose-only
-  owner decisions (contested inputs now survive the residual) + single shared
-  `Ledger`. **The live E4 run is now UNBLOCKED (~$0.15, God-gated):**
-  `node --env-file=.env --import tsx src/experiment/e4.ts --n 30 --granularity full`.
-  `tasks/duration-parse/god-answers.json` already carries literal-free `decision`
-  fields for the 3 knowns. Verdict → `reports/e4-verdict.md`.
+- **E4 RAN 2026-06-14 — PASS** ($0.252, artifact `runs/e4-20260614T144326Z.json`,
+  verdict `reports/e4-verdict.md`, commit `391ecb3`). warboss **0.918** vs human
+  **0.724** on the neutral God oracle (E2 FAILed 0.667 on the old confounded
+  battery). Driver = error coverage (human 0.000, warboss 0.878 — God ruled the
+  inputs invalid, warboss authored throws). `"120"` flipped polarity vs E2
+  (warboss 1.00 / human 0.00) = clean confound removal. `"1.5h"` excluded
+  (warboss coincidentally echoed it as its own example — spec rev-2 prediction #3
+  backstop, 1/3 not 3/3); PASS rests on 11/12. **Closes the E1→E2→E3→E4 chain.**
+  NEXT-leg candidates (verdict §Consequence): (1) production wiring
+  escalations→owner-answer queue→re-author into live `decompose-run`; (2) E4 rev 3
+  to score decimal (render-hint forbidding the author from echoing the ruling
+  input, or a 2nd God battery using `"2.5h"`); (3) owner happy-path ruling on
+  repeat/reversed unit ordering (warboss dips to 0.77 there); (4) multi-task
+  replication.
 - **e3-needle-matcher rev-2 (spec defect, found by the H-25 grunt):** AC5 as
   written ("every needle is a contested literal OR contains a space/hyphen")
   CONTRADICTS the pinned needle lists, which include single-word needles
