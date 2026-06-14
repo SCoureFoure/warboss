@@ -1,4 +1,4 @@
-/** AC1–AC10 — see specs/e4-battery-authoring.spec.md rev 2 */
+/** AC1–AC12 — see specs/e4-battery-authoring.spec.md rev 3 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
@@ -1122,4 +1122,345 @@ test("AC9 dead-run guard — live: true + nonzero costs + working impl → deadR
   });
 
   assert.equal(result.deadRun, false, "nonzero costs + good impl → no dead run");
+});
+
+// ── AC10: (label is correct at spec — test above is labelled AC9 but covers AC10) ──
+// The test above "AC9 dead-run guard" tests are actually AC10 per the spec. The
+// spec header comment labelled AC9 contains the end-to-end check; the dead-run
+// guard is AC10. Labels in test names are kept as-is to avoid breaking existing.
+
+// ── AC11: extraCases enter the battery + decimal-class survives canonical collision ──
+
+test("AC11 buildGodBattery — extraCases produce distinct cases immediately after canonical", () => {
+  const taskHidden: HiddenCase[] = [
+    { name: "happy-a", input: ["2h"], expected: 7200, coveredBy: [] },
+    { name: "error-a", input: ["-1h"], expected: "<throws>", throws: true, coveredBy: [] },
+  ];
+
+  const rulings: GodRuling[] = [
+    {
+      input: ["1.5h"],
+      expected: 5400,
+      decision: "A fractional quantity before a unit is accepted and scaled by that unit; the result is the total seconds for that fractional amount.",
+      extraCases: [
+        { input: ["2.5h"], expected: 9000 },
+        { input: ["0.5h"], expected: 1800 },
+      ],
+    },
+  ];
+
+  const battery = buildGodBattery(taskHidden, rulings);
+
+  // Original 2 + canonical 1 + 2 extra = 5
+  assert.equal(battery.length, 5, "2 task cases + 1 canonical + 2 extras = 5");
+
+  // Original cases first
+  assert.equal(battery[0]!.name, "happy-a");
+  assert.equal(battery[1]!.name, "error-a");
+
+  // Canonical at index 2 (appended, novel input)
+  const canonical = battery[2]!;
+  assert.ok(canonical.name.startsWith("god-"), `canonical name starts with god-: ${canonical.name}`);
+  assert.deepEqual([...canonical.input], ["1.5h"], "canonical input is ['1.5h']");
+  assert.equal(canonical.expected, 5400, "canonical expected is 5400");
+  assert.deepEqual([...canonical.coveredBy], [], "canonical coveredBy = []");
+
+  // Extra cases immediately after canonical (indices 3 and 4)
+  const extra0 = battery[3]!;
+  assert.deepEqual([...extra0.input], ["2.5h"], "first extra input is ['2.5h']");
+  assert.equal(extra0.expected, 9000, "first extra expected is 9000");
+  assert.deepEqual([...extra0.coveredBy], [], "first extra coveredBy = []");
+  assert.ok(extra0.name.startsWith("god-"), `first extra name starts with god-: ${extra0.name}`);
+
+  const extra1 = battery[4]!;
+  assert.deepEqual([...extra1.input], ["0.5h"], "second extra input is ['0.5h']");
+  assert.equal(extra1.expected, 1800, "second extra expected is 1800");
+  assert.deepEqual([...extra1.coveredBy], [], "second extra coveredBy = []");
+
+  // All names unique
+  const names = battery.map((c) => c.name);
+  const nameSet = new Set(names);
+  assert.equal(nameSet.size, battery.length, "all names unique");
+});
+
+test("AC11 end-to-end: warboss coincidentally uses 1.5h → canonical excluded, 2.5h/0.5h survive", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e4-ac11-collision-"));
+
+  // God-answers with extraCases on decimal ruling + ordering rulings from asset
+  const godAnswersWithExtra = JSON.stringify({
+    task: "duration-parse",
+    answeredAgainstArtifact: "e3-fixture",
+    rulings: [
+      {
+        input: ["120"],
+        expected: "<throws>",
+        throws: true,
+        decision: "A bare integer with no time unit is invalid input and must throw.",
+        rationale: "bare number invalid",
+      },
+      {
+        input: [" 1h 30m "],
+        expected: 5400,
+        decision: "A duration string with leading or trailing whitespace and internal spaces between components must be accepted; the result is the sum of the component values in seconds.",
+        rationale: "whitespace ok",
+      },
+      {
+        input: ["1.5h"],
+        expected: 5400,
+        decision: "A fractional quantity before a unit is accepted and scaled by that unit; the result is the total seconds for that fractional amount.",
+        rationale: "fractional hours accepted",
+        extraCases: [
+          { input: ["2.5h"], expected: 9000 },
+          { input: ["0.5h"], expected: 1800 },
+        ],
+      },
+    ],
+  });
+  const godAnswersPath = join(outDir, "god-answers.json");
+  await writeFile(godAnswersPath, godAnswersWithExtra);
+
+  // Warboss decompose COINCIDENTALLY uses "1.5h" as its own example
+  const coincidentalDecomposeJson = JSON.stringify([
+    {
+      id: "parse-duration",
+      requirement: "Parse a duration string and return total seconds.",
+      entry: "parseDuration",
+      signature: "(s: string) => number",
+      examples: [
+        { name: "basic", input: ["2h30m"], expected: 9000 },
+        { name: "decimal", input: ["1.5h"], expected: 5400 }, // coincidentally equals canonical God input
+        { name: "invalid", input: ["abc"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    },
+  ]);
+  const coincidentalFenced = "```json\n" + coincidentalDecomposeJson + "\n```";
+
+  const responses = [
+    coincidentalFenced,
+    EMPTY_GAPS_FENCED,
+    ...e2GrindingResponses(1),
+  ];
+  const client = scriptedClient(responses);
+
+  await runE4({
+    client,
+    task: "duration-parse",
+    n: 1,
+    out: outDir,
+    tasksDir: TASKS_DIR,
+    godAnswers: godAnswersPath,
+    live: false,
+  });
+
+  const files = await readdir(outDir);
+  const e4File = files.find((f) => f.startsWith("e4-") && f.endsWith(".json"))!;
+  const raw = await readFile(join(outDir, e4File), "utf8");
+  const e4Artifact = JSON.parse(raw) as {
+    e2: {
+      hiddenBattery: {
+        excluded: Array<{ name: string; leakedBy: string[] }>;
+        residualCount: number;
+      };
+    };
+  };
+
+  const hb = e4Artifact.e2.hiddenBattery;
+
+  // The canonical 1.5h case should be excluded (warboss chose it as an example)
+  const excluded15h = hb.excluded.find((e) =>
+    // The canonical may be a "decimal-hours" override or a god-appended case
+    (e.name.includes("decimal") || e.name.includes("1.5h")) && e.leakedBy.includes("warboss"),
+  );
+  assert.ok(
+    excluded15h !== undefined,
+    `canonical 1.5h case should be excluded with leakedBy warboss: ${JSON.stringify(hb.excluded)}`,
+  );
+
+  // The extra cases 2.5h and 0.5h should NOT be excluded
+  const excluded25h = hb.excluded.find((e) => e.name.includes("2.5h"));
+  assert.ok(
+    excluded25h === undefined,
+    `2.5h extra case must NOT be excluded: ${JSON.stringify(hb.excluded)}`,
+  );
+  const excluded05h = hb.excluded.find((e) => e.name.includes("0.5h"));
+  assert.ok(
+    excluded05h === undefined,
+    `0.5h extra case must NOT be excluded: ${JSON.stringify(hb.excluded)}`,
+  );
+
+  // Both extras survive → decimal CLASS has ≥1 scored residual case
+  assert.ok(hb.residualCount > 0, "residual is non-empty");
+});
+
+test("AC11 self-leak guard (rev 3): decision containing an extra-case input → loadGodAnswers throws", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "e4-ac11-extraleak-"));
+
+  // Ruling with clean canonical input but decision contains extra-case input "2.5h"
+  // JSON.stringify("2.5h") = '"2.5h"'
+  const selfLeakExtra = JSON.stringify({
+    task: "duration-parse",
+    rulings: [
+      {
+        input: ["120"],
+        expected: "<throws>",
+        throws: true,
+        decision: "A bare integer with no time unit is invalid input and must throw.",
+        rationale: "ok",
+      },
+      {
+        input: [" 1h 30m "],
+        expected: 5400,
+        decision: "A duration string with whitespace padding is accepted.",
+        rationale: "ok",
+      },
+      {
+        input: ["1.5h"],
+        expected: 5400,
+        // Decision contains "2.5h" which is an extra-case input → self-leak!
+        decision: `A fractional quantity is accepted; e.g. "2.5h" gives nine thousand seconds.`,
+        rationale: "fractional ok",
+        extraCases: [
+          { input: ["2.5h"], expected: 9000 },
+          { input: ["0.5h"], expected: 1800 },
+        ],
+      },
+    ],
+  });
+
+  const path = join(dir, "god-answers.json");
+  await writeFile(path, selfLeakExtra);
+
+  await assert.rejects(
+    loadGodAnswers(path),
+    (err: Error) => {
+      assert.ok(
+        /self.?leak|2\.5h/i.test(err.message),
+        `error must name the extra-case input: ${err.message}`,
+      );
+      return true;
+    },
+    "loadGodAnswers must throw when decision contains an extra-case input literal",
+  );
+});
+
+// ── AC12: ordering rulings override happy cases in place ─────────────────────
+
+test("AC12 buildGodBattery — ordering rulings override repeat-units/reversed-order hidden cases in place", () => {
+  // Use the actual duration-parse hidden battery cases (subset)
+  const taskHidden: HiddenCase[] = [
+    { name: "plain-hours",    input: ["2h"],       expected: 7200,       coveredBy: [] },
+    { name: "carry-minutes",  input: ["1h90m"],    expected: 9000,       coveredBy: [] },
+    { name: "repeat-units",   input: ["30m30m"],   expected: 3600,       coveredBy: [] },
+    { name: "decimal-hours",  input: ["1.5h"],     expected: 5400,       coveredBy: [] },
+    { name: "reversed-order", input: ["30m1h"],    expected: 5400,       coveredBy: [] },
+    { name: "negative",       input: ["-1h"],      expected: "<throws>", throws: true, coveredBy: [] },
+  ];
+
+  const orderingRulings: GodRuling[] = [
+    {
+      input: ["30m30m"],
+      expected: 3600,
+      decision: "When the same unit appears more than once, the quantities for that unit are summed.",
+      rationale: "repeated units are additive",
+    },
+    {
+      input: ["30m1h"],
+      expected: 5400,
+      decision: "Units may appear in any order; the total is the sum of all unit quantities regardless of the order they are written.",
+      rationale: "order-independence",
+    },
+  ];
+
+  const battery = buildGodBattery(taskHidden, orderingRulings);
+
+  // Length unchanged (both are overrides, not appends)
+  assert.equal(battery.length, 6, "no cases appended — both were overrides");
+
+  // repeat-units at original index 2, overridden
+  const repeatUnits = battery[2]!;
+  assert.equal(repeatUnits.name, "repeat-units", "override keeps original name 'repeat-units'");
+  assert.deepEqual([...repeatUnits.input], ["30m30m"], "input preserved");
+  assert.equal(repeatUnits.expected, 3600, "God's expected wins");
+  assert.deepEqual([...repeatUnits.coveredBy], [], "coveredBy = []");
+
+  // reversed-order at original index 4, overridden
+  const reversedOrder = battery[4]!;
+  assert.equal(reversedOrder.name, "reversed-order", "override keeps original name 'reversed-order'");
+  assert.deepEqual([...reversedOrder.input], ["30m1h"], "input preserved");
+  assert.equal(reversedOrder.expected, 5400, "God's expected wins");
+  assert.deepEqual([...reversedOrder.coveredBy], [], "coveredBy = []");
+
+  // overridden count = 2
+  // (We verify via godBatteryStats indirectly by checking no new names appeared)
+  const names = battery.map((c) => c.name);
+  assert.deepEqual(
+    names,
+    ["plain-hours", "carry-minutes", "repeat-units", "decimal-hours", "reversed-order", "negative"],
+    "original names preserved in original order",
+  );
+});
+
+test("AC12 renderOwnerDecisions — ordering ruling decisions contain no '30m30m' or '30m1h' substring", () => {
+  const orderingRulings: GodRuling[] = [
+    {
+      input: ["30m30m"],
+      expected: 3600,
+      decision: "When the same unit appears more than once, the quantities for that unit are summed.",
+    },
+    {
+      input: ["30m1h"],
+      expected: 5400,
+      decision: "Units may appear in any order; the total is the sum of all unit quantities regardless of the order they are written.",
+    },
+  ];
+
+  const result = renderOwnerDecisions(orderingRulings);
+
+  // No input literals in the output
+  assert.ok(!result.includes("30m30m"), "output must NOT contain '30m30m'");
+  assert.ok(!result.includes("30m1h"), "output must NOT contain '30m1h'");
+
+  // Both bullets present
+  const bullets = result.split("\n").filter((l) => l.startsWith("- "));
+  assert.equal(bullets.length, 2, "two bullets for two ordering rulings");
+  assert.ok(
+    bullets[0]!.includes("same unit appears more than once"),
+    `first bullet is repeat-units decision: ${bullets[0]}`,
+  );
+  assert.ok(
+    bullets[1]!.includes("any order"),
+    `second bullet is reversed-order decision: ${bullets[1]}`,
+  );
+});
+
+test("AC12 loadGodAnswers — full asset with ordering rulings loads cleanly (5 rulings)", async () => {
+  // Test with the actual god-answers.json asset (which has 5 rulings after rev 3)
+  const godAnswersPath = join(TASKS_DIR, "duration-parse", "god-answers.json");
+  const rulings = await loadGodAnswers(godAnswersPath);
+
+  assert.equal(rulings.length, 5, "5 rulings: 3 original E3 knowns + 2 ordering");
+
+  // decimal ruling has extraCases
+  const decimalRuling = rulings.find((r) => JSON.stringify(r.input) === JSON.stringify(["1.5h"]));
+  assert.ok(decimalRuling !== undefined, "decimal ruling present");
+  assert.ok(decimalRuling!.extraCases !== undefined, "decimal ruling has extraCases");
+  assert.equal(decimalRuling!.extraCases!.length, 2, "decimal ruling has 2 extraCases");
+
+  const extra0 = decimalRuling!.extraCases![0]!;
+  assert.deepEqual([...extra0.input], ["2.5h"], "first extra input is ['2.5h']");
+  assert.equal(extra0.expected, 9000, "first extra expected is 9000");
+
+  const extra1 = decimalRuling!.extraCases![1]!;
+  assert.deepEqual([...extra1.input], ["0.5h"], "first extra input is ['0.5h']");
+  assert.equal(extra1.expected, 1800, "second extra expected is 1800");
+
+  // ordering rulings present
+  const repeatRuling = rulings.find((r) => JSON.stringify(r.input) === JSON.stringify(["30m30m"]));
+  assert.ok(repeatRuling !== undefined, "repeat-units ruling present");
+  assert.equal(repeatRuling!.expected, 3600, "repeat-units expected is 3600");
+
+  const reversedRuling = rulings.find((r) => JSON.stringify(r.input) === JSON.stringify(["30m1h"]));
+  assert.ok(reversedRuling !== undefined, "reversed-order ruling present");
+  assert.equal(reversedRuling!.expected, 5400, "reversed-order expected is 5400");
 });

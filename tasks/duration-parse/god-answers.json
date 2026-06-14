@@ -18,8 +18,24 @@
     {
       "input": ["1.5h"],
       "expected": 5400,
-      "decision": "A fractional quantity before a unit is accepted and scaled by that unit; the result is 5400 seconds.",
-      "rationale": "fractional hours are accepted: 1.5h = 1.5 * 3600 = 5400s"
+      "decision": "A fractional quantity before a unit is accepted and scaled by that unit; the result is the total seconds for that fractional amount.",
+      "rationale": "fractional hours are accepted: 1.5h = 1.5 * 3600 = 5400s",
+      "extraCases": [
+        { "input": ["2.5h"], "expected": 9000 },
+        { "input": ["0.5h"], "expected": 1800 }
+      ]
+    },
+    {
+      "input": ["30m30m"],
+      "expected": 3600,
+      "decision": "When the same unit appears more than once, the quantities for that unit are summed.",
+      "rationale": "repeated units are additive (ordering ruling, rev 3)"
+    },
+    {
+      "input": ["30m1h"],
+      "expected": 5400,
+      "decision": "Units may appear in any order; the total is the sum of all unit quantities regardless of the order they are written.",
+      "rationale": "order-independence (ordering ruling, rev 3)"
     }
   ]
 }
