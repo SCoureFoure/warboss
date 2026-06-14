@@ -166,8 +166,15 @@ three funded live runs of 2026-06-11:**
 
 **Leg 8 OPEN (2026-06-14) — production wiring + E4 follow-ons.** E4 PASSed
 (`reports/e4-verdict.md`); the four verdict §Consequence candidates are specced
-and queued as H-27…H-29. **H-27 + H-28 ACCEPTED (main at 285/285, merged). H-29
-next.** Recurring lesson: agent worktrees branch from a STALE session-start HEAD
+and queued as H-27…H-29. **ALL THREE ACCEPTED offline — main at 294/294,
+typecheck clean. Leg 8 offline build COMPLETE.** Remaining work is the three
+owner-gated LIVE runs (no grunt code): (1) kickback pipeline live pair on a real
+escalating intent ~$0.20–0.30 → confirm re-author drains escalations; (2) e4
+rev-3 rerun ~$0.15 → decimal now scorable + ordering happy-path lift → verdict;
+(3) parse-range E4 ~$0.15–0.25 → replication verdict
+(`reports/e4-parse-range-verdict.md`). Each waits on the owner authoring/answering
+by hand (the God-gate). Recurring lesson: agent worktrees branch from a STALE
+session-start HEAD
 (`7a0ad09`), so each later item's grunt sees a low test count and must
 `git checkout main -- <predecessor files>`; the planner's 3-way merge still
 preserves prior items (missing files are untouched on the worktree side) but
@@ -411,6 +418,7 @@ below. Per-item build outcomes recorded in the Log._
 
 | Item | What | Outcome |
 | --- | --- | --- |
+| **H-29** · multi-task replication — contested.json + parse-range | `loadGodAnswers` parameterized on `requiredInputs` (`E3_KNOWN_INPUTS` deleted), `runE4` reads `tasks/<task>/contested.json` (throws if missing), `tasks/duration-parse/contested.json` back-compat, full `tasks/parse-range/` asset set (requirement/task/hidden/contested/god-answers), AC-MT1–AC-MT3 (`src/experiment/e4.ts`, `tasks/*`) | accepted 2026-06-14, **294/294** offline post-merge, typecheck clean; sonnet grunt; 1 deviation (parse-range `1-3,2-4`→`[1,2,3,4]` union/dedup fixture ruling — defensible owner call); stale-worktree base again → 3-way merge preserved H-27/H-28, two conflicts resolved by planner (`E3_KNOWN_INPUTS`-loop→`requiredInputs` in `e4.ts`; AC-MT tail-append in `e4.test.ts`); **Leg 8 production-wiring path COMPLETE offline — live runs pending owner gate** |
 | **H-28** · E4 rev 3 — extraCases + ordering rulings | `GodRuling.extraCases` (decimal class survives an author self-echo via 2.5h/0.5h), self-leak guard + dedup span extra inputs, `buildGodBattery` places extras after canonical, `god-answers.json` decimal extraCases + ordering rulings (30m30m/30m1h), AC11–AC12 (`src/experiment/e4.ts`, `tasks/duration-parse/god-answers.json`) | accepted 2026-06-14, **285/285** offline post-merge, typecheck clean; sonnet grunt; 1 deviation (appended extra-case name `god-<i>-extra-<ec>-<input>` — spec pinned only uniqueness); **stale-worktree-branch-point RECURRED** (worktree base `7a0ad09` pre-H-27; grunt saw 258, main 279) — 3-way merge preserved H-27 (missing files untouched on worktree side), one trivial comment-conflict in `e4.ts` resolved by planner; **NEXT = H-29 (multi-task)** |
 | **H-27** · kick-back pipeline — production wiring | shared `src/kickback.ts` (`renderDecisionBlock` promoted from e4 + `OwnerAnswer`/`AnswerQueue` + `buildAnswerQueue` + `loadOwnerAnswers`), decompose-run phase-1 `answers-needed-<ts>.json` emit + phase-3 `--reauthor-from`/`--answers` re-author mode + `reauthorOf`/`answersPath` provenance, e4 `renderOwnerDecisions` factored onto `renderDecisionBlock` (byte-identical), AC1–AC9 | accepted 2026-06-14, **279/279** offline, typecheck clean; sonnet grunt worktree, zero deviations of substance (intent:"" placeholder in reauthor-mode parseCliArgs, overridden from source artifact); merge `--no-ff`; **NEXT = H-28 (e4 rev 3)** |
 | **H-26** · E4 rev 2 — prose-only decisions + shared ledger | literal-free `decision` rendering + self-leak guard + `runE2` `ledger?` (`src/experiment/e4.ts`, `e2.ts` rev 4, `god-answers.json`), AC3/AC7/AC8/AC9 | accepted 2026-06-14, 252/252 offline; grunt session-limited pre-commit → planner committed + fixed AC7-variant assertion (find excluded by `leakedBy`, not name: `"120"` overrides hidden `bare-number-2` in place); **unblocks the live E4 run** |
