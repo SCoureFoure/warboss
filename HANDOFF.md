@@ -164,9 +164,10 @@ three funded live runs of 2026-06-11:**
 
 ## Active items
 
-**Leg 8 OPEN (queued 2026-06-14) — production wiring + E4 follow-ons.** E4 PASSed
+**Leg 8 OPEN (2026-06-14) — production wiring + E4 follow-ons.** E4 PASSed
 (`reports/e4-verdict.md`); the four verdict §Consequence candidates are specced
-and queued as H-27…H-29. **Dispatch order is SEQUENTIAL — all three touch
+and queued as H-27…H-29. **H-27 ACCEPTED (279/279, merged to main). H-28 next,
+then H-29.** **Dispatch order is SEQUENTIAL — all three touch
 `src/experiment/e4.ts` and/or share `src/kickback.ts`, so parallel worktrees
 would three-way conflict (Leg-7 `e3.ts` lesson). H-27 → H-28 → H-29; each grunt's
 FIRST step is `git checkout main -- <predecessor files>` per the standing
@@ -406,6 +407,7 @@ below. Per-item build outcomes recorded in the Log._
 
 | Item | What | Outcome |
 | --- | --- | --- |
+| **H-27** · kick-back pipeline — production wiring | shared `src/kickback.ts` (`renderDecisionBlock` promoted from e4 + `OwnerAnswer`/`AnswerQueue` + `buildAnswerQueue` + `loadOwnerAnswers`), decompose-run phase-1 `answers-needed-<ts>.json` emit + phase-3 `--reauthor-from`/`--answers` re-author mode + `reauthorOf`/`answersPath` provenance, e4 `renderOwnerDecisions` factored onto `renderDecisionBlock` (byte-identical), AC1–AC9 | accepted 2026-06-14, **279/279** offline, typecheck clean; sonnet grunt worktree, zero deviations of substance (intent:"" placeholder in reauthor-mode parseCliArgs, overridden from source artifact); merge `--no-ff`; **NEXT = H-28 (e4 rev 3)** |
 | **H-26** · E4 rev 2 — prose-only decisions + shared ledger | literal-free `decision` rendering + self-leak guard + `runE2` `ledger?` (`src/experiment/e4.ts`, `e2.ts` rev 4, `god-answers.json`), AC3/AC7/AC8/AC9 | accepted 2026-06-14, 252/252 offline; grunt session-limited pre-commit → planner committed + fixed AC7-variant assertion (find excluded by `leakedBy`, not name: `"120"` overrides hidden `bare-number-2` in place); **unblocks the live E4 run** |
 | **H-25** · E3 needle matcher rev 2 | tighten `E3_NEEDLES` to literals + unambiguous phrases, kill the decimal substring FP (`src/experiment/e3.ts`), AC1–AC5 | accepted 2026-06-13, 248/248; grunt caught a spec contradiction in AC5 (lists contain single-word needles) → fail-up reimplemented AC5 as dropped-tokens-absent → needle-matcher rev 2 candidate; AC4 pinned from verdict strings (`runs/` gitignored) |
 | **H-24** · intent-probe viability | `intentProbe` rev 3 — `noEntry`/`viable`/`nonviable` three-way split keyed on sandbox sentinel + scaffolded `PROBE_DEFAULT_SYSTEM` (`src/gate.ts`, `src/experiment/e3.ts`), AC1–AC6 | accepted 2026-06-13, 248/248; zero deviations; invariant `generated === noEntry+viable+nonviable` |
