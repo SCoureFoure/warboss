@@ -172,11 +172,12 @@ live spend.** Frozen-spec scope bodies live in each spec + the Log table below._
 
 **Standing notes carried from Leg 7 (rev-2 candidates surfaced at build/merge):**
 
-- **e4 rev-2 BOTH deviations → SPECED as H-26 (active item below), the live-run
-  blocker.** (1) Prose-only owner decisions so the contested inputs survive the
-  residual (rev-1 leaked the input literal into the warboss `context` → all three
-  excluded → prediction #1 un-measurable). (2) Single shared `Ledger` into
-  `runE2` (rev 1 emitted two sidecars). The E4 live run is gated on H-26 landing.
+- **e4 rev-2 → H-26 DONE & accepted 2026-06-14 (main 252/252).** Prose-only
+  owner decisions (contested inputs now survive the residual) + single shared
+  `Ledger`. **The live E4 run is now UNBLOCKED (~$0.15, God-gated):**
+  `node --env-file=.env --import tsx src/experiment/e4.ts --n 30 --granularity full`.
+  `tasks/duration-parse/god-answers.json` already carries literal-free `decision`
+  fields for the 3 knowns. Verdict → `reports/e4-verdict.md`.
 - **e3-needle-matcher rev-2 (spec defect, found by the H-25 grunt):** AC5 as
   written ("every needle is a contested literal OR contains a space/hyphen")
   CONTRADICTS the pinned needle lists, which include single-word needles
@@ -190,53 +191,7 @@ live spend.** Frozen-spec scope bodies live in each spec + the Log table below._
 - **probe `signature` typed `unknown` (H-23):** `RawTask.signature` is `unknown`
   (not `string?`) so `loadTask` can validate + throw on a non-string. Intended.
 
-### H-26 · E4 rev 2 — prose-only owner decisions + shared ledger (unblocks the live E4 run) — `queued`
-
-**Spec (frozen):** [e4-battery-authoring.spec.md](specs/e4-battery-authoring.spec.md) rev 2.
-**Worktree:** your assigned worktree only — never the main checkout (rule 4).
-
-**Scope checklist:**
-
-- `src/experiment/e4.ts` rev 2:
-  - `renderOwnerDecisions(rulings)` → PROSE ONLY: one bullet per ruling = the
-    ruling's `decision` string verbatim, asset order. NO `entry(args)` form, NO
-    input literal, NO `===`. (Drop the rev-1 `<entry>(<args>) throws/=== <json>`
-    rendering and the `entry` param.)
-  - Self-leak guard (in `loadGodAnswers` or `renderOwnerDecisions`): throw if a
-    ruling's `decision` contains `JSON.stringify(<any input element>)` of its OWN
-    input — before any model call. `rationale` is exempt (never rendered).
-  - E4 owns ONE `Ledger` with a `jsonlFileSink`; pass it to `runE2` via the new
-    `ledger?` option so only ONE `cost-ledger-<ts>.jsonl` is written. Remove the
-    rev-1 `// UNDECIDED:` two-sidecar note.
-- `src/experiment/e2.ts` rev 4: add optional `ledger?: Ledger` to `RunE2Options`.
-  When present, `runE2` meters into it and opens NO sink of its own; absent →
-  byte-identical to rev 3 (every existing e2 test passes unmodified).
-- `src/experiment/task.ts` (god-answers schema): each ruling gains REQUIRED
-  `decision: string` (literal-free); `rationale` becomes optional + never
-  rendered. `loadGodAnswers` validates `decision` present + string + self-leak
-  guard. (If `loadGodAnswers`/types live in `e4.ts`, change there — pin to where
-  H-21 put them.)
-- `tasks/duration-parse/god-answers.json`: rewrite — add a literal-free
-  `decision` to each of the 3 rulings; move any input-literal phrasing into
-  `rationale`. Keep residual viable (≥1 happy + ≥1 error).
-- `test/e4.test.ts`: revise AC3 (prose-only render), AC7 (contested cases
-  SURVIVE), add AC8 (self-leak guard throws), AC9 (single shared sidecar — assert
-  `runE2` opened no second sink). Keep AC1/AC2/AC4/AC5/AC6/AC10.
-
-**Notes down:**
-
-- This is the experiment's load-bearing fix: with input literals out of the
-  warboss prompt, the warboss author picks its own example inputs and the
-  contested God-battery cases survive to be scored. Do NOT reintroduce the input
-  literal "for clarity" — the `decision` prose must stand alone.
-- The general E2 residual filter still runs as a backstop (a coincidental
-  warboss example == a God input excludes that one case + records it) — that is
-  fine; the self-leak guard only prevents the GUARANTEED leak from our own
-  rendering.
-- After H-26 lands, the live E4 run is unblocked (~$0.15, God-gated): the owner
-  must ensure `god-answers.json` has the `decision` fields first.
-
-_Full H-21…H-25 scope bodies: the frozen specs (`specs/`) + the Log table
+_Full H-21…H-26 scope bodies: the frozen specs (`specs/`) + the Log table
 below. Per-item build outcomes recorded in the Log._
 
 <!-- ARCHIVED — bodies moved to HANDOFF-archive.md on acceptance
@@ -322,6 +277,7 @@ below. Per-item build outcomes recorded in the Log._
 
 | Item | What | Outcome |
 | --- | --- | --- |
+| **H-26** · E4 rev 2 — prose-only decisions + shared ledger | literal-free `decision` rendering + self-leak guard + `runE2` `ledger?` (`src/experiment/e4.ts`, `e2.ts` rev 4, `god-answers.json`), AC3/AC7/AC8/AC9 | accepted 2026-06-14, 252/252 offline; grunt session-limited pre-commit → planner committed + fixed AC7-variant assertion (find excluded by `leakedBy`, not name: `"120"` overrides hidden `bare-number-2` in place); **unblocks the live E4 run** |
 | **H-25** · E3 needle matcher rev 2 | tighten `E3_NEEDLES` to literals + unambiguous phrases, kill the decimal substring FP (`src/experiment/e3.ts`), AC1–AC5 | accepted 2026-06-13, 248/248; grunt caught a spec contradiction in AC5 (lists contain single-word needles) → fail-up reimplemented AC5 as dropped-tokens-absent → needle-matcher rev 2 candidate; AC4 pinned from verdict strings (`runs/` gitignored) |
 | **H-24** · intent-probe viability | `intentProbe` rev 3 — `noEntry`/`viable`/`nonviable` three-way split keyed on sandbox sentinel + scaffolded `PROBE_DEFAULT_SYSTEM` (`src/gate.ts`, `src/experiment/e3.ts`), AC1–AC6 | accepted 2026-06-13, 248/248; zero deviations; invariant `generated === noEntry+viable+nonviable` |
 | **H-23** · probe signature | optional task-asset `signature` → `TaskDef` → E3 probe prompt; closes the H-20 `signature=""` fail-up (`src/experiment/task.ts`, `e3.ts`, `task.json`), AC1–AC5 | accepted 2026-06-13, 248/248; `RawTask.signature` typed `unknown` for validation (intended) |
