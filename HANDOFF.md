@@ -167,12 +167,44 @@ three funded live runs of 2026-06-11:**
 **Leg 8 OPEN (2026-06-14) — production wiring + E4 follow-ons.** E4 PASSed
 (`reports/e4-verdict.md`); the four verdict §Consequence candidates are specced
 and queued as H-27…H-29. **ALL THREE ACCEPTED offline — main at 294/294,
-typecheck clean. Leg 8 offline build COMPLETE.** Remaining work is the three
-owner-gated LIVE runs (no grunt code): (1) kickback pipeline live pair on a real
-escalating intent ~$0.20–0.30 → confirm re-author drains escalations; (2) e4
-rev-3 rerun ~$0.15 → decimal now scorable + ordering happy-path lift → verdict;
-(3) parse-range E4 ~$0.15–0.25 → replication verdict
-(`reports/e4-parse-range-verdict.md`). Each waits on the owner authoring/answering
+typecheck clean. Leg 8 offline build COMPLETE.**
+
+**ALL THREE OWNER-GATED LIVE RUNS DONE 2026-06-14 (total spend $0.715) — three
+PASSes:**
+
+- **e4 rev-3 rerun — PASS** ($0.173, `runs/e4-20260614T222406Z.json`, verdict
+  addendum in `reports/e4-verdict.md`). warboss **0.961** vs human **0.545**; gap
+  *widened* vs original (0.918 vs 0.724) because **decimal class now scored** —
+  canonical `1.5h` self-echoed+excluded again, but H-28 `extraCases` (`2.5h`,
+  `0.5h`) survived → decimal measured (candidate #2 DISCHARGED). **NEW residual:
+  ordering happy-lift (candidate #3) NOT discharged** — warboss echoed BOTH
+  ordering inputs (`30m30m`, `30m1h`) → both excluded → ordering rulings overrode
+  in place but never scored. rev-4 fix: `extraCases` on the ordering rulings, or
+  a render-hint forbidding the author from echoing a ruling input. Self-echo is
+  now the dominant residual-erosion mechanism (3/3 exclusions this run).
+- **parse-range E4 — PASS** ($0.269, `runs/e4-20260614T222537Z.json`, verdict
+  `reports/e4-parse-range-verdict.md`). warboss **1.000** vs human **0.646**;
+  same error-coverage signature (human 0.000, warboss 1.000). **Multi-task
+  replication (candidate #4) DISCHARGED** — loop value is not task-specific. One
+  self-echo exclusion (`error-empty-segment "1,,3"`), robust on 8/9.
+- **kickback live pair — PASS** ($0.273, verdict `reports/kickback-live-verdict.md`;
+  artifacts `runs/decompose-20260614T222745Z.json` + `…223451Z.json`,
+  queues `runs/answers-needed-20260614T222745Z.json` + `…223451Z.json`).
+  Phase-1 emitted 9 escalations → owner answered all 9 by hand → phase-3 drained
+  to **3** (monotone 9→3), all 3 NEW finer-grain residuals (per-token overflow,
+  leading/trailing space, edge-separator empty token), `auditGaps: 0`. Re-author
+  IS a decompose-run (iterate confirmed live); stopped at one round (convergence
+  shown). **Production wiring (candidate #1) DISCHARGED.**
+
+**Net: all four `e4-verdict.md` §Consequence candidates addressed — three
+discharged (#1 wiring, #2 decimal, #4 replication), #3 ordering happy-lift
+re-opened with a concrete rev-4 fix. Leg 8 live phase COMPLETE.**
+
+_Superseded plan (the three live runs, now done):_ (1) kickback pipeline live
+pair on a real escalating intent ~$0.20–0.30 → confirm re-author drains
+escalations; (2) e4 rev-3 rerun ~$0.15 → decimal now scorable + ordering
+happy-path lift → verdict; (3) parse-range E4 ~$0.15–0.25 → replication verdict
+(`reports/e4-parse-range-verdict.md`). Each waited on the owner authoring/answering
 by hand (the God-gate). Recurring lesson: agent worktrees branch from a STALE
 session-start HEAD
 (`7a0ad09`), so each later item's grunt sees a low test count and must

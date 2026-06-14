@@ -12,6 +12,64 @@
 > Artifact: `runs/e4-20260614T144326Z.json` · re-author:
 > `runs/decompose-20260614T144347Z.json`.
 
+---
+
+## rev-3 rerun (2026-06-14) — decimal now scored, gap widened
+
+> **Still PASS — and the decimal class is now measured.** Re-run on the rev-3
+> battery (H-28: `extraCases` + ordering rulings): warboss **0.961** vs human
+> **0.545** (threshold 0.491). The gap *widened* vs the original run (0.918 vs
+> 0.724) because the decimal class — **excluded and unmeasured** in the original
+> run — is now scored. Total cost: $0.173. Artifact:
+> `runs/e4-20260614T222406Z.json` · re-author: `runs/decompose-20260614T222423Z.json`.
+
+**Headline (rev-3):**
+
+| | human | warboss | threshold |
+| --- | --- | --- | --- |
+| meanFinalHiddenScore (God oracle) | 0.545 | **0.961** | ≥ 0.491 → **PASS** |
+| meanHappyScore | 0.750 | 1.000 | — |
+| **meanErrorScore** | **0.000** | **0.856** | — |
+| meanAttempts | 1.00 | 1.13 | — |
+
+God battery: total **14** = 7 untouched task-hidden + 5 overrides-in-place +
+**2 appended decimal extras** (`"2.5h"`→9000, `"0.5h"`→1800). Residual **11**,
+exclusions **3**.
+
+**What rev-3 fixed — decimal measurement (verdict candidate #2, discharged).**
+The original run excluded `decimal-hours "1.5h"` entirely because the warboss
+author coincidentally chose `1.5h` as its own example (`leakedBy: ["warboss"]`).
+H-28's `extraCases` added two more inputs of the *same class* — `"2.5h"`,
+`"0.5h"` — to the decimal ruling. In this run the canonical `1.5h` was **again**
+self-echoed and excluded, **but the extras survived** and carried the decimal
+class into the residual. This is exactly the H-28 design: the decimal class is
+scored when ≥1 of {canonical, extras} survives the self-leak filter; the author
+can echo at most one input. The class is now measured despite the (recurring)
+canonical self-echo.
+
+**New residual — ordering happy-lift still unmeasured (verdict candidate #3,
+NOT discharged).** The three exclusions this run were `decimal-hours`,
+`repeat-units "30m30m"`, and `reversed-order "30m1h"` — all `leakedBy: ["warboss"]`.
+H-28 added God ordering rulings (`30m30m`→3600, `30m1h`→5400) precisely to
+measure whether the loop lifts the happy path on repeat/reversed unit order. But
+the warboss author echoed **both** ordering inputs as its own examples, so both
+were excluded from the residual — the ordering rulings overrode the hidden cases
+in place (overridden=5) yet never reached scoring. **The ordering happy-path
+question remains open.** rev-4 candidate: apply the same `extraCases` mitigation
+to the ordering rulings (give each a sibling input the author is unlikely to
+echo), or add a render-hint forbidding the author from using a ruling input as
+an example. The self-echo mechanism is now the dominant source of residual
+erosion (3/3 exclusions this run).
+
+**Multi-task replication (verdict candidate #4)** — discharged in a sibling run
+on `parse-range`; see `reports/e4-parse-range-verdict.md` (warboss 1.000 vs human
+0.646, same error-coverage signature).
+
+**Production wiring (verdict candidate #1)** — discharged via the live kick-back
+pair; see `reports/kickback-live-verdict.md`.
+
+---
+
 ## Run metadata
 
 Run: 2026-06-14 · task `duration-parse` · N=30 sessions/source · granularity
