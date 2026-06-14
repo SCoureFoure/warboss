@@ -22,11 +22,18 @@ import { loadTask, type HiddenCase } from "./task.ts";
 import type { DecomposeArtifact } from "./decompose-run.ts";
 import { runE2, reconstructWarbossContract, type RunE2Options } from "./e2.ts";
 import type { FeedbackArmAnalysis, FeedbackArm } from "./e1b.ts";
+import { renderDecisionBlock } from "../kickback.ts";
 
 const _thisDir = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_TASKS_DIR = join(_thisDir, "..", "..", "tasks");
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
+
+export interface GodExtraCase {
+  readonly input: readonly unknown[];
+  readonly expected: unknown;
+  readonly throws?: true;
+}
 
 export interface GodRuling {
   readonly input: readonly unknown[];
@@ -36,6 +43,8 @@ export interface GodRuling {
   readonly decision: string;
   /** Rev 2: optional, never rendered into any prompt. May contain anything including input literals. */
   readonly rationale?: string;
+  /** Rev 3: optional additional held-out battery cases exercising the SAME decided behavior with DIFFERENT inputs. Never rendered. */
+  readonly extraCases?: readonly GodExtraCase[];
 }
 
 export interface RunE4Options {
@@ -93,6 +102,11 @@ export async function loadGodAnswers(path: string): Promise<readonly GodRuling[]
       throws?: boolean;
       decision?: unknown;
       rationale?: string;
+      extraCases?: Array<{
+        input: unknown[];
+        expected: unknown;
+        throws?: boolean;
+      }>;
     }>;
   };
   try {
@@ -109,16 +123,22 @@ export async function loadGodAnswers(path: string): Promise<readonly GodRuling[]
     );
   }
 
+  // Global seen set for dedup across ALL inputs (canonical + extraCases) of ALL rulings
+  const seenAll: string[] = [];
+
   // Check for duplicate input tuples and validate `decision` presence + type
-  const seen: string[] = [];
+  const seenCanonical: string[] = [];
   for (const r of parsed.rulings) {
     const key = JSON.stringify(r.input);
-    if (seen.includes(key)) {
+
+    // Dedup canonical inputs across rulings
+    if (seenAll.includes(key)) {
       throw new Error(
         `loadGodAnswers: duplicate input tuple ${key} in "${path}"`,
       );
     }
-    seen.push(key);
+    seenAll.push(key);
+    seenCanonical.push(key);
 
     // Rev 2: `decision` is REQUIRED and must be a string
     if (typeof r.decision !== "string") {
@@ -127,7 +147,7 @@ export async function loadGodAnswers(path: string): Promise<readonly GodRuling[]
       );
     }
 
-    // Rev 2: self-leak guard — decision must NOT contain JSON.stringify of any element of its own input
+    // Rev 3 self-leak guard: decision must NOT contain JSON.stringify of any element of canonical input
     for (const elem of r.input) {
       const needle = JSON.stringify(elem);
       if ((r.decision as string).includes(needle)) {
@@ -137,13 +157,49 @@ export async function loadGodAnswers(path: string): Promise<readonly GodRuling[]
         );
       }
     }
+
+    // Rev 3: validate extraCases and extend self-leak guard + dedup
+    if (r.extraCases !== undefined) {
+      if (!Array.isArray(r.extraCases)) {
+        throw new Error(
+          `loadGodAnswers: ruling ${key} 'extraCases' must be an array in "${path}"`,
+        );
+      }
+      for (const ec of r.extraCases) {
+        if (!Array.isArray(ec.input)) {
+          throw new Error(
+            `loadGodAnswers: ruling ${key} has an extraCases entry with non-array 'input' in "${path}"`,
+          );
+        }
+        const ecKey = JSON.stringify(ec.input);
+
+        // Dedup: extraCases input must not duplicate canonical or other extraCases or other rulings
+        if (seenAll.includes(ecKey)) {
+          throw new Error(
+            `loadGodAnswers: duplicate input tuple ${ecKey} (in extraCases of ruling ${key}) in "${path}"`,
+          );
+        }
+        seenAll.push(ecKey);
+
+        // Self-leak guard (rev 3): decision must NOT contain JSON.stringify of any extraCases input element
+        for (const elem of ec.input) {
+          const needle = JSON.stringify(elem);
+          if ((r.decision as string).includes(needle)) {
+            throw new Error(
+              `loadGodAnswers: self-leak in ruling ${key}: 'decision' contains the extra-case input literal ${needle}. ` +
+              `Rephrase 'decision' so it contains no input literals from canonical or extraCases inputs.`,
+            );
+          }
+        }
+      }
+    }
   }
 
   // Check that all three E3 known inputs are covered
   const missingKnowns: string[] = [];
   for (const known of E3_KNOWN_INPUTS) {
     const knownKey = JSON.stringify(known);
-    if (!seen.includes(knownKey)) {
+    if (!seenCanonical.includes(knownKey)) {
       missingKnowns.push(JSON.stringify(known));
     }
   }
@@ -160,6 +216,15 @@ export async function loadGodAnswers(path: string): Promise<readonly GodRuling[]
     ...(r.throws === true ? { throws: true as const } : {}),
     decision: r.decision as string,
     ...(r.rationale !== undefined ? { rationale: r.rationale } : {}),
+    ...(r.extraCases !== undefined
+      ? {
+          extraCases: r.extraCases.map((ec) => ({
+            input: ec.input,
+            expected: ec.throws === true ? "<throws>" : ec.expected,
+            ...(ec.throws === true ? { throws: true as const } : {}),
+          })),
+        }
+      : {}),
   }));
 }
 
@@ -191,38 +256,75 @@ export function buildGodBattery(
   // Start from mutable copy
   const result: HiddenCase[] = taskHidden.map((c) => ({ ...c }));
 
-  // Process rulings: override in place or append
-  for (let godIndex = 0; godIndex < rulings.length; godIndex++) {
-    const ruling = rulings[godIndex]!;
-    let overrideIdx = -1;
-
+  /**
+   * Place one case (canonical or extra) into the result array.
+   * Override rule: if the case's input deep-equals an existing entry → replace in place.
+   * Otherwise → insert immediately after insertAfterIdx (or append if insertAfterIdx is -1).
+   * Returns the index where the case was placed.
+   */
+  function placeCase(
+    caseInput: readonly unknown[],
+    caseExpected: unknown,
+    caseThrows: true | undefined,
+    godName: string,
+    insertAfterIdx: number,
+  ): number {
+    // Check for override
     for (let i = 0; i < result.length; i++) {
-      if (inputsEqual(result[i]!.input as readonly unknown[], ruling.input)) {
-        overrideIdx = i;
-        break;
+      if (inputsEqual(result[i]!.input as readonly unknown[], caseInput)) {
+        // Override in place: keep original name, God's expected/throws win, coveredBy = []
+        const originalName = result[i]!.name;
+        result[i] = {
+          name: originalName,
+          input: caseInput,
+          expected: caseThrows === true ? "<throws>" : caseExpected,
+          ...(caseThrows === true ? { throws: true as const } : {}),
+          coveredBy: [],
+        };
+        return i;
       }
     }
+    // Append immediately after insertAfterIdx (or at end if insertAfterIdx < 0)
+    const newEntry: HiddenCase = {
+      name: godName,
+      input: caseInput,
+      expected: caseThrows === true ? "<throws>" : caseExpected,
+      ...(caseThrows === true ? { throws: true as const } : {}),
+      coveredBy: [],
+    };
+    const insertAt = insertAfterIdx + 1;
+    result.splice(insertAt, 0, newEntry);
+    return insertAt;
+  }
 
-    if (overrideIdx >= 0) {
-      // Override in place: keep original name, God's expected/throws win, coveredBy = []
-      const originalName = result[overrideIdx]!.name;
-      result[overrideIdx] = {
-        name: originalName,
-        input: ruling.input,
-        expected: ruling.throws === true ? "<throws>" : ruling.expected,
-        ...(ruling.throws === true ? { throws: true as const } : {}),
-        coveredBy: [],
-      };
-    } else {
-      // Append: use god-<i>-<json-input> name
-      const godName = `god-${godIndex}-${JSON.stringify(ruling.input)}`;
-      result.push({
-        name: godName,
-        input: ruling.input,
-        expected: ruling.throws === true ? "<throws>" : ruling.expected,
-        ...(ruling.throws === true ? { throws: true as const } : {}),
-        coveredBy: [],
-      });
+  // Process rulings: override in place or append; then process extraCases immediately after
+  for (let godIndex = 0; godIndex < rulings.length; godIndex++) {
+    const ruling = rulings[godIndex]!;
+    const godName = `god-${godIndex}-${JSON.stringify(ruling.input)}`;
+
+    // Place canonical case
+    const canonicalIdx = placeCase(
+      ruling.input,
+      ruling.expected,
+      ruling.throws,
+      godName,
+      result.length - 1,
+    );
+
+    // Rev 3: place each extraCases entry immediately after the canonical case
+    let afterIdx = canonicalIdx;
+    if (ruling.extraCases !== undefined) {
+      for (let ecIndex = 0; ecIndex < ruling.extraCases.length; ecIndex++) {
+        const ec = ruling.extraCases[ecIndex]!;
+        const ecGodName = `god-${godIndex}-extra-${ecIndex}-${JSON.stringify(ec.input)}`;
+        afterIdx = placeCase(
+          ec.input,
+          ec.expected,
+          ec.throws,
+          ecGodName,
+          afterIdx,
+        );
+      }
     }
   }
 
@@ -268,6 +370,20 @@ function godBatteryStats(
     } else {
       fromGodAppended++;
     }
+
+    // Rev 3: count extraCases contributions
+    if (ruling.extraCases !== undefined) {
+      for (const ec of ruling.extraCases) {
+        const ecMatchesTask = taskHidden.some((c) =>
+          inputsEqual(c.input as readonly unknown[], ec.input),
+        );
+        if (ecMatchesTask) {
+          overridden++;
+        } else {
+          fromGodAppended++;
+        }
+      }
+    }
   }
 
   // fromTask = task cases that were NOT overridden
@@ -301,8 +417,10 @@ export function renderOwnerDecisions(
   rulings: readonly GodRuling[],
 ): string {
   // Self-leak guard (belt-and-braces — loadGodAnswers also checks, but we guard here too
-  // so that test-injected rulings without going through the loader are also protected)
+  // so that test-injected rulings without going through the loader are also protected).
+  // Rev 3: guard spans canonical input AND every extraCases input.
   for (const r of rulings) {
+    // Check canonical input elements
     for (const elem of r.input) {
       const needle = JSON.stringify(elem);
       if (r.decision.includes(needle)) {
@@ -313,16 +431,25 @@ export function renderOwnerDecisions(
         );
       }
     }
+    // Rev 3: check extraCases input elements
+    if (r.extraCases !== undefined) {
+      for (const ec of r.extraCases) {
+        for (const elem of ec.input) {
+          const needle = JSON.stringify(elem);
+          if (r.decision.includes(needle)) {
+            throw new Error(
+              `renderOwnerDecisions: self-leak in ruling ${JSON.stringify(r.input)}: ` +
+              `'decision' contains the extra-case input literal ${needle}. ` +
+              `Rephrase 'decision' so it contains no input literals.`,
+            );
+          }
+        }
+      }
+    }
   }
 
-  const bullets = rulings.map((r) => `- ${r.decision}`);
-
-  return (
-    `The owner has DECIDED the following behaviors. Treat each as fixed intent —\n` +
-    `they are not open choices; author examples (choosing your own representative\n` +
-    `inputs) that pin exactly these:\n` +
-    bullets.join("\n")
-  );
+  // Delegate to the shared canonical renderer (byte-identical output).
+  return renderDecisionBlock(rulings.map((r) => r.decision));
 }
 
 /**
@@ -519,6 +646,7 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
       ...(r.throws === true ? { throws: true } : {}),
       decision: r.decision,
       ...(r.rationale !== undefined ? { rationale: r.rationale } : {}),
+      ...(r.extraCases !== undefined ? { extraCases: r.extraCases } : {}),
     })),
     reauthorArtifactPath,
     godBattery: godStats,
