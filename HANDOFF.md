@@ -164,6 +164,127 @@ three funded live runs of 2026-06-11:**
 
 ## Active items
 
+**Leg 8 OPEN (queued 2026-06-14) — production wiring + E4 follow-ons.** E4 PASSed
+(`reports/e4-verdict.md`); the four verdict §Consequence candidates are specced
+and queued as H-27…H-29. **Dispatch order is SEQUENTIAL — all three touch
+`src/experiment/e4.ts` and/or share `src/kickback.ts`, so parallel worktrees
+would three-way conflict (Leg-7 `e3.ts` lesson). H-27 → H-28 → H-29; each grunt's
+FIRST step is `git checkout main -- <predecessor files>` per the standing
+same-leg-merge dispatch rule, then VERIFY the depended-on symbols exist.** Only
+the live runs carry spend (all owner-gated): kickback live pair ~$0.20–0.30 (H-27),
+e4 rev-3 rerun ~$0.15 (H-28), parse-range E4 ~$0.15–0.25 (H-29). All offline
+builds are zero-spend.
+
+### H-27 · kick-back pipeline — production wiring — `queued`
+
+**Spec (frozen):** [kickback-pipeline.spec.md](specs/kickback-pipeline.spec.md) rev 1.
+**Worktree:** your assigned worktree only — never the main checkout (rule 4).
+**Dispatch order:** FIRST of Leg 8. No predecessor sync needed (branches from current main).
+
+**Scope checklist:**
+
+- `src/kickback.ts` (NEW): `renderDecisionBlock(decisions)` (the EXACT prose
+  block e4's `renderOwnerDecisions` emits today), `OwnerAnswer` + `AnswerQueue`
+  types, `buildAnswerQueue(args)`, `loadOwnerAnswers(path)` (blank/whitespace
+  decision guard, dup-escalation guard, all throws before any model call).
+- `src/experiment/decompose-run.ts`: phase-1 queue emit (`answers-needed-<ts>.json`
+  when `escalations.length > 0`, same `<ts>`, `answerQueuePath?` on the result),
+  plus phase-3 re-author mode (`--reauthor-from`/`--answers` flags, mutually
+  exclusive with `--intent`/`--intent-file`, both-or-neither; basename
+  provenance cross-check; augmented context via `renderDecisionBlock`;
+  `reauthorOf`/`answersPath` provenance fields omitted on first-pass runs).
+- `src/experiment/e4.ts`: factor `renderOwnerDecisions` to call
+  `renderDecisionBlock` (keep its self-leak guard); output byte-identical → every
+  e4 test passes unmodified.
+- `test/kickback.test.ts` (NEW): AC1–AC4. `test/decompose-run.test.ts`: AC5–AC9
+  added. Offline, fake client + fixture source artifact + fixture filled queue.
+
+**Notes down:**
+
+- NO self-leak guard / residual filter in the live path — there is no scoring
+  battery (spec Constraints). Owner decisions may name input literals freely.
+- Re-author IS a `decompose-run` (phase-1 re-applies to it → AC9 iterate).
+- `requirementId` parses from the escalation's `"<id>: …"` prefix ONLY when the
+  prefix matches `/^[a-z][a-z0-9-]*$/`; else `""` (AC2 kills the loose reading).
+- npm eats `--flags` on Windows — test the CLI via `node` directly.
+- Worktree grunts cannot `git merge` — sync via `git checkout main -- <paths>`.
+
+### H-28 · E4 rev 3 — `extraCases` + ordering rulings — `queued`
+
+**Spec (frozen):** [e4-battery-authoring.spec.md](specs/e4-battery-authoring.spec.md) rev 3.
+**Worktree:** your assigned worktree only — never the main checkout (rule 4).
+**Dispatch order:** AFTER H-27 merges. FIRST step: `git checkout main --
+src/kickback.ts src/experiment/e4.ts` (H-27 promoted `renderDecisionBlock` and
+factored `renderOwnerDecisions` onto it) and VERIFY `renderDecisionBlock` exists
+before building. Rebase the rev-3 `extraCases` changes onto the promoted form.
+
+**Scope checklist:**
+
+- `src/experiment/e4.ts`: `GodRuling` gains optional `extraCases:
+  { input, expected, throws? }[]`; `loadGodAnswers` validates them + extends the
+  self-leak guard to span canonical `input` AND every `extraCases` input + dedups
+  inputs across a ruling's `input`+`extraCases` and across rulings;
+  `buildGodBattery` emits each extra case by the same override-or-append rule
+  immediately after the canonical case.
+- `tasks/duration-parse/god-answers.json`: decimal ruling gains `extraCases`
+  (`2.5h`→9000, `0.5h`→1800); add two ordering rulings (`30m30m`→3600,
+  `30m1h`→5400) with literal-free `decision`s.
+- `test/e4.test.ts`: AC11 (extraCases enter battery + decimal class survives a
+  canonical `1.5h` self-collision + self-leak guard on extra input) + AC12
+  (ordering rulings override the happy hidden cases in place; literal-free
+  bullets). Existing AC1–AC10 still pass.
+
+**Notes down:**
+
+- Extra-case inputs are battery inputs only — NEVER rendered; the ruling's single
+  `decision` is rendered once, literal-free.
+- The decimal CLASS is scored when ≥1 of {canonical, extras} survives the
+  residual; the author can echo at most one input.
+- Ordering rulings need NO new battery code — pure `buildGodBattery` override
+  reuse (their inputs deep-equal existing `repeat-units`/`reversed-order` hidden
+  cases).
+- npm eats `--flags` on Windows. Worktree grunts sync via `git checkout main --`.
+
+### H-29 · multi-task replication — `contested.json` + parse-range — `queued`
+
+**Spec (frozen):** [multi-task-replication.spec.md](specs/multi-task-replication.spec.md) rev 1.
+**Worktree:** your assigned worktree only — never the main checkout (rule 4).
+**Dispatch order:** AFTER H-28 merges. FIRST step: `git checkout main --
+src/experiment/e4.ts tasks/duration-parse/god-answers.json` (H-28's
+`extraCases`-aware `loadGodAnswers`/`buildGodBattery`) and VERIFY the
+`extraCases` field exists on `GodRuling` before building. Rebase the
+`requiredInputs` change onto it.
+
+**Scope checklist:**
+
+- `src/experiment/e4.ts`: `loadGodAnswers` gains a `requiredInputs:
+  readonly (readonly unknown[])[]` param (coverage check now driven by it, not a
+  module constant); DELETE `E3_KNOWN_INPUTS`. `runE4` reads
+  `tasks/<task>/contested.json` → passes `inputs` as `requiredInputs`; missing
+  `contested.json` → descriptive throw before any model call.
+- `tasks/duration-parse/contested.json` (NEW): the three existing E3 inputs
+  (back-compat). Offline e4 fixtures that inject a fake `tasksDir` must also drop
+  a `contested.json` in.
+- `tasks/parse-range/*` (NEW — owner-gated authoring): `requirement.md`,
+  `task.json` (entry `parseRange`, ≥2 examples incl. a `throws`, `armCSubset`),
+  `hidden-battery.json` (happy + error split), `contested.json`,
+  `god-answers.json` (literal-free `decision` per contested input).
+- `test/e4.test.ts`: AC-MT1 (contested.json drives coverage; `E3_KNOWN_INPUTS`
+  gone) + AC-MT2 (runE4 reads contested.json; missing → throw) + AC-MT3
+  (parse-range loads + runs offline). Existing ACs re-run with contested.json
+  fixtures.
+
+**Notes down:**
+
+- parse-range is the RECOMMENDED second task; the owner may substitute any pure,
+  synchronous task with ≥3 contested inputs + a happy/error hidden split (spec
+  Decisions). If the owner has not authored parse-range assets at build time, the
+  grunt builds the harness generalization (loadGodAnswers/runE4/contested.json +
+  duration-parse back-compat) and STUBS parse-range AC-MT3 as a fail-up note —
+  the live replication run waits on owner authoring.
+- `loadTask`/`task.ts` is UNCHANGED — `contested.json` is read by e4, not loadTask.
+- npm eats `--flags` on Windows. Worktree grunts sync via `git checkout main --`.
+
 _Leg 7 CLOSED offline 2026-06-13 — H-21 + H-22 + H-23 + H-24 + H-25 all built
 by parallel sonnet grunt worktrees (group A = H-21/H-22 fully isolated; e3
 cluster H-23/H-24/H-25 bundled into ONE grunt to avoid the `e3.ts` three-way

@@ -1,6 +1,26 @@
 # Spec — E4 battery authoring (close the kick-back loop: God answers, warboss re-authors, re-run on a neutral oracle)
 
-> Status: active · rev 2 · Feature: e4-battery-authoring · Added: 2026-06-13 · Rev 2: 2026-06-13 · Maps to: PLAN Phase 4 follow-on (E3 standing consequence #1) + the delegation bet's end-to-end close.
+> Status: active · rev 3 · Feature: e4-battery-authoring · Added: 2026-06-13 · Rev 2: 2026-06-13 · Rev 3: 2026-06-14 · Maps to: PLAN Phase 4 follow-on (E3 standing consequence #1) + the delegation bet's end-to-end close.
+> **Rev 3 changes** (the E4 live run — `reports/e4-verdict.md`, PASS — left two
+> measurement holes; rev 3 closes both, both verdict §Consequence candidates #2
+> and #3):
+> (1) **Decimal becomes scorable — `extraCases` per ruling.** The E4 run could
+> not score the `"1.5h"` decimal case: the warboss author coincidentally chose
+> `1.5h` as its own representative example, so the residual filter excluded it
+> (prediction #3's backstop fired, 1/3 not 3/3). Rev 3 lets a ruling carry
+> `extraCases` — additional held-out battery inputs that exercise the SAME
+> decided behavior with DIFFERENT inputs (`"2.5h"→9000`, `"0.5h"→1800`). The
+> author can echo at most the canonical input; the extra cases survive the
+> residual, so the decided CLASS is scored even when the canonical input
+> collides. The decision prose stays literal-free; the self-leak guard now spans
+> the canonical input AND every `extraCases` input.
+> (2) **Owner happy-path coverage — ordering rulings.** The E4 warboss arm dipped
+> to 0.77 on `repeat-units "30m30m"` and `reversed-order "30m1h"` (the re-author
+> under-pinned unit ordering). Rev 3 adds owner rulings on those two classes;
+> they override the existing happy hidden cases via the unchanged `buildGodBattery`
+> override path (no new battery code), testing whether the loop lifts the happy
+> path too, not just the error path. No harness change beyond `extraCases`; these
+> are God-authored asset rows.
 > **Rev 2 changes** (the H-21 build surfaced rev-1 as un-measurable — both
 > deviations in the H-21 report / HANDOFF Leg-7 standing notes):
 > (1) **Prose-only owner decisions — the load-bearing fix.** Rev 1's
@@ -120,7 +140,23 @@ A JSON asset at `tasks/<task>/god-answers.json`, hand-authored by the owner
       "input": ["1.5h"],
       "expected": 5400,
       "decision": "A fractional quantity before a unit is accepted and scaled by that unit; half an hour past an hour count is 5400 seconds.",
-      "rationale": "fractional hours are a natural reading of a duration"
+      "rationale": "fractional hours are a natural reading of a duration",
+      "extraCases": [
+        { "input": ["2.5h"], "expected": 9000 },
+        { "input": ["0.5h"], "expected": 1800 }
+      ]
+    },
+    {
+      "input": ["30m30m"],
+      "expected": 3600,
+      "decision": "When the same unit appears more than once, the quantities for that unit are summed.",
+      "rationale": "repeated units are additive (ordering ruling, rev 3)"
+    },
+    {
+      "input": ["30m1h"],
+      "expected": 5400,
+      "decision": "Units may appear in any order; the total is the sum of all unit quantities regardless of the order they are written.",
+      "rationale": "order-independence (ordering ruling, rev 3)"
     }
   ]
 }
@@ -141,6 +177,18 @@ A JSON asset at `tasks/<task>/god-answers.json`, hand-authored by the owner
 - **`rationale` (rev 2, optional, NEVER rendered):** the owner's "why",
   carried to the artifact only; it is not constrained (may contain anything,
   including the input literal — it never reaches a prompt).
+- **`extraCases` (rev 3, optional, NEVER rendered):** an array of
+  `{ input, expected, throws? }` — additional held-out battery cases that
+  exercise the SAME decided behavior with DIFFERENT inputs. They share the
+  ruling's single `decision` (which is rendered ONCE, literal-free); the extra
+  inputs are battery inputs only, never reaching a prompt. Purpose: when the
+  warboss author coincidentally echoes the canonical `input` as its own example
+  (excluding that one case from the residual), the extra cases survive so the
+  decided CLASS is still scored. Each `extraCases` entry follows the same
+  `throws`/`expected` convention as a ruling. The **self-leak guard (rev 3) now
+  spans the canonical `input` AND every `extraCases` input** — `decision` must
+  contain `JSON.stringify` of none of them. Duplicate inputs across a ruling's
+  `input` + its `extraCases` (or against another ruling) → descriptive throw.
 - The asset MUST cover **at least the three E3-known contested inputs**
   (`"120"`, `" 1h 30m "`, `"1.5h"`); a loader that finds fewer than those three
   inputs present → descriptive throw naming the missing input(s) (kills the
@@ -162,7 +210,13 @@ A JSON asset at `tasks/<task>/god-answers.json`, hand-authored by the owner
    originals, in asset order. (Kills two readings: God never duplicates an input
    in the battery, and God's ruling always wins a conflict — the oracle is
    God's, not the task author's.)
-4. Result name-uniqueness is asserted (override keeps the original name; appends
+4. **`extraCases` (rev 3):** after a ruling's canonical case is placed
+   (overridden or appended), each of its `extraCases` entries is processed by the
+   SAME override-or-append rule, in array order, immediately after the canonical
+   case (a `god-<i>-<json-input>` name when appended; override in place if its
+   input deep-equals an existing case). Extra cases carry `coveredBy: []` like
+   any God case.
+5. Result name-uniqueness is asserted (override keeps the original name; appends
    use the `god-…` name) — a collision throws.
 
 ### Re-author with locked decisions
@@ -301,11 +355,19 @@ interface RunE4Result { readonly deadRun: boolean; }
 ### Module layout & CLI
 
 ```text
-src/experiment/e4.ts    rev 2: prose-only renderOwnerDecisions + self-leak guard; E4 owns the shared Ledger
-src/experiment/e2.ts    rev 4: add `ledger?` option (rev 3 hiddenOverride already shipped)
-test/e4.test.ts         AC1–AC10, offline, fake MessagesClient + fixture god-answers + fixture decompose artifact
-tasks/duration-parse/god-answers.json   rev 2: each ruling gains a literal-free `decision`; rewritten contamination-free
+src/experiment/e4.ts    rev 3: GodRuling gains optional `extraCases`; loadGodAnswers + buildGodBattery + self-leak guard span extra inputs. (rev 2: prose-only renderOwnerDecisions + self-leak guard; E4 owns the shared Ledger)
+src/experiment/e2.ts    rev 4: add `ledger?` option (rev 3 hiddenOverride already shipped) — UNCHANGED in e4 rev 3
+test/e4.test.ts         AC1–AC12, offline; rev 3 adds AC11 (extraCases + decimal survives collision) + AC12 (ordering overrides)
+tasks/duration-parse/god-answers.json   rev 3: decimal ruling gains `extraCases` (2.5h, 0.5h); two ordering rulings added (30m30m, 30m1h)
 ```
+
+> **Rev 3 promotion note:** `renderOwnerDecisions` is also being factored to call
+> the shared `renderDecisionBlock` from `src/kickback.ts` (see
+> `specs/kickback-pipeline.spec.md`). That refactor is byte-output-identical and
+> is owned by the kickback-pipeline item, not this one — e4 rev 3 only adds
+> `extraCases`. If both ship together, the e4 grunt rebases onto the promoted
+> `renderDecisionBlock`; if e4 rev 3 ships first, `renderOwnerDecisions` stays
+> self-contained and the kickback item does the factor-out.
 
 - Export from `e4.ts`: `runE4`, `RunE4Options`, `loadGodAnswers`,
   `buildGodBattery`, `renderOwnerDecisions`, `evaluateE4Criterion` (pure helpers
@@ -376,6 +438,24 @@ tasks/duration-parse/god-answers.json   rev 2: each ruling gains a literal-free 
     grinding cost (or whose embedded E2 sub-run is `deadRun: true`) →
     `deadRun: true` and `{ deadRun: true }` returned; same fixture `live: false`
     → no dead-run failure; `live: true` with nonzero scores/cost → `deadRun: false`.
+11. **AC11 — `extraCases` enter the battery + decimal-class survives a canonical
+    collision (rev 3).** `buildGodBattery` with a ruling `{ input: ["1.5h"],
+    expected: 5400, extraCases: [{ input: ["2.5h"], expected: 9000 }, { input:
+    ["0.5h"], expected: 1800 }] }` → all three inputs appear as distinct God
+    cases (canonical + 2 extras), names unique, `coveredBy: []`. End-to-end
+    variant: `runE4` with a scripted warboss decompose whose example coincidentally
+    uses `1.5h` → `hiddenBattery.excluded` contains the canonical `1.5h` case
+    (`leakedBy: ["warboss"]`) BUT both `2.5h` and `0.5h` survive the residual and
+    are scored — the decimal CLASS has ≥1 scored residual case (the rev-2
+    measurement hole is closed). Self-leak guard (rev 3): a decision containing
+    `"2.5h"` (an extra input) → `loadGodAnswers` throws naming that extra input.
+12. **AC12 — ordering rulings override happy cases (rev 3).** `buildGodBattery`
+    with rulings on `["30m30m"]→3600` and `["30m1h"]→5400` whose inputs
+    deep-equal existing `repeat-units` / `reversed-order` hidden cases → those two
+    cases are REPLACED in place (position + name preserved, God's `expected`
+    wins, `coveredBy: []`); `godBattery.overridden` counts them. `renderOwnerDecisions`
+    emits their literal-free `decision` bullets (no `"30m30m"` / `"30m1h"`
+    substring in the block). No new battery code path — pure override reuse.
 
 ## Verifies-with
 
