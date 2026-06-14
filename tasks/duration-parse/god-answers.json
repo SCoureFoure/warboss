@@ -6,16 +6,19 @@
       "input": ["120"],
       "expected": "<throws>",
       "throws": true,
+      "decision": "A bare integer with no time unit is invalid input and must throw.",
       "rationale": "a bare number with no unit is invalid — the intent says 'duration string' implying a unit is required; '120' is ambiguous seconds vs minutes vs anything"
     },
     {
       "input": [" 1h 30m "],
       "expected": 5400,
+      "decision": "A duration string with leading or trailing whitespace and internal spaces between components must be accepted; the result is the sum of the component values in seconds.",
       "rationale": "leading/trailing whitespace and internal spaces are accepted; the function should trim and normalize — '1h30m' = 5400s"
     },
     {
       "input": ["1.5h"],
       "expected": 5400,
+      "decision": "A fractional quantity before a unit is accepted and scaled by that unit; the result is 5400 seconds.",
       "rationale": "fractional hours are accepted: 1.5h = 1.5 * 3600 = 5400s"
     }
   ]

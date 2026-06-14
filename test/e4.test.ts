@@ -1,4 +1,4 @@
-/** AC1–AC9 — see specs/e4-battery-authoring.spec.md rev 1 */
+/** AC1–AC10 — see specs/e4-battery-authoring.spec.md rev 2 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
@@ -26,7 +26,7 @@ const TASKS_DIR = join(_thisDir, "..", "tasks");
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-/** A valid god-answers.json covering all three E3 knowns */
+/** A valid god-answers.json covering all three E3 knowns (rev 2: includes decision fields) */
 const VALID_GOD_ANSWERS = JSON.stringify({
   task: "duration-parse",
   answeredAgainstArtifact: "e3-fixture",
@@ -35,16 +35,19 @@ const VALID_GOD_ANSWERS = JSON.stringify({
       input: ["120"],
       expected: "<throws>",
       throws: true,
+      decision: "A bare integer with no time unit is invalid input and must throw.",
       rationale: "bare number with no unit is invalid",
     },
     {
       input: [" 1h 30m "],
       expected: 5400,
+      decision: "A duration string with leading or trailing whitespace and internal spaces between components must be accepted; the result is the sum of the component values in seconds.",
       rationale: "leading/trailing whitespace accepted; 1h30m = 5400s",
     },
     {
       input: ["1.5h"],
       expected: 5400,
+      decision: "A fractional quantity before a unit is accepted and scaled by that unit; the result is 5400 seconds.",
       rationale: "fractional hours accepted: 1.5 * 3600 = 5400",
     },
   ],
@@ -192,7 +195,8 @@ test("AC1 loadGodAnswers — valid asset covering three E3 knowns → returns ru
   assert.ok(throwing !== undefined, "ruling for ['120'] present");
   assert.equal(throwing!.throws, true, "throwing ruling has throws: true");
   assert.equal(throwing!.expected, "<throws>", "throwing ruling expected is '<throws>'");
-  assert.ok(typeof throwing!.rationale === "string", "rationale is a string");
+  assert.ok(typeof throwing!.decision === "string", "decision is a string");
+  assert.ok(throwing!.decision.length > 0, "decision is non-empty");
 
   // value ruling: input [" 1h 30m "]
   const whitespace = rulings.find(
@@ -215,8 +219,8 @@ test("AC1 variant: asset missing '1.5h' → descriptive throw naming the missing
   const missing = JSON.stringify({
     task: "duration-parse",
     rulings: [
-      { input: ["120"], expected: "<throws>", throws: true, rationale: "x" },
-      { input: [" 1h 30m "], expected: 5400, rationale: "y" },
+      { input: ["120"], expected: "<throws>", throws: true, decision: "A bare integer with no time unit is invalid input and must throw.", rationale: "x" },
+      { input: [" 1h 30m "], expected: 5400, decision: "Whitespace-padded duration strings are accepted.", rationale: "y" },
       // missing: ["1.5h"]
     ],
   });
@@ -233,10 +237,10 @@ test("AC1 variant: duplicate input tuple → descriptive throw", async () => {
   const dup = JSON.stringify({
     task: "duration-parse",
     rulings: [
-      { input: ["120"], expected: "<throws>", throws: true, rationale: "a" },
-      { input: ["120"], expected: 120, rationale: "b" }, // duplicate!
-      { input: [" 1h 30m "], expected: 5400, rationale: "c" },
-      { input: ["1.5h"], expected: 5400, rationale: "d" },
+      { input: ["120"], expected: "<throws>", throws: true, decision: "A bare integer with no time unit is invalid input and must throw.", rationale: "a" },
+      { input: ["120"], expected: 120, decision: "Duplicate ruling — this should cause a throw.", rationale: "b" }, // duplicate!
+      { input: [" 1h 30m "], expected: 5400, decision: "Whitespace-padded duration strings are accepted.", rationale: "c" },
+      { input: ["1.5h"], expected: 5400, decision: "A fractional quantity before a unit is accepted.", rationale: "d" },
     ],
   });
   const path = await writeGodAnswers(dir, dup);
@@ -263,11 +267,13 @@ test("AC2 buildGodBattery — override replaces in place, novel ruling appended;
       input: ["120"],          // matches "match-me" → override in place
       expected: "<throws>",
       throws: true,
+      decision: "A bare integer with no time unit is invalid input and must throw.",
       rationale: "bare number is invalid",
     },
     {
       input: ["1.5h"],         // novel → append
       expected: 5400,
+      decision: "A fractional quantity before a unit is accepted and scaled by that unit.",
       rationale: "fractional hours",
     },
   ];
@@ -308,9 +314,9 @@ test("AC2 variant: all rulings are novel → all appended in asset order", () =>
     { name: "e1", input: ["-1h"], expected: "<throws>", throws: true, coveredBy: [] },
   ];
   const rulings: GodRuling[] = [
-    { input: ["120"], expected: "<throws>", throws: true, rationale: "a" },
-    { input: ["1.5h"], expected: 5400, rationale: "b" },
-    { input: [" 1h 30m "], expected: 5400, rationale: "c" },
+    { input: ["120"], expected: "<throws>", throws: true, decision: "A bare integer with no time unit is invalid input and must throw.", rationale: "a" },
+    { input: ["1.5h"], expected: 5400, decision: "A fractional quantity before a unit is accepted and scaled by that unit.", rationale: "b" },
+    { input: [" 1h 30m "], expected: 5400, decision: "A duration with whitespace between components is accepted.", rationale: "c" },
   ];
 
   const battery = buildGodBattery(taskHidden, rulings);
@@ -331,61 +337,92 @@ test("AC2 variant: all rulings are novel → all appended in asset order", () =>
   }
 });
 
-// ── AC3: owner-decision rendering ─────────────────────────────────────────────
+// ── AC3: owner-decision rendering (rev 2, PROSE ONLY) ────────────────────────
 
-test("AC3 renderOwnerDecisions — exact format, one bullet per ruling, order preserved", () => {
+test("AC3 renderOwnerDecisions — prose-only, one bullet per ruling = decision VERBATIM, asset order", () => {
   const rulings: GodRuling[] = [
-    { input: ["120"], expected: "<throws>", throws: true, rationale: "bare number invalid" },
-    { input: [" 1h 30m "], expected: 5400, rationale: "whitespace ok" },
-    { input: ["1.5h"], expected: 5400, rationale: "fractional hours ok" },
+    {
+      input: ["120"],
+      expected: "<throws>",
+      throws: true,
+      decision: "A bare integer with no time unit is invalid input and must throw.",
+      rationale: "bare number invalid",
+    },
+    {
+      input: [" 1h 30m "],
+      expected: 5400,
+      decision: "A duration string with leading or trailing whitespace must be accepted.",
+      rationale: "whitespace ok",
+    },
+    {
+      input: ["1.5h"],
+      expected: 5400,
+      decision: "A fractional quantity before a unit is accepted and scaled by that unit.",
+      rationale: "fractional hours ok",
+    },
   ];
 
-  const result = renderOwnerDecisions("parseDuration", rulings);
+  const result = renderOwnerDecisions(rulings);
 
   // Must contain the header
   assert.ok(result.includes("The owner has DECIDED"), "contains header");
   assert.ok(result.includes("not open choices"), "contains 'not open choices'");
 
-  // Throwing ruling: parseDuration("120") throws (invalid)
+  // Each bullet = the decision string VERBATIM
   assert.ok(
-    result.includes(`- parseDuration("120") throws (invalid)`),
-    `throwing ruling rendered correctly: ${result}`,
+    result.includes(`- A bare integer with no time unit is invalid input and must throw.`),
+    `throwing ruling decision rendered verbatim: ${result}`,
+  );
+  assert.ok(
+    result.includes(`- A duration string with leading or trailing whitespace must be accepted.`),
+    `whitespace ruling decision rendered verbatim: ${result}`,
+  );
+  assert.ok(
+    result.includes(`- A fractional quantity before a unit is accepted and scaled by that unit.`),
+    `decimal ruling decision rendered verbatim: ${result}`,
   );
 
-  // Value ruling: parseDuration(" 1h 30m ") === 5400
-  assert.ok(
-    result.includes(`- parseDuration(" 1h 30m ") === 5400`),
-    `whitespace ruling rendered correctly: ${result}`,
-  );
-
-  // Value ruling: parseDuration("1.5h") === 5400
-  assert.ok(
-    result.includes(`- parseDuration("1.5h") === 5400`),
-    `decimal ruling rendered correctly: ${result}`,
-  );
-
-  // All three bullets present (count hyphens)
+  // All three bullets present
   const bullets = result.split("\n").filter((l) => l.startsWith("- "));
   assert.equal(bullets.length, 3, "exactly three bullets");
 
-  // Order: first throwing, then the two value rulings (asset order)
-  assert.ok(bullets[0]!.includes("throws"), "first bullet is throwing ruling");
-  assert.ok(bullets[1]!.includes("1h 30m"), "second bullet is whitespace ruling");
-  assert.ok(bullets[2]!.includes("1.5h"), "third bullet is decimal ruling");
+  // Order preserved (asset order)
+  assert.ok(bullets[0]!.includes("bare integer"), "first bullet is throwing ruling decision");
+  assert.ok(bullets[1]!.includes("leading or trailing"), "second bullet is whitespace ruling decision");
+  assert.ok(bullets[2]!.includes("fractional quantity"), "third bullet is decimal ruling decision");
+
+  // Rev 2: NO input literal in the output
+  // Assert that for every ruling, JSON.stringify(input element) is NOT a substring of the result
+  for (const r of rulings) {
+    for (const inp of r.input) {
+      const needle = JSON.stringify(inp);
+      assert.ok(
+        !result.includes(needle),
+        `output must NOT contain input literal ${needle} (self-leak guard): ${result}`,
+      );
+    }
+  }
+
+  // NO entry(args) form: no opening paren following a function-call pattern
+  assert.ok(!result.includes("parseDuration("), "output contains no entry(args) form");
+  // NO === in the bullets
+  for (const bullet of bullets) {
+    assert.ok(!bullet.includes("==="), `bullet must not contain '===': ${bullet}`);
+  }
 });
 
 test("AC3 renderOwnerDecisions — no bullet omitted (throwing ruling NOT skipped)", () => {
   // Specifically test that throwing rulings are not omitted (kills "skip throwing" reading)
   const rulings: GodRuling[] = [
-    { input: ["foo"], expected: "<throws>", throws: true, rationale: "invalid" },
-    { input: ["bar"], expected: 42, rationale: "valid" },
+    { input: ["foo"], expected: "<throws>", throws: true, decision: "Input without a recognizable structure must be rejected with an error.", rationale: "invalid" },
+    { input: ["bar"], expected: 42, decision: "A well-formed input returns the numeric result.", rationale: "valid" },
   ];
 
-  const result = renderOwnerDecisions("fn", rulings);
+  const result = renderOwnerDecisions(rulings);
   const bullets = result.split("\n").filter((l) => l.startsWith("- "));
   assert.equal(bullets.length, 2, "both bullets present — throwing not omitted");
-  assert.ok(result.includes(`fn("foo") throws (invalid)`), "throwing ruling rendered");
-  assert.ok(result.includes(`fn("bar") === 42`), "value ruling rendered");
+  assert.ok(result.includes("- Input without a recognizable structure must be rejected with an error."), "throwing ruling decision rendered");
+  assert.ok(result.includes("- A well-formed input returns the numeric result."), "value ruling decision rendered");
 });
 
 // ── AC4: re-author wiring ─────────────────────────────────────────────────────
@@ -428,14 +465,25 @@ test("AC4 runE4 — calls decompose with maxRequirements:1, context contains own
     `decompose prompt must contain owner-decision header: ${decomposeCall!.prompt.slice(0, 500)}`,
   );
 
-  // Must contain the three rulings rendered as bullets
+  // Rev 2: must contain the decision prose verbatim (NOT the entry(args) form)
   assert.ok(
-    decomposeCall!.prompt.includes(`parseDuration("120") throws (invalid)`),
-    "decompose prompt contains throwing ruling",
+    decomposeCall!.prompt.includes("A bare integer with no time unit is invalid input and must throw."),
+    "decompose prompt contains throwing ruling decision prose",
   );
   assert.ok(
-    decomposeCall!.prompt.includes(`parseDuration("1.5h") === 5400`),
-    "decompose prompt contains decimal ruling",
+    decomposeCall!.prompt.includes("A fractional quantity before a unit is accepted and scaled by that unit"),
+    "decompose prompt contains decimal ruling decision prose",
+  );
+
+  // Rev 2: must NOT contain the input literals (no "120" or "1.5h" in the decisions block)
+  // (They may appear in other parts of the prompt — we check the decision rendering is clean)
+  assert.ok(
+    !decomposeCall!.prompt.includes(`parseDuration("120") throws`),
+    "decompose prompt must NOT contain old entry(args) form for throwing ruling",
+  );
+  assert.ok(
+    !decomposeCall!.prompt.includes(`parseDuration("1.5h") ===`),
+    "decompose prompt must NOT contain old entry(args) form for decimal ruling",
   );
 
   // decompose call must contain "maxRequirements" constraint — via the cap line
@@ -600,79 +648,277 @@ test("AC6 omitting hiddenOverride → reproduces rev-2 behavior (existing e2 tes
   assert.equal(hb.total, 12, "without hiddenOverride, hiddenBattery.total = 12 (task.hidden)");
 });
 
-// ── AC7: contamination of informed input is excluded, not fatal ───────────────
+// ── AC7: contested inputs SURVIVE the residual (rev 2) ───────────────────────
 
-test("AC7 God ruling input leaked into warboss prompt → excluded in E2 hiddenBattery, sessions run", async () => {
-  const outDir = await mkdtemp(join(tmpdir(), "e4-ac7-"));
+/**
+ * AC7: prose-only decisions carry no input literal, so the three contested God
+ * cases are NOT leaked into the warboss prompt and SURVIVE the residual.
+ * Variant: a warboss example that coincidentally equals a contested input →
+ * that one case IS excluded, sessions still run, no throw.
+ */
+test("AC7 contested God inputs SURVIVE residual — prose-only decisions do not leak them", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e4-ac7-survive-"));
+  const godAnswersPath = await writeGodAnswers(outDir);
 
-  // Build a synthetic God battery where one God case's input will be leaked.
-  // We use a warboss contract that explicitly contains "1h90m" as an example input.
-  // And a God battery that includes that input as a case.
-  const godBattery: HiddenCase[] = [
-    { name: "leak-me", input: ["1h90m"], expected: 9000, coveredBy: [] }, // will be leaked by warboss
-    { name: "safe-happy", input: ["2h"], expected: 7200, coveredBy: [] },
-    { name: "safe-error", input: ["-1h"], expected: "<throws>", throws: true, coveredBy: [] },
+  // Warboss decompose uses examples with inputs DISTINCT from "120", " 1h 30m ", "1.5h"
+  // so none of the three contested cases are leaked.
+  const safeDecomposeJson = JSON.stringify([
+    {
+      id: "parse-duration",
+      requirement: "Parse a duration string and return total seconds.",
+      entry: "parseDuration",
+      signature: "(s: string) => number",
+      examples: [
+        { name: "basic", input: ["2h30m"], expected: 9000 },         // distinct from all God inputs
+        { name: "invalid-nounit", input: ["xyz"], expected: "<throws>", throws: true }, // distinct
+      ],
+      resolutions: [],
+    },
+  ]);
+  const safeDecomposeFenced = "```json\n" + safeDecomposeJson + "\n```";
+
+  const responses = [
+    safeDecomposeFenced,   // call 0: decompose
+    EMPTY_GAPS_FENCED,     // call 1: audit
+    ...e2GrindingResponses(1),
   ];
 
-  // Warboss contract leaks "1h90m"
-  const leakyWarboss = Contract.freeze({
-    requirement: "duration-parse",
-    entry: "parseDuration",
-    version: "1",
-    examples: [
-      { name: "carry", input: ["1h90m"], expected: 9000 }, // leaks "leak-me"
-      { name: "error", input: ["abc"], expected: "<throws>", throws: true },
-    ],
-  });
+  const client = scriptedClient(responses);
 
-  const { runE2 } = await import("../src/experiment/e2.ts");
-
-  // Must NOT throw — sessions should run with the exclusion applied
-  const result = await runE2({
-    client: fixedClient(fence(CORRECT_IMPL)),
-    warbossContract: leakyWarboss,
+  await runE4({
+    client,
     task: "duration-parse",
     n: 1,
     out: outDir,
     tasksDir: TASKS_DIR,
-    hiddenOverride: godBattery,
+    godAnswers: godAnswersPath,
     live: false,
   });
 
-  assert.equal(result.deadRun, false, "run should not fail even with contamination");
-
   const files = await readdir(outDir);
-  const e2File = files.find((f) => f.startsWith("e2-") && f.endsWith(".json"))!;
-  const raw = await readFile(join(outDir, e2File), "utf8");
-  const artifact = JSON.parse(raw) as Record<string, unknown>;
-
-  const hb = artifact["hiddenBattery"] as {
-    total: number;
-    excluded: Array<{ name: string; leakedBy: string[] }>;
-    residualCount: number;
-    happyCount: number;
-    errorCount: number;
+  const e4File = files.find((f) => f.startsWith("e4-") && f.endsWith(".json"))!;
+  const raw = await readFile(join(outDir, e4File), "utf8");
+  const e4Artifact = JSON.parse(raw) as {
+    e2: {
+      hiddenBattery: {
+        excluded: Array<{ name: string; leakedBy: string[] }>;
+        residualCount: number;
+      };
+    };
   };
 
-  // "leak-me" should be in excluded with leakedBy including "warboss"
-  const leakEntry = hb.excluded.find((e) => e.name === "leak-me");
-  assert.ok(leakEntry !== undefined, "'leak-me' appears in excluded");
-  assert.ok(leakEntry!.leakedBy.includes("warboss"), "leakedBy includes 'warboss'");
+  const hb = e4Artifact.e2.hiddenBattery;
 
-  // Residual should have 2 cases (safe-happy + safe-error)
-  assert.equal(hb.residualCount, 2, "residual = 2 (safe cases)");
-  assert.equal(hb.happyCount, 1, "1 happy case in residual");
-  assert.equal(hb.errorCount, 1, "1 error case in residual");
-
-  // Sessions ran (not zero sessions)
-  const sessions = artifact["sessions"] as unknown[];
-  assert.ok(sessions.length > 0, "sessions ran despite exclusion");
+  // The three contested inputs should NOT appear in excluded
+  const excludedNames = hb.excluded.map((e) => e.name);
+  const contestedGodNames = ["120", "1h 30m", "1.5h"]; // substrings to check
+  for (const contested of contestedGodNames) {
+    const excludedContest = excludedNames.find((n) =>
+      n.includes(contested.replace(/ /g, "").replace(/"/g, "")),
+    );
+    // Note: God cases have names like "god-0-[\"120\"]" — check for the input value
+    const godCasesExcluded = hb.excluded.filter((e) =>
+      e.name.includes("120") || e.name.includes("1h 30m") || e.name.includes("1.5h"),
+    );
+    if (godCasesExcluded.length > 0) {
+      assert.fail(`Contested God case(s) should not be excluded with prose-only decisions: ${JSON.stringify(godCasesExcluded)}`);
+    }
+    break; // check once
+  }
+  assert.ok(hb.residualCount > 0, "residual is non-empty");
 });
 
-// ── AC8: end-to-end offline run + costs ──────────────────────────────────────
+test("AC7 variant: warboss coincidentally chooses a contested input → that case excluded, sessions run, no throw", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e4-ac7-coincidental-"));
+  const godAnswersPath = await writeGodAnswers(outDir);
 
-test("AC8 runE4 end-to-end offline — writes e4 artifact + cost-ledger; artifact fields correct", async () => {
-  const outDir = await mkdtemp(join(tmpdir(), "e4-ac8-"));
+  // Warboss decompose uses "120" as an example — coincidentally equal to the God ruling input
+  const coincidentalDecomposeJson = JSON.stringify([
+    {
+      id: "parse-duration",
+      requirement: "Parse a duration string and return total seconds.",
+      entry: "parseDuration",
+      signature: "(s: string) => number",
+      examples: [
+        { name: "basic", input: ["2h30m"], expected: 9000 },
+        // Coincidental: warboss chose "120" as a DIFFERENT example (maybe 120s or a throws)
+        // But since "120" is a God battery input, the residual filter will exclude it.
+        { name: "coincidental", input: ["120"], expected: 120 }, // warboss chose this; God says throws
+        { name: "invalid", input: ["abc"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    },
+  ]);
+  const coincidentalFenced = "```json\n" + coincidentalDecomposeJson + "\n```";
+
+  const responses = [
+    coincidentalFenced,    // call 0: decompose
+    EMPTY_GAPS_FENCED,     // call 1: audit
+    ...e2GrindingResponses(1),
+  ];
+  const client = scriptedClient(responses);
+
+  // Must NOT throw — the backstop filter handles it as an exclusion
+  let result: RunE4Result | undefined;
+  try {
+    result = await runE4({
+      client,
+      task: "duration-parse",
+      n: 1,
+      out: outDir,
+      tasksDir: TASKS_DIR,
+      godAnswers: godAnswersPath,
+      live: false,
+    });
+  } catch (err) {
+    assert.fail(`runE4 must not throw on coincidental contamination: ${(err as Error).message}`);
+  }
+
+  assert.ok(result !== undefined, "runE4 returned a result");
+
+  const files = await readdir(outDir);
+  const e4File = files.find((f) => f.startsWith("e4-") && f.endsWith(".json"))!;
+  const raw = await readFile(join(outDir, e4File), "utf8");
+  const e4Artifact = JSON.parse(raw) as {
+    e2: {
+      hiddenBattery: {
+        excluded: Array<{ name: string; leakedBy: string[] }>;
+        residualCount: number;
+      };
+      sessions: unknown[];
+    };
+  };
+
+  const hb = e4Artifact.e2.hiddenBattery;
+
+  // The God case for "120" should be excluded with leakedBy including "warboss".
+  // NOTE: input "120" already exists in the hidden battery (name "bare-number-2"),
+  // so buildGodBattery OVERRIDES it in place — the god case keeps the original
+  // name "bare-number-2" (spec: override keeps the original name), NOT a "god-…"
+  // name. Find it by the warboss leak (the only coincidental exclusion here:
+  // warboss examples are "2h30m"/"120"/"abc"; only "120" is a battery input).
+  const excluded120 = hb.excluded.find((e) => e.leakedBy.includes("warboss"));
+  assert.ok(
+    excluded120 !== undefined,
+    `The coincidentally-chosen "120" case should be excluded with leakedBy ["warboss"]: ${JSON.stringify(hb.excluded)}`,
+  );
+
+  // Sessions still ran
+  assert.ok(e4Artifact.e2.sessions.length > 0, "sessions ran despite coincidental exclusion");
+});
+
+// ── AC8: self-leak guard (rev 2) ─────────────────────────────────────────────
+
+test("AC8 self-leak guard — decision containing own input literal throws before any model call", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "e4-ac8-selfleakguard-"));
+
+  // Ruling with decision containing its own input literal "120" (the JSON.stringify of it)
+  // JSON.stringify("120") === '"120"' — check if that needle is in the decision
+  // The spec says: throws if decision contains JSON.stringify(input element)
+  // JSON.stringify("120") = '"120"' (a quoted string).
+  // We embed the string 120 literally as a number context — but need the JSON form "120".
+  const selfLeakAsset = JSON.stringify({
+    task: "duration-parse",
+    rulings: [
+      {
+        input: ["120"],
+        expected: "<throws>",
+        throws: true,
+        // Decision contains JSON.stringify("120") = '"120"' — self-leak!
+        decision: `The value "120" with no time unit is invalid input and must throw.`,
+        rationale: "the self-leak is in the decision, not rationale",
+      },
+      {
+        input: [" 1h 30m "],
+        expected: 5400,
+        decision: "A duration with whitespace padding is accepted.",
+        rationale: "normal",
+      },
+      {
+        input: ["1.5h"],
+        expected: 5400,
+        decision: "A fractional quantity before a unit is accepted.",
+        rationale: "normal",
+      },
+    ],
+  });
+
+  const path = join(dir, "god-answers.json");
+  await writeFile(path, selfLeakAsset);
+
+  // loadGodAnswers must throw with a descriptive error naming the offending ruling
+  await assert.rejects(
+    loadGodAnswers(path),
+    (err: Error) => {
+      assert.ok(/self.?leak|self.?leak|"120"|120/i.test(err.message), `error names the offending ruling: ${err.message}`);
+      return true;
+    },
+    "loadGodAnswers must throw on self-leak in decision",
+  );
+});
+
+test("AC8 self-leak guard — rationale containing input literal does NOT throw", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "e4-ac8-rationale-ok-"));
+
+  // Rationale is exempt — may contain anything including the input literal
+  const rationaleWithLiteralAsset = JSON.stringify({
+    task: "duration-parse",
+    rulings: [
+      {
+        input: ["120"],
+        expected: "<throws>",
+        throws: true,
+        // Clean decision (no input literal)
+        decision: "A bare integer with no time unit is invalid input and must throw.",
+        // Rationale has the literal "120" — this is FINE (rationale is never rendered)
+        rationale: `The value "120" is ambiguous — could be seconds, minutes, etc.`,
+      },
+      {
+        input: [" 1h 30m "],
+        expected: 5400,
+        decision: "A duration with whitespace padding is accepted.",
+        rationale: "spaces around ' 1h 30m ' should be trimmed",
+      },
+      {
+        input: ["1.5h"],
+        expected: 5400,
+        decision: "A fractional quantity before a unit is accepted.",
+        rationale: "1.5h = 5400s",
+      },
+    ],
+  });
+
+  const path = join(dir, "god-answers.json");
+  await writeFile(path, rationaleWithLiteralAsset);
+
+  // Must NOT throw — rationale is exempt from the self-leak guard
+  const rulings = await loadGodAnswers(path);
+  assert.equal(rulings.length, 3, "rulings loaded successfully despite literal in rationale");
+});
+
+test("AC8 self-leak guard via renderOwnerDecisions — injected ruling with self-leak throws", () => {
+  // Even if a ruling bypassed the loader (e.g., test-injected), renderOwnerDecisions also guards
+  const selfLeakRulings: GodRuling[] = [
+    {
+      input: ["bad-value"],
+      expected: "<throws>",
+      throws: true,
+      // JSON.stringify("bad-value") = '"bad-value"' — this is the needle
+      decision: `The input "bad-value" must throw because it is unparseable.`,
+    },
+  ];
+
+  assert.throws(
+    () => renderOwnerDecisions(selfLeakRulings),
+    /self.?leak|"bad-value"|bad-value/i,
+    "renderOwnerDecisions must throw on self-leak",
+  );
+});
+
+// ── AC9: end-to-end offline run + single shared sidecar (rev 2) ──────────────
+
+test("AC9 runE4 end-to-end offline — single cost-ledger sidecar for BOTH phases; artifact fields correct", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e4-ac9-"));
   const godAnswersPath = await writeGodAnswers(outDir);
 
   const responses = e4Responses(1);
@@ -696,11 +942,15 @@ test("AC8 runE4 end-to-end offline — writes e4 artifact + cost-ledger; artifac
   const e4Files = files.filter((f) => f.startsWith("e4-") && f.endsWith(".json"));
   assert.equal(e4Files.length, 1, "exactly one e4 artifact");
 
-  // At least one cost-ledger-*.jsonl (E4's own sidecar; E2 may add another)
+  // Rev 2: exactly ONE cost-ledger-*.jsonl — runE2 opened no second sidecar
   const ledgerFiles = files.filter(
     (f) => f.startsWith("cost-ledger-") && f.endsWith(".jsonl"),
   );
-  assert.ok(ledgerFiles.length >= 1, "at least one cost-ledger sidecar");
+  assert.equal(
+    ledgerFiles.length,
+    1,
+    `exactly one cost-ledger sidecar (rev 2: E4 owns the shared ledger; runE2 must not open a second one). Found: ${JSON.stringify(ledgerFiles)}`,
+  );
 
   // Read and validate artifact
   const raw = await readFile(join(outDir, e4Files[0]!), "utf8");
@@ -724,10 +974,7 @@ test("AC8 runE4 end-to-end offline — writes e4 artifact + cost-ledger; artifac
   assert.equal(artifact.config.n, 1);
 
   // godAnswersPath recorded
-  assert.ok(
-    typeof artifact.godAnswersPath === "string",
-    "godAnswersPath is a string",
-  );
+  assert.ok(typeof artifact.godAnswersPath === "string", "godAnswersPath is a string");
 
   // rulings verbatim (3 rulings from fixture)
   assert.equal(artifact.rulings.length, 3, "3 rulings in artifact");
@@ -753,19 +1000,17 @@ test("AC8 runE4 end-to-end offline — writes e4 artifact + cost-ledger; artifac
   // e4Criterion
   assert.equal(typeof artifact.e4Criterion.pass, "boolean", "e4Criterion.pass is boolean");
   assert.ok(typeof artifact.e4Criterion.detail === "string", "e4Criterion.detail is string");
-  assert.ok(
-    artifact.e4Criterion.detail.includes("residualGodCases"),
-    "e4Criterion.detail includes residualGodCases",
-  );
+  assert.ok(artifact.e4Criterion.detail.includes("residualGodCases"), "e4Criterion.detail includes residualGodCases");
 
   // Cost accounting: totalCostUsd = authoringCostUsd + grindingCostUsd
   assert.ok(
     Math.abs(artifact.totalCostUsd - (artifact.authoringCostUsd + artifact.grindingCostUsd)) < 1e-9,
-    `totalCostUsd (${artifact.totalCostUsd}) === authoringCostUsd (${artifact.authoringCostUsd}) + grindingCostUsd (${artifact.grindingCostUsd})`,
+    `totalCostUsd === authoringCostUsd + grindingCostUsd: ${artifact.totalCostUsd} vs ${artifact.authoringCostUsd} + ${artifact.grindingCostUsd}`,
   );
 
-  // ledger is an array
+  // ledger covers BOTH phases (author + E2 grinding): at least 1 entry
   assert.ok(Array.isArray(artifact.ledger), "ledger is array");
+  assert.ok(artifact.ledger.length >= 1, "ledger covers both phases (has entries from author + E2)");
 
   // deadRun
   assert.equal(artifact.deadRun, false, "deadRun is false for offline run");

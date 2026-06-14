@@ -22,7 +22,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent, GRUNT_DOGMA, type MessagesClient } from "../agent.ts";
-import { Ledger } from "../cost.ts";
+import { Ledger, type LedgerEntry } from "../cost.ts";
 import { jsonlFileSink } from "../ledger-sink.ts";
 import { judge } from "../runner.ts";
 import { TIERS } from "../models.ts";
@@ -88,6 +88,7 @@ export interface RunE2Options {
   e1aArmD?: E1aArmDStats; // optional secondary reference (reused type)
   live?: boolean; // CLI true, tests false
   hiddenOverride?: readonly HiddenCase[]; // rev 3: when present, replaces task.hidden as the scoring battery
+  ledger?: Ledger; // rev 4: when present, runE2 meters into THIS ledger and does NOT open its own jsonl sink
 }
 
 export interface RunE2Result {
@@ -417,9 +418,16 @@ export async function runE2(opts: RunE2Options = {}): Promise<RunE2Result> {
     .replace(/\.\d{3}Z$/, "Z");
 
   await mkdir(outDir, { recursive: true });
-  const ledger = new Ledger(
-    jsonlFileSink(join(outDir, `cost-ledger-${ts}.jsonl`)),
-  );
+
+  // rev 4: when opts.ledger is present, use the caller's shared ledger and do NOT open a sink.
+  // When absent, open our own ledger + jsonl sink (byte-identical to rev 3 behavior).
+  const ledger: Ledger = opts.ledger !== undefined
+    ? opts.ledger
+    : new Ledger(jsonlFileSink(join(outDir, `cost-ledger-${ts}.jsonl`)));
+
+  // Track how many entries the ledger has before E2's grinding calls start,
+  // so we can compute grindingCostUsd from only the calls made during E2.
+  const ledgerEntriesBeforeE2 = opts.ledger !== undefined ? opts.ledger.all().length : 0;
 
   const agent = new Agent(TIERS.LOW, ledger, {
     ...(opts.client ? { client: opts.client } : {}),
@@ -480,8 +488,13 @@ export async function runE2(opts: RunE2Options = {}): Promise<RunE2Result> {
         }
       : null;
 
-  const totals = ledger.totals();
-  const grindingCostUsd = totals.costUsd;
+  // grindingCostUsd = sum of LOW-tier calls made during E2 only.
+  // When a shared ledger is provided, we compute only the entries added since E2 started.
+  const allEntriesNow = ledger.all();
+  const e2Entries: readonly LedgerEntry[] = opts.ledger !== undefined
+    ? allEntriesNow.slice(ledgerEntriesBeforeE2)
+    : allEntriesNow;
+  const grindingCostUsd = e2Entries.reduce((sum, e) => sum + e.costUsd, 0);
   const totalCostUsd = grindingCostUsd; // run's own metered spend; authoring is separate.
 
   const deadRun =
@@ -512,7 +525,7 @@ export async function runE2(opts: RunE2Options = {}): Promise<RunE2Result> {
     grindingCostUsd,
     authoringCostUsd,
     sessions,
-    ledger: ledger.toJSON(),
+    ledger: [...e2Entries],
     totalCostUsd,
     deadRun,
   };
@@ -543,7 +556,9 @@ export async function runE2(opts: RunE2Options = {}): Promise<RunE2Result> {
   );
   console.log(`\nE2 criterion: ${e2Criterion.pass ? "PASS" : "FAIL"} — ${e2Criterion.detail}`);
   console.log(`\nArtifact:        ${join(outDir, fileName)}`);
-  console.log(`Cost log:        ${join(outDir, `cost-ledger-${ts}.jsonl`)}`);
+  if (opts.ledger === undefined) {
+    console.log(`Cost log:        ${join(outDir, `cost-ledger-${ts}.jsonl`)}`);
+  }
   console.log(`Grinding cost:   $${grindingCostUsd.toFixed(6)}`);
   console.log(`Authoring cost:  $${authoringCostUsd.toFixed(6)}`);
 

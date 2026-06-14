@@ -7,14 +7,14 @@
  *   (b) locked decisions fed back into a warboss re-author.
  * Then E2 re-runs human-vs-re-authored-warboss against the God battery.
  *
- * Spec: specs/e4-battery-authoring.spec.md rev 1.
+ * Spec: specs/e4-battery-authoring.spec.md rev 2.
  */
 
 import { mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent, type MessagesClient } from "../agent.ts";
-import { Ledger, type LedgerEntry } from "../cost.ts";
+import { Ledger } from "../cost.ts";
 import { jsonlFileSink } from "../ledger-sink.ts";
 import { TIERS } from "../models.ts";
 import { decompose } from "../warboss.ts";
@@ -32,7 +32,10 @@ export interface GodRuling {
   readonly input: readonly unknown[];
   readonly expected: unknown;
   readonly throws?: true;
-  readonly rationale: string;
+  /** Rev 2: required, literal-free prose statement of the required behavior. The ONLY field rendered into the prompt. */
+  readonly decision: string;
+  /** Rev 2: optional, never rendered into any prompt. May contain anything including input literals. */
+  readonly rationale?: string;
 }
 
 export interface RunE4Options {
@@ -88,7 +91,8 @@ export async function loadGodAnswers(path: string): Promise<readonly GodRuling[]
       input: unknown[];
       expected: unknown;
       throws?: boolean;
-      rationale: string;
+      decision?: unknown;
+      rationale?: string;
     }>;
   };
   try {
@@ -105,7 +109,7 @@ export async function loadGodAnswers(path: string): Promise<readonly GodRuling[]
     );
   }
 
-  // Check for duplicate input tuples
+  // Check for duplicate input tuples and validate `decision` presence + type
   const seen: string[] = [];
   for (const r of parsed.rulings) {
     const key = JSON.stringify(r.input);
@@ -115,6 +119,24 @@ export async function loadGodAnswers(path: string): Promise<readonly GodRuling[]
       );
     }
     seen.push(key);
+
+    // Rev 2: `decision` is REQUIRED and must be a string
+    if (typeof r.decision !== "string") {
+      throw new Error(
+        `loadGodAnswers: ruling ${key} is missing a required 'decision' string in "${path}"`,
+      );
+    }
+
+    // Rev 2: self-leak guard — decision must NOT contain JSON.stringify of any element of its own input
+    for (const elem of r.input) {
+      const needle = JSON.stringify(elem);
+      if ((r.decision as string).includes(needle)) {
+        throw new Error(
+          `loadGodAnswers: self-leak in ruling ${key}: 'decision' contains the input literal ${needle}. ` +
+          `Move input literals to 'rationale' (which is never rendered) and rephrase 'decision' without the literal.`,
+        );
+      }
+    }
   }
 
   // Check that all three E3 known inputs are covered
@@ -136,7 +158,8 @@ export async function loadGodAnswers(path: string): Promise<readonly GodRuling[]
     input: r.input,
     expected: r.throws === true ? "<throws>" : r.expected,
     ...(r.throws === true ? { throws: true as const } : {}),
-    rationale: r.rationale,
+    decision: r.decision as string,
+    ...(r.rationale !== undefined ? { rationale: r.rationale } : {}),
   }));
 }
 
@@ -258,32 +281,46 @@ function godBatteryStats(
 }
 
 /**
- * Render the owner-decision block for the decompose context.
+ * Render the owner-decision block for the decompose context (rev 2: prose-only).
  *
  * Exact format from spec:
  *   The owner has DECIDED the following behaviors. Treat each as fixed intent —
- *   they are not open choices; author examples that pin exactly these:
- *   - <entry>(<args>) throws (invalid)        ← throwing rulings
- *   - <entry>(<args>) === <json(expected)>    ← value rulings
+ *   they are not open choices; author examples (choosing your own representative
+ *   inputs) that pin exactly these:
+ *   - <decision string VERBATIM>
+ *   ...
  *
- * One bullet per ruling, asset order. No bullet is omitted.
- * args are JSON.stringify'd, joined by ", ".
+ * One bullet per ruling in asset order; each bullet = the ruling's `decision` string VERBATIM.
+ * No input literal, no `entry(args)` form, no `===`.
+ * No bullet is omitted (throwing and value rulings both render their `decision`).
+ *
+ * Runs the self-leak guard: throws if any decision contains JSON.stringify of any element
+ * of its own input (a self-leak is a hard error, never a silent exclusion).
  */
 export function renderOwnerDecisions(
-  entry: string,
   rulings: readonly GodRuling[],
 ): string {
-  const bullets = rulings.map((r) => {
-    const args = (r.input as unknown[]).map((a) => JSON.stringify(a)).join(", ");
-    if (r.throws === true) {
-      return `- ${entry}(${args}) throws (invalid)`;
+  // Self-leak guard (belt-and-braces — loadGodAnswers also checks, but we guard here too
+  // so that test-injected rulings without going through the loader are also protected)
+  for (const r of rulings) {
+    for (const elem of r.input) {
+      const needle = JSON.stringify(elem);
+      if (r.decision.includes(needle)) {
+        throw new Error(
+          `renderOwnerDecisions: self-leak in ruling ${JSON.stringify(r.input)}: ` +
+          `'decision' contains the input literal ${needle}. ` +
+          `Rephrase 'decision' without the literal (it is the ONLY field rendered).`,
+        );
+      }
     }
-    return `- ${entry}(${args}) === ${JSON.stringify(r.expected)}`;
-  });
+  }
+
+  const bullets = rulings.map((r) => `- ${r.decision}`);
 
   return (
     `The owner has DECIDED the following behaviors. Treat each as fixed intent —\n` +
-    `they are not open choices; author examples that pin exactly these:\n` +
+    `they are not open choices; author examples (choosing your own representative\n` +
+    `inputs) that pin exactly these:\n` +
     bullets.join("\n")
   );
 }
@@ -346,9 +383,8 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
   const godBattery = buildGodBattery(task.hidden, rulings);
   const godStats = godBatteryStats(task.hidden, rulings, godBattery);
 
-  // ── Render owner-decision block ───────────────────────────────────────────
-  const entry = task.grader.entry;
-  const ownerDecisionBlock = renderOwnerDecisions(entry, rulings);
+  // ── Render owner-decision block (rev 2: prose-only, no entry param) ─────────
+  const ownerDecisionBlock = renderOwnerDecisions(rulings);
 
   const ts = new Date()
     .toISOString()
@@ -357,12 +393,9 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
 
   await mkdir(outDir, { recursive: true });
 
-  // One cost-ledger sidecar for E4's own authoring phase
-  // UNDECIDED: spec says "one cost-ledger-<ts>.jsonl sidecar (both phases)".
-  // runE2 creates its own sidecar internally and does not accept an external ledger.
-  // Literal reading chosen: E4's sidecar captures the re-author (HIGH) phase calls;
-  // E2's own sidecar captures the grinding (LOW) phase calls. The artifact's combined
-  // `ledger` field merges both. This is a known deviation noted in the report.
+  // Rev 2: E4 owns ONE shared Ledger with ONE jsonl sink.
+  // This ledger is passed to runE2 via opts.ledger so E2 meters into it
+  // and opens no second cost-ledger-*.jsonl of its own.
   const ledger = new Ledger(
     jsonlFileSink(join(outDir, `cost-ledger-${ts}.jsonl`)),
   );
@@ -414,6 +447,7 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
   const warbossContract = reconstructWarbossContract(reauthorArtifact);
 
   // ── E2 re-run with God battery as hiddenOverride ──────────────────────────
+  // Rev 2: pass the shared ledger so E2 does NOT open its own cost-ledger-*.jsonl sink.
   const e2Opts: RunE2Options = {
     ...(opts.client !== undefined ? { client: opts.client } : {}),
     warbossContract,
@@ -423,6 +457,7 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
     out: outDir,
     tasksDir,
     hiddenOverride: godBattery,
+    ledger,
     ...(opts.live !== undefined ? { live: opts.live } : {}),
   };
 
@@ -465,13 +500,9 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
     exclusionCount,
   );
 
-  // Combine ledger: author phase entries + E2 grinding phase entries
-  const authorLedgerEntries: readonly LedgerEntry[] = ledger.toJSON();
-  const e2LedgerEntries = (e2Artifact["ledger"] as LedgerEntry[]) ?? [];
-  const combinedLedger: LedgerEntry[] = [
-    ...authorLedgerEntries,
-    ...e2LedgerEntries,
-  ];
+  // Rev 2: the shared ledger now contains ALL entries (author + E2 grinding phases).
+  // The artifact's ledger field is the full shared ledger.
+  const combinedLedger = ledger.toJSON();
 
   // Dead-run guard: live=true AND (totalCostUsd === 0 OR embedded E2 deadRun === true)
   const deadRun =
@@ -486,7 +517,8 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
       input: r.input,
       expected: r.expected,
       ...(r.throws === true ? { throws: true } : {}),
-      rationale: r.rationale,
+      decision: r.decision,
+      ...(r.rationale !== undefined ? { rationale: r.rationale } : {}),
     })),
     reauthorArtifactPath,
     godBattery: godStats,
