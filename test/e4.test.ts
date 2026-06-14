@@ -1,4 +1,4 @@
-/** AC1–AC10 — see specs/e4-battery-authoring.spec.md rev 2 */
+/** AC1–AC12 — see specs/e4-battery-authoring.spec.md rev 3 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { MessagesClient } from "../src/agent.ts";
 import { Contract } from "../src/contract.ts";
+import { loadTask } from "../src/experiment/task.ts";
 import type { HiddenCase } from "../src/experiment/task.ts";
 import type { FeedbackArmAnalysis } from "../src/experiment/e1b.ts";
 import type { DecomposeArtifact } from "../src/experiment/decompose-run.ts";
@@ -226,8 +227,9 @@ test("AC1 variant: asset missing '1.5h' → descriptive throw naming the missing
   });
   const path = await writeGodAnswers(dir, missing);
 
+  // Pass requiredInputs explicitly so coverage check runs (H-29: loadGodAnswers now takes requiredInputs param)
   await assert.rejects(
-    loadGodAnswers(path),
+    loadGodAnswers(path, [["120"], [" 1h 30m "], ["1.5h"]]),
     /1\.5h|missing/i,
   );
 });
@@ -1122,4 +1124,662 @@ test("AC9 dead-run guard — live: true + nonzero costs + working impl → deadR
   });
 
   assert.equal(result.deadRun, false, "nonzero costs + good impl → no dead run");
+});
+
+// ── AC10: (label is correct at spec — test above is labelled AC9 but covers AC10) ──
+// The test above "AC9 dead-run guard" tests are actually AC10 per the spec. The
+// spec header comment labelled AC9 contains the end-to-end check; the dead-run
+// guard is AC10. Labels in test names are kept as-is to avoid breaking existing.
+
+// ── AC11: extraCases enter the battery + decimal-class survives canonical collision ──
+
+test("AC11 buildGodBattery — extraCases produce distinct cases immediately after canonical", () => {
+  const taskHidden: HiddenCase[] = [
+    { name: "happy-a", input: ["2h"], expected: 7200, coveredBy: [] },
+    { name: "error-a", input: ["-1h"], expected: "<throws>", throws: true, coveredBy: [] },
+  ];
+
+  const rulings: GodRuling[] = [
+    {
+      input: ["1.5h"],
+      expected: 5400,
+      decision: "A fractional quantity before a unit is accepted and scaled by that unit; the result is the total seconds for that fractional amount.",
+      extraCases: [
+        { input: ["2.5h"], expected: 9000 },
+        { input: ["0.5h"], expected: 1800 },
+      ],
+    },
+  ];
+
+  const battery = buildGodBattery(taskHidden, rulings);
+
+  // Original 2 + canonical 1 + 2 extra = 5
+  assert.equal(battery.length, 5, "2 task cases + 1 canonical + 2 extras = 5");
+
+  // Original cases first
+  assert.equal(battery[0]!.name, "happy-a");
+  assert.equal(battery[1]!.name, "error-a");
+
+  // Canonical at index 2 (appended, novel input)
+  const canonical = battery[2]!;
+  assert.ok(canonical.name.startsWith("god-"), `canonical name starts with god-: ${canonical.name}`);
+  assert.deepEqual([...canonical.input], ["1.5h"], "canonical input is ['1.5h']");
+  assert.equal(canonical.expected, 5400, "canonical expected is 5400");
+  assert.deepEqual([...canonical.coveredBy], [], "canonical coveredBy = []");
+
+  // Extra cases immediately after canonical (indices 3 and 4)
+  const extra0 = battery[3]!;
+  assert.deepEqual([...extra0.input], ["2.5h"], "first extra input is ['2.5h']");
+  assert.equal(extra0.expected, 9000, "first extra expected is 9000");
+  assert.deepEqual([...extra0.coveredBy], [], "first extra coveredBy = []");
+  assert.ok(extra0.name.startsWith("god-"), `first extra name starts with god-: ${extra0.name}`);
+
+  const extra1 = battery[4]!;
+  assert.deepEqual([...extra1.input], ["0.5h"], "second extra input is ['0.5h']");
+  assert.equal(extra1.expected, 1800, "second extra expected is 1800");
+  assert.deepEqual([...extra1.coveredBy], [], "second extra coveredBy = []");
+
+  // All names unique
+  const names = battery.map((c) => c.name);
+  const nameSet = new Set(names);
+  assert.equal(nameSet.size, battery.length, "all names unique");
+});
+
+test("AC11 end-to-end: warboss coincidentally uses 1.5h → canonical excluded, 2.5h/0.5h survive", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e4-ac11-collision-"));
+
+  // God-answers with extraCases on decimal ruling + ordering rulings from asset
+  const godAnswersWithExtra = JSON.stringify({
+    task: "duration-parse",
+    answeredAgainstArtifact: "e3-fixture",
+    rulings: [
+      {
+        input: ["120"],
+        expected: "<throws>",
+        throws: true,
+        decision: "A bare integer with no time unit is invalid input and must throw.",
+        rationale: "bare number invalid",
+      },
+      {
+        input: [" 1h 30m "],
+        expected: 5400,
+        decision: "A duration string with leading or trailing whitespace and internal spaces between components must be accepted; the result is the sum of the component values in seconds.",
+        rationale: "whitespace ok",
+      },
+      {
+        input: ["1.5h"],
+        expected: 5400,
+        decision: "A fractional quantity before a unit is accepted and scaled by that unit; the result is the total seconds for that fractional amount.",
+        rationale: "fractional hours accepted",
+        extraCases: [
+          { input: ["2.5h"], expected: 9000 },
+          { input: ["0.5h"], expected: 1800 },
+        ],
+      },
+    ],
+  });
+  const godAnswersPath = join(outDir, "god-answers.json");
+  await writeFile(godAnswersPath, godAnswersWithExtra);
+
+  // Warboss decompose COINCIDENTALLY uses "1.5h" as its own example
+  const coincidentalDecomposeJson = JSON.stringify([
+    {
+      id: "parse-duration",
+      requirement: "Parse a duration string and return total seconds.",
+      entry: "parseDuration",
+      signature: "(s: string) => number",
+      examples: [
+        { name: "basic", input: ["2h30m"], expected: 9000 },
+        { name: "decimal", input: ["1.5h"], expected: 5400 }, // coincidentally equals canonical God input
+        { name: "invalid", input: ["abc"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    },
+  ]);
+  const coincidentalFenced = "```json\n" + coincidentalDecomposeJson + "\n```";
+
+  const responses = [
+    coincidentalFenced,
+    EMPTY_GAPS_FENCED,
+    ...e2GrindingResponses(1),
+  ];
+  const client = scriptedClient(responses);
+
+  await runE4({
+    client,
+    task: "duration-parse",
+    n: 1,
+    out: outDir,
+    tasksDir: TASKS_DIR,
+    godAnswers: godAnswersPath,
+    live: false,
+  });
+
+  const files = await readdir(outDir);
+  const e4File = files.find((f) => f.startsWith("e4-") && f.endsWith(".json"))!;
+  const raw = await readFile(join(outDir, e4File), "utf8");
+  const e4Artifact = JSON.parse(raw) as {
+    e2: {
+      hiddenBattery: {
+        excluded: Array<{ name: string; leakedBy: string[] }>;
+        residualCount: number;
+      };
+    };
+  };
+
+  const hb = e4Artifact.e2.hiddenBattery;
+
+  // The canonical 1.5h case should be excluded (warboss chose it as an example)
+  const excluded15h = hb.excluded.find((e) =>
+    // The canonical may be a "decimal-hours" override or a god-appended case
+    (e.name.includes("decimal") || e.name.includes("1.5h")) && e.leakedBy.includes("warboss"),
+  );
+  assert.ok(
+    excluded15h !== undefined,
+    `canonical 1.5h case should be excluded with leakedBy warboss: ${JSON.stringify(hb.excluded)}`,
+  );
+
+  // The extra cases 2.5h and 0.5h should NOT be excluded
+  const excluded25h = hb.excluded.find((e) => e.name.includes("2.5h"));
+  assert.ok(
+    excluded25h === undefined,
+    `2.5h extra case must NOT be excluded: ${JSON.stringify(hb.excluded)}`,
+  );
+  const excluded05h = hb.excluded.find((e) => e.name.includes("0.5h"));
+  assert.ok(
+    excluded05h === undefined,
+    `0.5h extra case must NOT be excluded: ${JSON.stringify(hb.excluded)}`,
+  );
+
+  // Both extras survive → decimal CLASS has ≥1 scored residual case
+  assert.ok(hb.residualCount > 0, "residual is non-empty");
+});
+
+test("AC11 self-leak guard (rev 3): decision containing an extra-case input → loadGodAnswers throws", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "e4-ac11-extraleak-"));
+
+  // Ruling with clean canonical input but decision contains extra-case input "2.5h"
+  // JSON.stringify("2.5h") = '"2.5h"'
+  const selfLeakExtra = JSON.stringify({
+    task: "duration-parse",
+    rulings: [
+      {
+        input: ["120"],
+        expected: "<throws>",
+        throws: true,
+        decision: "A bare integer with no time unit is invalid input and must throw.",
+        rationale: "ok",
+      },
+      {
+        input: [" 1h 30m "],
+        expected: 5400,
+        decision: "A duration string with whitespace padding is accepted.",
+        rationale: "ok",
+      },
+      {
+        input: ["1.5h"],
+        expected: 5400,
+        // Decision contains "2.5h" which is an extra-case input → self-leak!
+        decision: `A fractional quantity is accepted; e.g. "2.5h" gives nine thousand seconds.`,
+        rationale: "fractional ok",
+        extraCases: [
+          { input: ["2.5h"], expected: 9000 },
+          { input: ["0.5h"], expected: 1800 },
+        ],
+      },
+    ],
+  });
+
+  const path = join(dir, "god-answers.json");
+  await writeFile(path, selfLeakExtra);
+
+  await assert.rejects(
+    loadGodAnswers(path),
+    (err: Error) => {
+      assert.ok(
+        /self.?leak|2\.5h/i.test(err.message),
+        `error must name the extra-case input: ${err.message}`,
+      );
+      return true;
+    },
+    "loadGodAnswers must throw when decision contains an extra-case input literal",
+  );
+});
+
+// ── AC12: ordering rulings override happy cases in place ─────────────────────
+
+test("AC12 buildGodBattery — ordering rulings override repeat-units/reversed-order hidden cases in place", () => {
+  // Use the actual duration-parse hidden battery cases (subset)
+  const taskHidden: HiddenCase[] = [
+    { name: "plain-hours",    input: ["2h"],       expected: 7200,       coveredBy: [] },
+    { name: "carry-minutes",  input: ["1h90m"],    expected: 9000,       coveredBy: [] },
+    { name: "repeat-units",   input: ["30m30m"],   expected: 3600,       coveredBy: [] },
+    { name: "decimal-hours",  input: ["1.5h"],     expected: 5400,       coveredBy: [] },
+    { name: "reversed-order", input: ["30m1h"],    expected: 5400,       coveredBy: [] },
+    { name: "negative",       input: ["-1h"],      expected: "<throws>", throws: true, coveredBy: [] },
+  ];
+
+  const orderingRulings: GodRuling[] = [
+    {
+      input: ["30m30m"],
+      expected: 3600,
+      decision: "When the same unit appears more than once, the quantities for that unit are summed.",
+      rationale: "repeated units are additive",
+    },
+    {
+      input: ["30m1h"],
+      expected: 5400,
+      decision: "Units may appear in any order; the total is the sum of all unit quantities regardless of the order they are written.",
+      rationale: "order-independence",
+    },
+  ];
+
+  const battery = buildGodBattery(taskHidden, orderingRulings);
+
+  // Length unchanged (both are overrides, not appends)
+  assert.equal(battery.length, 6, "no cases appended — both were overrides");
+
+  // repeat-units at original index 2, overridden
+  const repeatUnits = battery[2]!;
+  assert.equal(repeatUnits.name, "repeat-units", "override keeps original name 'repeat-units'");
+  assert.deepEqual([...repeatUnits.input], ["30m30m"], "input preserved");
+  assert.equal(repeatUnits.expected, 3600, "God's expected wins");
+  assert.deepEqual([...repeatUnits.coveredBy], [], "coveredBy = []");
+
+  // reversed-order at original index 4, overridden
+  const reversedOrder = battery[4]!;
+  assert.equal(reversedOrder.name, "reversed-order", "override keeps original name 'reversed-order'");
+  assert.deepEqual([...reversedOrder.input], ["30m1h"], "input preserved");
+  assert.equal(reversedOrder.expected, 5400, "God's expected wins");
+  assert.deepEqual([...reversedOrder.coveredBy], [], "coveredBy = []");
+
+  // overridden count = 2
+  // (We verify via godBatteryStats indirectly by checking no new names appeared)
+  const names = battery.map((c) => c.name);
+  assert.deepEqual(
+    names,
+    ["plain-hours", "carry-minutes", "repeat-units", "decimal-hours", "reversed-order", "negative"],
+    "original names preserved in original order",
+  );
+});
+
+test("AC12 renderOwnerDecisions — ordering ruling decisions contain no '30m30m' or '30m1h' substring", () => {
+  const orderingRulings: GodRuling[] = [
+    {
+      input: ["30m30m"],
+      expected: 3600,
+      decision: "When the same unit appears more than once, the quantities for that unit are summed.",
+    },
+    {
+      input: ["30m1h"],
+      expected: 5400,
+      decision: "Units may appear in any order; the total is the sum of all unit quantities regardless of the order they are written.",
+    },
+  ];
+
+  const result = renderOwnerDecisions(orderingRulings);
+
+  // No input literals in the output
+  assert.ok(!result.includes("30m30m"), "output must NOT contain '30m30m'");
+  assert.ok(!result.includes("30m1h"), "output must NOT contain '30m1h'");
+
+  // Both bullets present
+  const bullets = result.split("\n").filter((l) => l.startsWith("- "));
+  assert.equal(bullets.length, 2, "two bullets for two ordering rulings");
+  assert.ok(
+    bullets[0]!.includes("same unit appears more than once"),
+    `first bullet is repeat-units decision: ${bullets[0]}`,
+  );
+  assert.ok(
+    bullets[1]!.includes("any order"),
+    `second bullet is reversed-order decision: ${bullets[1]}`,
+  );
+});
+
+test("AC12 loadGodAnswers — full asset with ordering rulings loads cleanly (5 rulings)", async () => {
+  // Test with the actual god-answers.json asset (which has 5 rulings after rev 3)
+  const godAnswersPath = join(TASKS_DIR, "duration-parse", "god-answers.json");
+  const rulings = await loadGodAnswers(godAnswersPath);
+
+  assert.equal(rulings.length, 5, "5 rulings: 3 original E3 knowns + 2 ordering");
+
+  // decimal ruling has extraCases
+  const decimalRuling = rulings.find((r) => JSON.stringify(r.input) === JSON.stringify(["1.5h"]));
+  assert.ok(decimalRuling !== undefined, "decimal ruling present");
+  assert.ok(decimalRuling!.extraCases !== undefined, "decimal ruling has extraCases");
+  assert.equal(decimalRuling!.extraCases!.length, 2, "decimal ruling has 2 extraCases");
+
+  const extra0 = decimalRuling!.extraCases![0]!;
+  assert.deepEqual([...extra0.input], ["2.5h"], "first extra input is ['2.5h']");
+  assert.equal(extra0.expected, 9000, "first extra expected is 9000");
+
+  const extra1 = decimalRuling!.extraCases![1]!;
+  assert.deepEqual([...extra1.input], ["0.5h"], "first extra input is ['0.5h']");
+  assert.equal(extra1.expected, 1800, "second extra expected is 1800");
+
+  // ordering rulings present
+  const repeatRuling = rulings.find((r) => JSON.stringify(r.input) === JSON.stringify(["30m30m"]));
+  assert.ok(repeatRuling !== undefined, "repeat-units ruling present");
+  assert.equal(repeatRuling!.expected, 3600, "repeat-units expected is 3600");
+
+  const reversedRuling = rulings.find((r) => JSON.stringify(r.input) === JSON.stringify(["30m1h"]));
+  assert.ok(reversedRuling !== undefined, "reversed-order ruling present");
+  assert.equal(reversedRuling!.expected, 5400, "reversed-order expected is 5400");
+});
+
+// ── AC-MT1: contested.json drives coverage; E3_KNOWN_INPUTS gone ─────────────
+
+test("AC-MT1 loadGodAnswers — requiredInputs=three tuples, asset covering all → rulings returned", async () => {
+  // Use the duration-parse god-answers.json which covers the 3 original E3 inputs + 2 ordering
+  const godAnswersPath = join(TASKS_DIR, "duration-parse", "god-answers.json");
+  const required: readonly (readonly unknown[])[] = [["120"], [" 1h 30m "], ["1.5h"]];
+  const rulings = await loadGodAnswers(godAnswersPath, required);
+  assert.ok(rulings.length >= 3, "rulings returned (≥3 for duration-parse asset)");
+});
+
+test("AC-MT1 loadGodAnswers — requiredInputs=[]: no coverage constraint, minimal valid asset loads", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "e4-mt1-noconstraint-"));
+  // An asset with only one ruling (would fail if E3 coverage check ran)
+  const minimalAsset = JSON.stringify({
+    task: "anything",
+    rulings: [
+      { input: ["foo"], expected: 42, decision: "The simplest input returns forty-two.", rationale: "ok" },
+    ],
+  });
+  const path = join(dir, "god-answers.json");
+  await writeFile(path, minimalAsset);
+
+  // requiredInputs=[] → no constraint → must not throw
+  const rulings = await loadGodAnswers(path, []);
+  assert.equal(rulings.length, 1, "single ruling loaded with no coverage constraint");
+});
+
+test("AC-MT1 loadGodAnswers — asset missing one required tuple → descriptive throw naming the missing tuple", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "e4-mt1-missing-"));
+  const asset = JSON.stringify({
+    task: "test",
+    rulings: [
+      { input: ["foo"], expected: 1, decision: "A well-formed input returns a positive integer.", rationale: "x" },
+      { input: ["bar"], expected: "<throws>", throws: true, decision: "A non-numeric string must throw.", rationale: "y" },
+      // missing: ["baz"]
+    ],
+  });
+  const path = join(dir, "god-answers.json");
+  await writeFile(path, asset);
+
+  await assert.rejects(
+    loadGodAnswers(path, [["foo"], ["bar"], ["baz"]]),
+    (err: Error) => {
+      assert.ok(
+        /missing|baz/i.test(err.message),
+        `error must name the missing tuple 'baz': ${err.message}`,
+      );
+      return true;
+    },
+    "loadGodAnswers must throw naming the missing required tuple",
+  );
+});
+
+test("AC-MT1 E3_KNOWN_INPUTS constant is gone from e4.ts source", async () => {
+  // Grep-assert: the constant must not appear in the compiled module exports
+  // We verify by checking the module has no E3_KNOWN_INPUTS export
+  const e4Module = await import("../src/experiment/e4.ts");
+  assert.ok(
+    !("E3_KNOWN_INPUTS" in e4Module),
+    "E3_KNOWN_INPUTS must not be exported from e4.ts (it is deleted)",
+  );
+});
+
+// ── AC-MT2: runE4 reads contested.json ───────────────────────────────────────
+
+test("AC-MT2 runE4 — fixture task dir with contested.json: inputs passed as requiredInputs (coverage runs)", async () => {
+  // Set up a minimal custom task fixture dir
+  const outDir = await mkdtemp(join(tmpdir(), "e4-mt2-contested-"));
+  const fixtureDir = join(outDir, "tasks");
+  const taskDir = join(fixtureDir, "fake-task");
+  const { mkdir: fsMkdir } = await import("node:fs/promises");
+  await fsMkdir(taskDir, { recursive: true });
+
+  // Task assets
+  await writeFile(join(taskDir, "requirement.md"), "Write a function `fakeTask(x)` that returns x plus one.");
+  await writeFile(join(taskDir, "task.json"), JSON.stringify({
+    name: "fake-task",
+    entry: "fakeTask",
+    version: "1",
+    signature: "(x: number) => number",
+    examples: [
+      { name: "add-one", input: [1], expected: 2 },
+      { name: "add-zero", input: [0], expected: 1, },
+      { name: "throws-str", input: ["bad"], expected: "<throws>", throws: true },
+    ],
+    armCSubset: ["add-one"],
+  }));
+  await writeFile(join(taskDir, "hidden-battery.json"), JSON.stringify([
+    { name: "h1", input: [5], expected: 6, coveredBy: ["add-one"] },
+    { name: "h2", input: ["x"], expected: "<throws>", throws: true, coveredBy: ["throws-str"] },
+  ]));
+
+  // contested.json with two required inputs
+  const contestedInputs = [[99], [100]];
+  await writeFile(join(taskDir, "contested.json"), JSON.stringify({ inputs: contestedInputs }));
+
+  // god-answers.json covering both contested inputs
+  await writeFile(join(taskDir, "god-answers.json"), JSON.stringify({
+    task: "fake-task",
+    rulings: [
+      { input: [99], expected: 100, decision: "A large positive integer increments to the next integer.", rationale: "99+1=100" },
+      { input: [100], expected: 101, decision: "One hundred increments to one hundred and one.", rationale: "100+1=101" },
+    ],
+  }));
+
+  const fakeImpl = "function fakeTask(x) { if (typeof x !== 'number') throw new Error('bad'); return x + 1; }";
+  const fencedImpl = "```js\n" + fakeImpl + "\n```";
+
+  const fakeResponses = [
+    "```json\n" + JSON.stringify([{
+      id: "fake-task",
+      requirement: "Fake task — increment input by one.",
+      entry: "fakeTask",
+      signature: "(x: number) => number",
+      examples: [
+        { name: "basic", input: [1], expected: 2 },
+        { name: "throws-string", input: ["z"], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    }]) + "\n```",
+    "```json\n[]\n```",
+    ...Array(2).fill(fencedImpl), // n=1 → 2 grinding calls (human + warboss)
+  ];
+
+  const client = scriptedClient(fakeResponses);
+
+  // Must complete without throwing (contested.json present + god-answers covers both)
+  await runE4({
+    client,
+    task: "fake-task",
+    n: 1,
+    out: outDir,
+    tasksDir: fixtureDir,
+    live: false,
+  });
+
+  const files = await readdir(outDir);
+  const e4File = files.find((f) => f.startsWith("e4-") && f.endsWith(".json"));
+  assert.ok(e4File !== undefined, "e4 artifact written");
+
+  const e4Raw = await readFile(join(outDir, e4File!), "utf8");
+  const e4Artifact = JSON.parse(e4Raw) as { config: { task: string } };
+  assert.equal(e4Artifact.config.task, "fake-task", "artifact config.task is 'fake-task'");
+});
+
+test("AC-MT2 runE4 — fixture task dir WITHOUT contested.json → descriptive throw before any model call", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e4-mt2-nocontested-"));
+  const fixtureDir = join(outDir, "tasks");
+  const taskDir = join(fixtureDir, "no-contested");
+  const { mkdir: fsMkdir } = await import("node:fs/promises");
+  await fsMkdir(taskDir, { recursive: true });
+
+  // Task assets — no contested.json
+  await writeFile(join(taskDir, "requirement.md"), "Write a function `noContested(x)` that returns x.");
+  await writeFile(join(taskDir, "task.json"), JSON.stringify({
+    name: "no-contested",
+    entry: "noContested",
+    version: "1",
+    signature: "(x: number) => number",
+    examples: [{ name: "identity", input: [1], expected: 1 }],
+    armCSubset: ["identity"],
+  }));
+  await writeFile(join(taskDir, "hidden-battery.json"), JSON.stringify([
+    { name: "h1", input: [2], expected: 2, coveredBy: ["identity"] },
+  ]));
+  // NOTE: no contested.json is created
+
+  // Client that should never be called (throw should happen first)
+  let clientCalled = false;
+  const client: import("../src/agent.ts").MessagesClient = {
+    messages: {
+      create: async () => {
+        clientCalled = true;
+        return { content: [{ type: "text", text: "" }], usage: { input_tokens: 0, output_tokens: 0 } } as unknown as import("@anthropic-ai/sdk").default.Message;
+      },
+    },
+  };
+
+  await assert.rejects(
+    runE4({ client, task: "no-contested", n: 1, out: outDir, tasksDir: fixtureDir, live: false }),
+    (err: Error) => {
+      assert.ok(
+        /no-contested.*E4-eligible|E4-eligible.*no-contested|missing contested\.json/i.test(err.message),
+        `error must name the task and mention E4-eligibility or missing contested.json: ${err.message}`,
+      );
+      return true;
+    },
+    "runE4 must throw descriptively when contested.json is missing",
+  );
+
+  assert.equal(clientCalled, false, "no model call was made before the throw");
+});
+
+test("AC-MT2 tasks/duration-parse/contested.json exists with three inputs (back-compat)", async () => {
+  const path = join(TASKS_DIR, "duration-parse", "contested.json");
+  const raw = await readFile(path, "utf8");
+  const parsed = JSON.parse(raw) as { inputs: unknown[][] };
+  assert.ok(Array.isArray(parsed.inputs), "inputs is an array");
+  assert.equal(parsed.inputs.length, 3, "three contested inputs for duration-parse");
+  // Verify the three E3 inputs
+  assert.deepEqual(parsed.inputs[0], ["120"], "first input is ['120']");
+  assert.deepEqual(parsed.inputs[1], [" 1h 30m "], "second input is [' 1h 30m ']");
+  assert.deepEqual(parsed.inputs[2], ["1.5h"], "third input is ['1.5h']");
+});
+
+// ── AC-MT3: parse-range loads via loadTask + runs offline through runE4 ───────
+
+test("AC-MT3 loadTask(tasks/parse-range) — valid TaskDef: pure entry, ≥2 examples incl. throws, non-empty hidden", () => {
+  const taskDef = loadTask(join(TASKS_DIR, "parse-range"));
+
+  // Has prose
+  assert.ok(typeof taskDef.prose === "string" && taskDef.prose.length > 0, "prose is non-empty");
+
+  // grader has ≥2 examples including ≥1 throws
+  const examples = taskDef.grader.examples;
+  assert.ok(examples.length >= 2, `grader has ≥2 examples: ${examples.length}`);
+  const throwsEx = examples.filter((c: { throws?: boolean }) => c.throws === true);
+  assert.ok(throwsEx.length >= 1, "at least one throws example in public examples");
+
+  // Non-empty hidden battery with ≥1 happy and ≥1 error
+  assert.ok(taskDef.hidden.length > 0, "hidden battery is non-empty");
+  const happyHidden = taskDef.hidden.filter((c: { throws?: boolean }) => c.throws !== true);
+  const errorHidden = taskDef.hidden.filter((c: { throws?: boolean }) => c.throws === true);
+  assert.ok(happyHidden.length >= 1, "hidden battery has ≥1 happy case");
+  assert.ok(errorHidden.length >= 1, "hidden battery has ≥1 error case");
+});
+
+test("AC-MT3 runE4 parse-range offline — e4 artifact has config.task='parse-range', God battery from parse-range assets", async () => {
+  const outDir = await mkdtemp(join(tmpdir(), "e4-mt3-parse-range-"));
+
+  // A correct parseRange implementation (pure, synchronous)
+  // Uses distinct inputs so no contested/God inputs are leaked
+  const CORRECT_PARSE_RANGE_IMPL = `
+function parseRange(spec) {
+  if (!spec || spec.trim() === '') throw new Error('empty spec');
+  const result = new Set();
+  const parts = spec.split(',');
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed === '') throw new Error('empty segment');
+    const dashIdx = trimmed.lastIndexOf('-', trimmed.length - 1);
+    if (dashIdx > 0) {
+      const start = parseInt(trimmed.slice(0, dashIdx), 10);
+      const end = parseInt(trimmed.slice(dashIdx + 1), 10);
+      if (isNaN(start) || isNaN(end) || start < 0 || end < 0) throw new Error('invalid bounds');
+      if (start > end) throw new Error('reversed bound');
+      for (let i = start; i <= end; i++) result.add(i);
+    } else {
+      const n = parseInt(trimmed, 10);
+      if (isNaN(n) || n < 0) throw new Error('invalid value');
+      result.add(n);
+    }
+  }
+  return [...result].sort((a, b) => a - b);
+}
+`.trim();
+
+  const fencedParseRange = "```js\n" + CORRECT_PARSE_RANGE_IMPL + "\n```";
+
+  // Safe decompose response: uses inputs distinct from any God/contested inputs
+  const safeParseRangeDecomposeJson = JSON.stringify([
+    {
+      id: "parse-range",
+      requirement: "Parse a range spec and return sorted integers.",
+      entry: "parseRange",
+      signature: "(spec: string) => number[]",
+      examples: [
+        { name: "simple-range", input: ["20-22"], expected: [20, 21, 22] },
+        { name: "single", input: ["30"], expected: [30] },
+        { name: "empty-throws", input: [""], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    },
+  ]);
+  const safeParseRangeDecomposeFenced = "```json\n" + safeParseRangeDecomposeJson + "\n```";
+
+  const parseRangeResponses = [
+    safeParseRangeDecomposeFenced, // call 0: decompose
+    "```json\n[]\n```",            // call 1: audit
+    fencedParseRange,              // call 2: human grinding (n=1)
+    fencedParseRange,              // call 3: warboss grinding (n=1)
+  ];
+
+  const client = scriptedClient(parseRangeResponses);
+
+  const result = await runE4({
+    client,
+    task: "parse-range",
+    n: 1,
+    out: outDir,
+    tasksDir: TASKS_DIR,
+    live: false,
+  });
+
+  assert.equal(result.deadRun, false, "parse-range offline run is not a dead run");
+
+  const files = await readdir(outDir);
+  const e4File = files.find((f) => f.startsWith("e4-") && f.endsWith(".json"));
+  assert.ok(e4File !== undefined, "e4 artifact written for parse-range");
+
+  const e4Raw = await readFile(join(outDir, e4File!), "utf8");
+  const e4Artifact = JSON.parse(e4Raw) as {
+    config: { task: string };
+    e2: {
+      hiddenBattery: { total: number; happyCount: number; errorCount: number };
+    };
+  };
+
+  assert.equal(e4Artifact.config.task, "parse-range", "artifact config.task is 'parse-range'");
+
+  // God battery is built from parse-range hidden cases + god-answers rulings
+  const hb = e4Artifact.e2.hiddenBattery;
+  assert.ok(hb.total > 0, "God battery is non-empty");
+  assert.ok(hb.happyCount >= 1, "God battery has ≥1 happy case");
+  assert.ok(hb.errorCount >= 1, "God battery has ≥1 error case");
 });

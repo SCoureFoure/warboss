@@ -1,0 +1,9 @@
+[
+  { "name": "happy-single-range",  "input": ["3-5"],          "expected": [3,4,5],     "coveredBy": ["basic-range"] },
+  { "name": "happy-three-parts",   "input": ["1,3-5,7"],      "expected": [1,3,4,5,7], "coveredBy": ["basic-range", "single-value"] },
+  { "name": "happy-adjacent",      "input": ["10-12,14-16"],  "expected": [10,11,12,14,15,16], "coveredBy": ["multiple-ranges"] },
+  { "name": "happy-single-val",    "input": ["42"],            "expected": [42],         "coveredBy": ["single-value"] },
+  { "name": "error-reversed-bound","input": ["5-1"],           "expected": "<throws>",   "throws": true, "coveredBy": [] },
+  { "name": "error-negative-bound","input": ["-2-2"],          "expected": "<throws>",   "throws": true, "coveredBy": [] },
+  { "name": "error-empty-segment", "input": ["1,,3"],          "expected": "<throws>",   "throws": true, "coveredBy": [] }
+]
