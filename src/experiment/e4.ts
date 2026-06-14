@@ -22,6 +22,7 @@ import { loadTask, type HiddenCase } from "./task.ts";
 import type { DecomposeArtifact } from "./decompose-run.ts";
 import { runE2, reconstructWarbossContract, type RunE2Options } from "./e2.ts";
 import type { FeedbackArmAnalysis, FeedbackArm } from "./e1b.ts";
+import { renderDecisionBlock } from "../kickback.ts";
 
 const _thisDir = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_TASKS_DIR = join(_thisDir, "..", "..", "tasks");
@@ -301,7 +302,8 @@ export function renderOwnerDecisions(
   rulings: readonly GodRuling[],
 ): string {
   // Self-leak guard (belt-and-braces — loadGodAnswers also checks, but we guard here too
-  // so that test-injected rulings without going through the loader are also protected)
+  // so that test-injected rulings without going through the loader are also protected).
+  // This guard is battery-specific and has no analogue in the battery-free live path.
   for (const r of rulings) {
     for (const elem of r.input) {
       const needle = JSON.stringify(elem);
@@ -315,14 +317,8 @@ export function renderOwnerDecisions(
     }
   }
 
-  const bullets = rulings.map((r) => `- ${r.decision}`);
-
-  return (
-    `The owner has DECIDED the following behaviors. Treat each as fixed intent —\n` +
-    `they are not open choices; author examples (choosing your own representative\n` +
-    `inputs) that pin exactly these:\n` +
-    bullets.join("\n")
-  );
+  // Delegate to the shared canonical renderer (byte-identical output).
+  return renderDecisionBlock(rulings.map((r) => r.decision));
 }
 
 /**

@@ -1,9 +1,9 @@
-/** AC1–AC9 — see specs/decompose-run.spec.md (rev 2). Offline, fake client. */
+/** AC1–AC9 (decompose-run rev 2) + AC5–AC9 (kickback-pipeline rev 1). Offline, fake client. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { MessagesClient } from "../src/agent.ts";
 import { Contract } from "../src/contract.ts";
@@ -13,6 +13,7 @@ import {
   parseCliArgs,
   type DecomposeArtifact,
 } from "../src/experiment/decompose-run.ts";
+import type { AnswerQueue } from "../src/kickback.ts";
 
 interface ScriptedResponse {
   text: string;
@@ -465,4 +466,528 @@ test("AC9 — CRLF strip + healthy deadRun key omission", async () => {
     await readFile(deadResult.artifactPath, "utf8"),
   ) as Record<string, unknown>;
   assert.equal(deadOnDisk["deadRun"], true, "dead run on-disk artifact has deadRun: true");
+});
+
+// ── Kickback AC5–AC9 — specs/kickback-pipeline.spec.md rev 1 ─────────────────
+//
+// Fixtures: a req with one fiat resolution (produces an escalation).
+// All tests are offline (fake client + fixture artifact/queue in temp dirs).
+
+const VALID_1REQ_WITH_FIAT = [
+  {
+    id: "parse-duration",
+    requirement: "Parse a duration string like '1h30m' and return total seconds.",
+    entry: "parseDuration",
+    signature: "(s: string) => number",
+    examples: [
+      { name: "basic", input: ["1h30m"], expected: 5400 },
+      { name: "bare-number", input: ["120"], expected: "<throws>", throws: true },
+    ],
+    resolutions: [
+      {
+        point: "bare integer with no time unit",
+        chosen: "throws",
+        basis: "fiat",
+      },
+    ],
+  },
+];
+
+const VALID_1REQ_NO_FIAT = [
+  {
+    id: "parse-duration",
+    requirement: "Parse a duration string like '1h30m' and return total seconds.",
+    entry: "parseDuration",
+    signature: "(s: string) => number",
+    examples: [
+      { name: "basic", input: ["1h30m"], expected: 5400 },
+      { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
+    ],
+    resolutions: [], // no fiat resolutions → no escalations
+  },
+];
+
+const WITH_FIAT_FENCED = "```json\n" + JSON.stringify(VALID_1REQ_WITH_FIAT) + "\n```";
+const NO_FIAT_FENCED = "```json\n" + JSON.stringify(VALID_1REQ_NO_FIAT) + "\n```";
+
+// ── AC5: phase-1 emit when escalations present ────────────────────────────────
+
+test("KB-AC5 — phase-1 emit: runDecompose with fiat escalations writes answers-needed-<ts>.json with same ts, answerQueuePath in result", async () => {
+  const { client } = scriptedClient([
+    { text: WITH_FIAT_FENCED },
+    { text: EMPTY_GAPS_FENCED },
+  ]);
+  const out = await freshOutDir();
+
+  const result = await runDecompose({
+    client,
+    intent: "Parse durations",
+    out,
+  });
+
+  // answerQueuePath must be set
+  assert.ok(result.answerQueuePath !== undefined, "answerQueuePath is set");
+
+  // The queue file must exist
+  const files = await readdir(out);
+  const queueFiles = files.filter((f) => f.startsWith("answers-needed-") && f.endsWith(".json"));
+  assert.equal(queueFiles.length, 1, "exactly one answers-needed file written");
+
+  // The ts in the queue filename must match the artifact filename
+  const artifactFiles = files.filter((f) => f.startsWith("decompose-") && f.endsWith(".json"));
+  assert.equal(artifactFiles.length, 1, "exactly one artifact file");
+  const artifactTs = artifactFiles[0]!.replace("decompose-", "").replace(".json", "");
+  const queueTs = queueFiles[0]!.replace("answers-needed-", "").replace(".json", "");
+  assert.equal(queueTs, artifactTs, "queue and artifact share the same timestamp");
+
+  // answerQueuePath points at the queue file
+  assert.ok(
+    result.answerQueuePath!.endsWith(queueFiles[0]!),
+    `answerQueuePath points at the queue file: ${result.answerQueuePath}`,
+  );
+
+  // Queue content: one stubbed answer per escalation (blank decisions, parsed ids)
+  const queueRaw = await readFile(result.answerQueuePath!, "utf8");
+  const queue = JSON.parse(queueRaw) as AnswerQueue;
+
+  // The fiat escalation was produced by warboss: "parse-duration: fiat — bare integer with no time unit"
+  assert.ok(queue.answers.length >= 1, "at least one answer in queue");
+  for (const answer of queue.answers) {
+    assert.equal(answer.decision, "", "stub answer has blank decision");
+  }
+  // The first answer should have requirementId = "parse-duration" (matches id grammar)
+  const parseAnswer = queue.answers.find((a) => a.escalation.startsWith("parse-duration:"));
+  assert.ok(parseAnswer !== undefined, "answer for parse-duration escalation present");
+  assert.equal(parseAnswer!.requirementId, "parse-duration", "requirementId parsed from escalation");
+});
+
+// ── AC6: phase-1 silent when no escalations ───────────────────────────────────
+
+test("KB-AC6 — phase-1 silent: no escalations → no answers-needed file, answerQueuePath absent", async () => {
+  const { client } = scriptedClient([
+    { text: NO_FIAT_FENCED },
+    { text: EMPTY_GAPS_FENCED },
+  ]);
+  const out = await freshOutDir();
+
+  const result = await runDecompose({
+    client,
+    intent: "Parse durations",
+    out,
+  });
+
+  // answerQueuePath must NOT be set
+  assert.equal(result.answerQueuePath, undefined, "answerQueuePath is absent when no escalations");
+
+  // No answers-needed file written
+  const files = await readdir(out);
+  const queueFiles = files.filter((f) => f.startsWith("answers-needed-"));
+  assert.equal(queueFiles.length, 0, "no answers-needed file written when no escalations");
+});
+
+// ── AC7: phase-3 re-author wiring ────────────────────────────────────────────
+
+async function writeFixtureArtifact(
+  outDir: string,
+  artifactContent: Partial<DecomposeArtifact> & { intent: string },
+): Promise<string> {
+  const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z") + "-fixture";
+  const artifactPath = join(outDir, `decompose-${ts}.json`);
+  const artifact: DecomposeArtifact = {
+    intent: artifactContent.intent,
+    context: artifactContent.context ?? null,
+    requirements: artifactContent.requirements ?? [],
+    contracts: artifactContent.contracts ?? [],
+    auditGaps: artifactContent.auditGaps ?? [],
+    escalations: artifactContent.escalations ?? [],
+    admission: artifactContent.admission ?? { admitted: [], kickedBack: [] },
+    ledger: artifactContent.ledger ?? [],
+    totalCostUsd: artifactContent.totalCostUsd ?? 0,
+  };
+  await writeFile(artifactPath, JSON.stringify(artifact, null, 2));
+  return artifactPath;
+}
+
+async function writeFixtureQueue(
+  outDir: string,
+  artifactPath: string,
+  intent: string,
+  context: string | null,
+  decisions: string[],
+): Promise<string> {
+  const queuePath = join(outDir, "answers-needed-fixture.json");
+  const queue: AnswerQueue = {
+    intent,
+    context,
+    artifact: artifactPath,
+    answers: decisions.map((d, i) => ({
+      escalation: `parse-duration: fiat — escalation ${i}`,
+      requirementId: "parse-duration",
+      decision: d,
+    })),
+  };
+  await writeFile(queuePath, JSON.stringify(queue, null, 2));
+  return queuePath;
+}
+
+test("KB-AC7 — phase-3 re-author: decompose called with source intent + context containing renderDecisionBlock; artifact has reauthorOf + answersPath", async () => {
+  const out = await freshOutDir();
+
+  // Create a fixture source artifact with intent I and context C
+  const sourceArtifactPath = await writeFixtureArtifact(out, {
+    intent: "Parse a duration string",
+    context: "Source context C",
+    escalations: [],
+  });
+
+  // Create a filled queue answering it
+  const queuePath = await writeFixtureQueue(
+    out,
+    sourceArtifactPath,
+    "Parse a duration string",
+    "Source context C",
+    ["Owner decision A prose.", "Owner decision B prose."],
+  );
+
+  // Capture the decompose call's prompt to assert it contains the decision block
+  let capturedPrompt: string | undefined;
+  const { client } = scriptedClient([
+    { text: NO_FIAT_FENCED },
+    { text: EMPTY_GAPS_FENCED },
+  ]);
+
+  // Wrap the client to capture prompts
+  const capturingClient: MessagesClient = {
+    messages: {
+      create: async (body: Anthropic.MessageCreateParamsNonStreaming) => {
+        // Capture the first call (decompose)
+        if (capturedPrompt === undefined) {
+          const msg = body.messages[0];
+          if (msg !== undefined) {
+            capturedPrompt =
+              typeof msg.content === "string"
+                ? msg.content
+                : JSON.stringify(msg.content);
+          }
+        }
+        return client.messages.create(body);
+      },
+    },
+  };
+
+  const result = await runDecompose({
+    client: capturingClient,
+    intent: "", // will be overridden by source artifact
+    out,
+    reauthorFrom: sourceArtifactPath,
+    answers: queuePath,
+  });
+
+  // Captured prompt must contain the source context AND the decision block
+  assert.ok(capturedPrompt !== undefined, "decompose was called");
+  assert.ok(
+    capturedPrompt!.includes("Source context C"),
+    `prompt contains source context: ${capturedPrompt!.slice(0, 400)}`,
+  );
+  assert.ok(
+    capturedPrompt!.includes("The owner has DECIDED"),
+    `prompt contains decision block header: ${capturedPrompt!.slice(0, 600)}`,
+  );
+  assert.ok(
+    capturedPrompt!.includes("Owner decision A prose."),
+    `prompt contains first decision: ${capturedPrompt!.slice(0, 800)}`,
+  );
+  assert.ok(
+    capturedPrompt!.includes("Owner decision B prose."),
+    `prompt contains second decision: ${capturedPrompt!.slice(0, 800)}`,
+  );
+
+  // Artifact carries reauthorOf and answersPath provenance
+  assert.equal(
+    result.artifact.reauthorOf,
+    sourceArtifactPath,
+    "artifact.reauthorOf = sourceArtifactPath",
+  );
+  assert.equal(
+    result.artifact.answersPath,
+    queuePath,
+    "artifact.answersPath = queuePath",
+  );
+
+  // Verify on-disk artifact has the provenance keys
+  const onDisk = JSON.parse(await readFile(result.artifactPath, "utf8")) as Record<string, unknown>;
+  assert.equal(onDisk["reauthorOf"], sourceArtifactPath, "on-disk reauthorOf present");
+  assert.equal(onDisk["answersPath"], queuePath, "on-disk answersPath present");
+});
+
+test("KB-AC7 variant — source artifact with context: null → re-author context is exactly the decision block (no separator)", async () => {
+  const out = await freshOutDir();
+
+  const sourceArtifactPath = await writeFixtureArtifact(out, {
+    intent: "Parse a duration string",
+    context: null, // no context
+    escalations: [],
+  });
+
+  const queuePath = await writeFixtureQueue(
+    out,
+    sourceArtifactPath,
+    "Parse a duration string",
+    null,
+    ["Decision prose only."],
+  );
+
+  let capturedContext: string | undefined;
+  const { client } = scriptedClient([
+    { text: NO_FIAT_FENCED },
+    { text: EMPTY_GAPS_FENCED },
+  ]);
+  const capturingClient: MessagesClient = {
+    messages: {
+      create: async (body: Anthropic.MessageCreateParamsNonStreaming) => {
+        if (capturedContext === undefined) {
+          const msg = body.messages[0];
+          if (msg !== undefined) {
+            capturedContext =
+              typeof msg.content === "string"
+                ? msg.content
+                : JSON.stringify(msg.content);
+          }
+        }
+        return client.messages.create(body);
+      },
+    },
+  };
+
+  await runDecompose({
+    client: capturingClient,
+    intent: "",
+    out,
+    reauthorFrom: sourceArtifactPath,
+    answers: queuePath,
+  });
+
+  // Context must start with the decision block (no leading source context or separator)
+  assert.ok(capturedContext !== undefined, "decompose was called");
+  assert.ok(
+    capturedContext!.includes("The owner has DECIDED"),
+    `context contains decision block: ${capturedContext!.slice(0, 400)}`,
+  );
+  // The decision block must appear without a leading source-context section
+  // i.e., the prompt should NOT include "Source context C" or similar
+  assert.ok(
+    !capturedContext!.includes("Source context C"),
+    "context does NOT include old source context when it was null",
+  );
+});
+
+test("KB-AC7 variant — first-pass run omits reauthorOf and answersPath", async () => {
+  const { client } = scriptedClient([
+    { text: NO_FIAT_FENCED },
+    { text: EMPTY_GAPS_FENCED },
+  ]);
+  const out = await freshOutDir();
+
+  const result = await runDecompose({
+    client,
+    intent: "Parse durations",
+    out,
+  });
+
+  // First-pass: reauthorOf and answersPath must be omitted
+  assert.equal(result.artifact.reauthorOf, undefined, "first-pass omits reauthorOf");
+  assert.equal(result.artifact.answersPath, undefined, "first-pass omits answersPath");
+
+  const onDisk = JSON.parse(await readFile(result.artifactPath, "utf8")) as Record<string, unknown>;
+  assert.ok(
+    !Object.prototype.hasOwnProperty.call(onDisk, "reauthorOf"),
+    "first-pass on-disk artifact has no reauthorOf key",
+  );
+  assert.ok(
+    !Object.prototype.hasOwnProperty.call(onDisk, "answersPath"),
+    "first-pass on-disk artifact has no answersPath key",
+  );
+});
+
+// ── AC8: phase-3 provenance + arg guards ─────────────────────────────────────
+
+test("KB-AC8 parseCliArgs — --reauthor-from without --answers throws", () => {
+  assert.throws(
+    () => parseCliArgs(["--reauthor-from", "runs/decompose-x.json"]),
+    (err: Error) => {
+      assert.ok(
+        err.message.includes("--answers") || err.message.includes("together"),
+        `error mentions --answers: ${err.message}`,
+      );
+      return true;
+    },
+  );
+});
+
+test("KB-AC8 parseCliArgs — --answers without --reauthor-from throws", () => {
+  assert.throws(
+    () => parseCliArgs(["--answers", "runs/answers-needed-x.json"]),
+    (err: Error) => {
+      assert.ok(
+        err.message.includes("--reauthor-from") || err.message.includes("together"),
+        `error mentions --reauthor-from: ${err.message}`,
+      );
+      return true;
+    },
+  );
+});
+
+test("KB-AC8 parseCliArgs — --reauthor-from + --intent throws (mutually exclusive)", () => {
+  assert.throws(
+    () =>
+      parseCliArgs([
+        "--reauthor-from",
+        "runs/decompose-x.json",
+        "--answers",
+        "runs/answers-needed-x.json",
+        "--intent",
+        "some intent",
+      ]),
+    (err: Error) => {
+      assert.ok(
+        err.message.includes("mutually exclusive") || err.message.includes("--intent"),
+        `error names mutual exclusion: ${err.message}`,
+      );
+      return true;
+    },
+  );
+});
+
+test("KB-AC8 parseCliArgs — --reauthor-from + --answers (no intent) → options carry reauthorFrom + answers", () => {
+  const opts = parseCliArgs([
+    "--reauthor-from",
+    "runs/decompose-x.json",
+    "--answers",
+    "runs/answers-needed-x.json",
+  ]);
+  assert.equal(opts.reauthorFrom, "runs/decompose-x.json", "reauthorFrom set");
+  assert.equal(opts.answers, "runs/answers-needed-x.json", "answers set");
+  // intent is not set (empty string is the sentinel for "come from artifact")
+  // No intentInline — the caller (runDecompose) ignores opts.intent in reauthor mode
+});
+
+test("KB-AC8 runDecompose — provenance mismatch: queue.artifact basename ≠ reauthorFrom basename → throws before model call", async () => {
+  const out = await freshOutDir();
+
+  const sourceArtifactPath = await writeFixtureArtifact(out, {
+    intent: "Parse durations",
+    context: null,
+    escalations: [],
+  });
+
+  // Create a queue that claims to answer a DIFFERENT artifact
+  const wrongArtifactPath = join(out, "decompose-WRONG-ARTIFACT.json");
+  const mismatchedQueue: AnswerQueue = {
+    intent: "Parse durations",
+    context: null,
+    artifact: wrongArtifactPath, // basename differs from sourceArtifactPath basename
+    answers: [
+      {
+        escalation: "parse-duration: fiat — …",
+        requirementId: "parse-duration",
+        decision: "Some decision.",
+      },
+    ],
+  };
+  const mismatchedQueuePath = join(out, "answers-needed-mismatched.json");
+  await writeFile(mismatchedQueuePath, JSON.stringify(mismatchedQueue));
+
+  // Verify basenames differ (sanity check)
+  assert.notEqual(
+    basename(wrongArtifactPath),
+    basename(sourceArtifactPath),
+    "test setup: basenames must differ",
+  );
+
+  const { client } = scriptedClient([
+    { text: NO_FIAT_FENCED },
+    { text: EMPTY_GAPS_FENCED },
+  ]);
+
+  await assert.rejects(
+    runDecompose({
+      client,
+      intent: "",
+      out,
+      reauthorFrom: sourceArtifactPath,
+      answers: mismatchedQueuePath,
+    }),
+    (err: Error) => {
+      assert.ok(
+        err.message.includes("provenance") || err.message.includes("mismatch"),
+        `error names provenance mismatch: ${err.message}`,
+      );
+      return true;
+    },
+  );
+});
+
+// ── AC9: re-author iterates (phase-1 re-applied) ─────────────────────────────
+
+test("KB-AC9 — re-author with its own escalations emits a fresh answers-needed pointing at the NEW artifact", async () => {
+  const out = await freshOutDir();
+
+  // Create the original source artifact (the one we're re-authoring FROM)
+  const sourceArtifactPath = await writeFixtureArtifact(out, {
+    intent: "Parse a duration string",
+    context: null,
+    escalations: [], // source artifact had escalations (now answered)
+  });
+
+  // Create a filled queue answering the source artifact's escalations
+  const queuePath = await writeFixtureQueue(
+    out,
+    sourceArtifactPath,
+    "Parse a duration string",
+    null,
+    ["Decision prose for first round."],
+  );
+
+  // The re-author decompose run ITSELF still produces a fiat escalation
+  const { client } = scriptedClient([
+    { text: WITH_FIAT_FENCED }, // re-author decompose → still has a fiat escalation
+    { text: EMPTY_GAPS_FENCED },
+  ]);
+
+  const result = await runDecompose({
+    client,
+    intent: "",
+    out,
+    reauthorFrom: sourceArtifactPath,
+    answers: queuePath,
+  });
+
+  // Phase-1 re-applied: the re-author emits its own answers-needed
+  assert.ok(
+    result.answerQueuePath !== undefined,
+    "re-author with escalations emits a fresh answers-needed queue",
+  );
+
+  // The fresh queue's artifact must point at the NEW re-author artifact (not the source)
+  const freshQueueRaw = await readFile(result.answerQueuePath!, "utf8");
+  const freshQueue = JSON.parse(freshQueueRaw) as AnswerQueue;
+
+  // freshQueue.artifact must be the NEW re-author artifact, NOT the source
+  assert.equal(
+    freshQueue.artifact,
+    result.artifactPath,
+    `fresh queue artifact points at NEW re-author artifact (${result.artifactPath}), not source`,
+  );
+  assert.notEqual(
+    freshQueue.artifact,
+    sourceArtifactPath,
+    "fresh queue artifact is NOT the source artifact",
+  );
+
+  // Sanity: the new artifact has reauthorOf = sourceArtifactPath
+  assert.equal(
+    result.artifact.reauthorOf,
+    sourceArtifactPath,
+    "new artifact's reauthorOf points at source",
+  );
 });
