@@ -44,12 +44,50 @@ from. We call that frozen, executable layer the **membrane**.
 Above the membrane: deciding. Below it: doing. The membrane is the only thing
 that crosses, and it crosses in a form that can't be corrupted.
 
+## End to end, one task
+
+A single intent travels the whole machine like this. The expensive model is only
+ever spent in the top band; everything below the membrane runs cheap.
+
+```text
+  ┌─ DECIDE (high model, spent once) ───────────────────────────────────┐
+  │                                                                      │
+  │   intent ─▶ decompose ─▶ self-audit ─▶ admit? ─▶ FREEZE (hash-pin)   │
+  │             │            error-       │  probe                       │
+  │             │            coverage     │  agrees?                     │
+  │             ▼            mandate       ▼                              │
+  │      underdetermined?              NOT-READY ─▶ kick back to God      │
+  │      escalate to God ──────────────────────────▶ (answer + re-author)│
+  └────────────────────────────────────┬─────────────────────────────────┘
+                                        │  frozen contract crosses the membrane
+  ┌─ DO (cheapest viable model, metered) ▼ ─────────────────────────────┐
+  │                                                                      │
+  │     ┌──────────────────────────────────────────────┐                │
+  │     │  generate ─▶ run against contract ─▶ judge     │                │
+  │     │      ▲                                  │      │  every call    │
+  │     │      │     fail: feedback = the why     │      │  → cost ledger │
+  │     │      └──────────────◀───────────────────┘      │                │
+  │     └──────────────────┬───────────────────────────┘                 │
+  │                        ▼                                              │
+  │              green · stalled · out of budget                         │
+  └──────────────────────────────────────────────────────────────────────┘
+```
+
+Two facts make this honest rather than hopeful:
+
+- The contract is **hash-frozen**: the runner refuses to execute against
+  anything but its registered hash, so a worker can't quietly edit the goal.
+- The worker is graded against a **hidden battery** that never appears in any
+  prompt, feedback, or logged artifact — so "green" can't be gamed by reading
+  the test.
+
 ## The horde (and why the hierarchy exists)
 
 The roles borrow orc lore, but the structure is doing real work.
 
 ```text
 GOD (you) ─▶ WARBOSS ─▶ WARCHIEF ─▶ SERGEANT ─▶ GRUNT
+  decide      author      carry       dispatch    do
 ```
 
 - **You are God.** You speak only to your chosen champions — never to the horde.
@@ -72,6 +110,7 @@ Three rules make this more than flavor:
    below. As work descends, less is left to interpret, so a cheaper model becomes
    viable — until the cheapest tier can satisfy the contract outright. The
    hierarchy is a **fractal**: add ranks or widen the horde as the work demands.
+   (Tiers: LOW=haiku, MID=sonnet, HIGH=opus — a capability ladder, `src/models.ts`.)
 3. **Entropy is reduced at authoring time, never at implementation time.** All
    discipline lands on the rank that *writes* — every rule stated as a
    mechanical input → output, every sentence falsifiable by an example, every
@@ -94,48 +133,74 @@ Each idea in [`references/`](references/) contributes one organ of the machine
 | Intention-decay protocols | The transmission rules: dense intent, bounded context, shape the environment instead of micro-instructing. |
 | Orc lore | The topology and the names. |
 
-## Broad strokes to get there
+## Falsify-first: the experiment ladder
 
 Build order is **falsify-first** — the earliest, cheapest experiments are the
-ones most able to kill the thesis. Full detail in [duh_plan.md](duh_plan.md).
+ones most able to kill the thesis. Each rung had a pre-registered success
+criterion and a real (small) live spend. Full detail in [duh_plan.md](duh_plan.md).
 
-1. **Membrane primitive** *(done)* — a contract that freezes by content hash and
-   a runner that refuses to execute against anything but its registered hash.
-   Plus the cheap-model worker layer and a cost ledger on every call.
-2. **E1a — does the contract collapse interpretation?** *(run live — settled.)*
-   Same task, many runs, with and without a frozen contract. The contract
-   crushed the fan-out: modal agreement 0.97 with the contract vs 0.60 without
-   (E1a-r2, N=30×4, $0.59). Bonus finding: without a contract, 18/30 cheap-model
-   outputs weren't even viable implementations.
-3. **E1b — does cheap + honest + retry beat one expensive shot?** *(harness
-   built on the product loop; live dispatch is a spend decision.)* The
-   retry-against-the-membrane loop now lives in `src/loop.ts` as durable
-   infrastructure — generate → judge → retry until green, stall, or budget,
-   every attempt metered.
-4. **Warboss decomposition** *(built offline; first live run pending)* — the
-   high model authors the contracts (`src/warboss.ts`: decompose → mechanical
-   validation → self-audit → one amend → freeze), with an error-coverage
-   mandate enforced mechanically so it can't poison the membrane by
-   under-specifying. Hardened process sandbox (`node --permission`, vm-in-child)
-   is in place for when tasks gain I/O.
-5. **Scale the horde** — fractal context + the Sergeant/Warchief layers, so many
-   contracts can run at once with constant-size context per worker.
+```text
+  RUNG          QUESTION                                       VERDICT
+  ────────────────────────────────────────────────────────────────────────────
+  E1a   Does the contract collapse interpretation?         ✅ YES   modal agreement
+        (same task, N runs, with vs without a contract)            0.97 vs 0.60;
+                                                                   18/30 not even
+                                                                   viable w/o it
+  ────────────────────────────────────────────────────────────────────────────
+  E1b   Cheap + honest judge + retry vs one expensive       ◑ LOOP WORKS
+        shot?                                                 green 1.00 @ ~1.1
+                                                              tries, 9.5× cheaper
+                                                              per green. Score
+                                                              plateau = contract
+                                                              authoring debt, not
+                                                              loop failure.
+  ────────────────────────────────────────────────────────────────────────────
+  E2    Does machine-authored beat human-authored on        ◑ ERROR PATH SOLVED
+        the same grunt loop?                                  warboss error
+                                                              coverage 1.000 vs
+                                                              human 0.000. Happy-
+                                                              path miss = intent
+                                                              was underdetermined
+                                                              → motivates E3.
+  ────────────────────────────────────────────────────────────────────────────
+  E3    Can warboss surface underdetermined semantics       ✅ PASS  all 3 known
+        BEFORE freezing (instead of guessing)?                ambiguities surfaced
+                                                              pre-freeze ($0.087).
+  ────────────────────────────────────────────────────────────────────────────
+  E4    Close the loop: God answers the escalations →       ✅ PASS  warboss 0.918
+        warboss re-authors → re-run on a NEUTRAL oracle.      vs human 0.724 on a
+                                                              neutral God battery
+                                                              ($0.252).
+  ────────────────────────────────────────────────────────────────────────────
+        E1 ─▶ E2 ─▶ E3 ─▶ E4 chain CLOSED.
+```
 
-The readiness-gate idea is now built (`src/gate.ts`): before dispatching work,
-ask the cheap tier itself *"can you do this as specified?"* — a one-call
-READY/NOT-READY judge that fails closed, backstopped by a convergence probe
-(K independent generations; if survivors don't agree on held-out cases, the
-contract isn't decided enough). The model that does the work judges whether
-the work is decided enough; admission (`admit`) wires both in front of the
-horde. Calibration against live data is pending.
+The headline: a cheap model behind a dense, machine-authored contract beats a
+high model on covered correctness while costing ~10× less per green — and the
+one place machine authoring lost (happy-path ambiguity) turned out to be intent
+the human never decided, which the kick-back loop now surfaces and resolves
+before anything freezes.
+
+One thing the experiments *killed*: the idea of a cheap-model **readiness judge**
+that just declares "READY / NOT-READY." It fails both ways (over-confident in one
+form, over-skeptical in another). What survived as the actual admission gate is a
+**convergence probe** — run K independent cheap generations against the contract;
+if the survivors don't agree on held-out cases, the contract isn't decided enough
+to freeze. The model that does the work votes on whether the work is decided.
 
 ## Where it stands
 
-The machine's organs are built and covered by 133 offline tests: membrane core,
-retry loop, readiness gate, process sandbox, and the warboss decomposition
-pipeline. E1a ran live and settled rung 1 of the thesis (the contract collapses
-interpretation). Three live spends are queued behind a God decision: the E1b
-economics run, gate calibration, and the first live decomposition.
+The machine's organs are built and covered by **294 offline tests**: membrane
+core, the retry loop, the readiness/convergence gate, a process-isolated sandbox,
+the warboss decomposition pipeline, and the full kick-back loop (escalation →
+owner answers → re-author). The falsification ladder E1→E2→E3→E4 has **run live
+and closed** in the thesis's favor on the first task (`duration-parse`).
+
+Current frontier (Leg 8): the kick-back loop's **production wiring** is built and
+green offline; what remains are three small, owner-gated live runs — re-confirming
+the live escalation→re-author drain, an E4 re-run that scores the decimal-hours
+class, and **replicating E4 on a second task** (`parse-range`) to show the result
+generalizes.
 
 The repo runs spec-driven and eats its own cooking: every harness feature
 deposits a durable spec in [`specs/`](specs/) plus a regression test (via the
@@ -148,7 +213,7 @@ npm install
 cp .env.example .env   # add ANTHROPIC_API_KEY (only needed for live runs)
 
 npm run typecheck      # strict tsc
-npm test               # node:test — the whole machine, offline (133 tests)
+npm test               # node:test — the whole machine, offline (294 tests)
 npm run smoke          # full stack; dispatches one real grunt if a key is set
 ```
 
@@ -157,10 +222,11 @@ npm run smoke          # full stack; dispatches one real grunt if a key is set
 | [duh_plan.md](duh_plan.md) | Thesis, architecture, experiment design — the living plan. |
 | [HANDOFF.md](HANDOFF.md) | The relay: planner writes work items down, implementer reports back. |
 | [specs/](specs/) | Durable source of truth per harness feature, paired with tests. |
-| [src/](src/) | The core layers — contract, sandbox, runner, cost ledger, agent, loop, gate, warboss. |
+| [reports/](reports/) | Live-run verdicts (E1a, E1b, E2, E3, E4, gate calibrations). |
+| [src/](src/) | The core layers — contract, sandbox, runner, cost ledger, agent, loop, gate, warboss, kickback. |
 | [references/](references/) | The source ideas the machine is assembled from. |
 
 ---
 
-*Status: lab — rung 1 settled, economics rung next. Duh Plan supersedes this
-README where they disagree.*
+*Status: lab — E1→E2→E3→E4 chain closed on task 1; multi-task replication next.
+Duh Plan supersedes this README where they disagree.*
