@@ -1,0 +1,28 @@
+{
+  "$comment": "The horde ladder. Ordered cheapest -> most capable. The NUMBER of rungs is the number of entries here: 3 models -> 3 rungs, 2 -> 2. The /delegate skill reads this to know which model serves which entropy band. Edit `model` to pin a rung to a specific model (alias haiku|sonnet|opus, or a full model id like claude-haiku-4-5-20251001). Add or remove a rung to change the ladder; the framework routes across whatever rungs exist. The HIGHEST rung (orchestrator: true) is the main agent / WARBOSS itself — work that lands there is decomposed or escalated, never dispatched to a subagent. Every lower rung is dispatched to the `doer` subagent with `model` set to that rung's model.",
+  "doer": "doer",
+  "ladder": [
+    {
+      "rung": 1,
+      "tier": "LOW",
+      "model": "haiku",
+      "dispatch": true,
+      "band": "near-zero residual entropy — a literal machine could satisfy the contract: exact entry point, criteria as concrete input->expected, every second reading already killed"
+    },
+    {
+      "rung": 2,
+      "tier": "MID",
+      "model": "sonnet",
+      "dispatch": true,
+      "band": "moderate residual entropy — decided but a literal machine would likely misread it: subtle invariants, non-trivial logic, or a slice that may need finer decomposition"
+    },
+    {
+      "rung": 3,
+      "tier": "HIGH",
+      "model": "opus",
+      "dispatch": false,
+      "orchestrator": true,
+      "band": "high residual entropy — not yet decided. Stays with the WARBOSS (main agent): decompose, resolve forks, or escalate to the user. Never dispatched."
+    }
+  ]
+}

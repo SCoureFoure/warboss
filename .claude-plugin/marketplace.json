@@ -1,0 +1,22 @@
+{
+  "$schema": "https://www.schemastore.org/claude-code-marketplace.json",
+  "name": "warboss-marketplace",
+  "owner": {
+    "name": "SCoureFoure",
+    "email": "scoraccioiv@gmail.com"
+  },
+  "description": "The warboss horde: a model-aware delegation framework that routes work down a rank ladder by residual entropy — expensive model decides, cheapest model does.",
+  "metadata": {
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "warboss-horde",
+      "source": "./warboss-horde",
+      "description": "Managed agent-rank ladder (WARBOSS → WARCHIEF → GRUNT) plus a /delegate doctrine that maps available models to ranks by role and routes each task to the cheapest tier that can satisfy it.",
+      "category": "orchestration",
+      "keywords": ["delegation", "subagents", "orchestration", "cost", "entropy", "warboss"],
+      "license": "MIT"
+    }
+  ]
+}
