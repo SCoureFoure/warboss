@@ -164,11 +164,13 @@ three funded live runs of 2026-06-11:**
 
 ## Active items
 
-**Leg 9 OPEN (2026-06-15) — close the last E4 residual, then synthesize.** Owner
-ruled (2026-06-15): candidate #3 (ordering happy-lift) fix = **render-hint, global**
-(over `extraCases`); next leg after #3 = **synthesis writeup** (chain judged done,
-stop spending). H-30 built offline by the planner (one-function change, no grunt
-dispatch warranted).
+**Leg 9 CLOSED (2026-06-15) — last E4 residual discharged + program synthesized.**
+Owner ruled: candidate #3 (ordering happy-lift) fix = **render-hint, global** (over
+`extraCases`); next = **synthesis** (chain judged done, stop spending). H-30
+(render-hint, planner-built offline + live rev-4 rerun PASS, #3 discharged) and
+H-31 (`reports/SYNTHESIS.md`, the whole-program correctness-per-dollar verdict)
+both done. **All four e4 §Consequence candidates discharged; E1→E4 chain closed;
+research arc complete. No queued work — the harness has answered its question.**
 
 - **H-30 · e4 rev-4 render-hint — ACCEPTED 2026-06-15 (offline + live PASS).**
   Shared `renderDecisionBlock` (`src/kickback.ts`) appends `DECISION_DIVERSITY_HINT`
@@ -184,11 +186,16 @@ dispatch warranted).
   the decimal class stayed scored anyway (rev-3 `extraCases` backstop absorbed it).
   Hint (probabilistic) + extraCases (hard) work together. **NEXT = H-31 SYNTHESIS.md.**
 
-- **H-31 · SYNTHESIS.md — `queued` (offline, zero spend).** `reports/SYNTHESIS.md`:
-  thesis restated → E1→E4 evidence chain → full $ ledger across all legs →
-  correctness-per-dollar verdict → what's proven / what isn't (Corollary D,
-  cheap-judge gate FAILs, probe-only admission, self-echo→hint+extraCases). All four
-  e4 §Consequence candidates discharged; chain closed, no open residual.
+- **H-31 · SYNTHESIS.md — DONE (offline, zero spend).** `reports/SYNTHESIS.md`
+  written: thesis restated → E1→E4 evidence chain (E1a variance collapse + 10.8×
+  money shot, E1b loop-cheap/Corollary-D, E2 error-hole closed, E3 author+probe
+  complementary, E4 0.918→0.961→0.985 + parse-range 1.000 + live 9→3 drain) →
+  five honest boundaries (cheap-judge can't self-gate, E4 treatment-asymmetric,
+  self-echo controlled-not-eliminated, two-tasks-one-shape, authoring is where
+  the $ are) → correctness-per-dollar verdict → whole-program ledger **~$3.305**
+  across 12 runs. **The research arc is closed; bet settled in its favor on the
+  tasks tested. Open frontier = breadth (other task shapes) + a symmetric
+  authoring comparison — neither load-bearing.**
 
 **Leg 8 CLOSED (2026-06-14) — production wiring + E4 follow-ons.** E4 PASSed
 (`reports/e4-verdict.md`); the four verdict §Consequence candidates are specced
@@ -476,6 +483,7 @@ below. Per-item build outcomes recorded in the Log._
 
 | Item | What | Outcome |
 | --- | --- | --- |
+| **H-31** · SYNTHESIS.md — whole-program verdict | `reports/SYNTHESIS.md`: thesis → E1→E4 evidence chain → 5 honest boundaries → correctness-per-dollar verdict → ~$3.305 program ledger (12 runs) | accepted 2026-06-15, offline/zero-spend, planner-written; **research arc CLOSED — bet settled in its favor on the tasks tested; the harness answered its question** |
 | **H-30** · e4 rev-4 render-hint — kill ordering self-echo | shared `renderDecisionBlock` appends literal-free `DECISION_DIVERSITY_HINT` after bullets when ≥1 decision (inherited by `renderOwnerDecisions`, no `runE4` change), kickback spec rev 2 AC10 + e4 spec rev 4 AC13 (`src/kickback.ts`) | accepted 2026-06-15, **297/297** offline + typecheck clean; planner-built (one-function change); **live rev-4 rerun PASS** ($0.606, `runs/e4-20260615T141249Z.json`): warboss 0.985 vs human 0.615, exclusions 3→1, both ordering self-echoes gone → **candidate #3 DISCHARGED**; lone residual exclusion = decimal extra `2.5h` but class stayed scored (extraCases backstop). **All four e4 §Consequence candidates discharged — chain closed. NEXT = H-31 SYNTHESIS.md** |
 | **H-29** · multi-task replication — contested.json + parse-range | `loadGodAnswers` parameterized on `requiredInputs` (`E3_KNOWN_INPUTS` deleted), `runE4` reads `tasks/<task>/contested.json` (throws if missing), `tasks/duration-parse/contested.json` back-compat, full `tasks/parse-range/` asset set (requirement/task/hidden/contested/god-answers), AC-MT1–AC-MT3 (`src/experiment/e4.ts`, `tasks/*`) | accepted 2026-06-14, **294/294** offline post-merge, typecheck clean; sonnet grunt; 1 deviation (parse-range `1-3,2-4`→`[1,2,3,4]` union/dedup fixture ruling — defensible owner call); stale-worktree base again → 3-way merge preserved H-27/H-28, two conflicts resolved by planner (`E3_KNOWN_INPUTS`-loop→`requiredInputs` in `e4.ts`; AC-MT tail-append in `e4.test.ts`); **Leg 8 production-wiring path COMPLETE offline — live runs pending owner gate** |
 | **H-28** · E4 rev 3 — extraCases + ordering rulings | `GodRuling.extraCases` (decimal class survives an author self-echo via 2.5h/0.5h), self-leak guard + dedup span extra inputs, `buildGodBattery` places extras after canonical, `god-answers.json` decimal extraCases + ordering rulings (30m30m/30m1h), AC11–AC12 (`src/experiment/e4.ts`, `tasks/duration-parse/god-answers.json`) | accepted 2026-06-14, **285/285** offline post-merge, typecheck clean; sonnet grunt; 1 deviation (appended extra-case name `god-<i>-extra-<ec>-<input>` — spec pinned only uniqueness); **stale-worktree-branch-point RECURRED** (worktree base `7a0ad09` pre-H-27; grunt saw 258, main 279) — 3-way merge preserved H-27 (missing files untouched on worktree side), one trivial comment-conflict in `e4.ts` resolved by planner; **NEXT = H-29 (multi-task)** |
