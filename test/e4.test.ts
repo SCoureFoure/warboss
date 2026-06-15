@@ -1783,3 +1783,50 @@ function parseRange(spec) {
   assert.ok(hb.happyCount >= 1, "God battery has ≥1 happy case");
   assert.ok(hb.errorCount >= 1, "God battery has ≥1 error case");
 });
+
+// ── AC13 (rev 4): authoring-diversity hint reaches the e4 author context ──────
+// Discharges e4-verdict candidate #3 (ordering happy-lift): the warboss author
+// echoed the obvious ruling inputs (30m30m / 30m1h) as its own examples → the
+// residual filter excluded those God-battery cases → ordering never scored.
+// The fix is a literal-free render-hint steering the author toward a distinctive
+// representative. renderOwnerDecisions feeds runE4's decompose context directly,
+// so asserting the hint is present here proves it reaches the live author prompt.
+// (Offline proves the PLUMBING only; whether the live author actually stops
+//  echoing is measured by the owner-gated e4 rerun.)
+
+const E4_DIVERSITY_HINT =
+  "When you author an example to pin one of these behaviors, prefer a " +
+  "distinctive, non-trivial representative input over the single smallest or " +
+  "most obvious case — a varied example pins the behavior just as well.";
+
+test("AC13 renderOwnerDecisions — author context carries the diversity hint, still literal-free", () => {
+  const orderingRulings: GodRuling[] = [
+    {
+      input: ["30m30m"],
+      expected: 3600,
+      decision: "When the same unit appears more than once, the quantities for that unit are summed.",
+    },
+    {
+      input: ["30m1h"],
+      expected: 5400,
+      decision: "Units may appear in any order; the total is the sum of all unit quantities.",
+    },
+  ];
+
+  const result = renderOwnerDecisions(orderingRulings);
+
+  // Hint present (inherited from renderDecisionBlock)
+  assert.ok(result.includes(E4_DIVERSITY_HINT), `diversity hint present in author context: ${result}`);
+
+  // STILL literal-free: no ordering input literal leaks (the rev-2/3 self-leak invariant holds)
+  for (const r of orderingRulings) {
+    for (const inp of r.input) {
+      const needle = JSON.stringify(inp);
+      assert.ok(!result.includes(needle), `no input literal ${needle} in author context`);
+    }
+  }
+
+  // Both decision bullets still rendered verbatim; count unaffected by the hint
+  const bullets = result.split("\n").filter((l) => l.startsWith("- "));
+  assert.equal(bullets.length, 2, "two decision bullets — hint is not a bullet");
+});

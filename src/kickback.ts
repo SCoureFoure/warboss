@@ -28,7 +28,24 @@ import { readFile } from "node:fs/promises";
  * One bullet per decision, input order, each bullet the decision string VERBATIM.
  * `renderDecisionBlock([])` returns the three header lines with no bullets.
  * (Empty decision list is a caller error upstream, not here.)
+ *
+ * Rev 2: when ≥1 decision is present, a literal-free authoring-diversity HINT is
+ * appended as a trailing line after the bullets. It steers the author toward a
+ * distinctive representative input rather than the single most obvious one. In
+ * E4 this is the fix for verdict candidate #3 (ordering happy-lift): the author
+ * coincidentally echoed a ruling's obvious input as its own example, so the
+ * residual filter excluded that exact God-battery case and the class went
+ * unscored. Reducing the echo probability lets the case survive the residual.
+ * The hint is benign in the live path (no scoring battery there) — a distinctive
+ * example pins a real contract just as well. The hint is NOT a bullet (no `- `
+ * prefix) and carries no input literal / `entry(args)` / `===`, so it never
+ * trips the bullet-count or self-leak invariants. Empty-list output is unchanged.
  */
+export const DECISION_DIVERSITY_HINT =
+  "When you author an example to pin one of these behaviors, prefer a " +
+  "distinctive, non-trivial representative input over the single smallest or " +
+  "most obvious case — a varied example pins the behavior just as well.";
+
 export function renderDecisionBlock(decisions: readonly string[]): string {
   const header =
     `The owner has DECIDED the following behaviors. Treat each as fixed intent —\n` +
@@ -40,7 +57,7 @@ export function renderDecisionBlock(decisions: readonly string[]): string {
   }
 
   const bullets = decisions.map((d) => `- ${d}`);
-  return header + "\n" + bullets.join("\n");
+  return header + "\n" + bullets.join("\n") + "\n\n" + DECISION_DIVERSITY_HINT;
 }
 
 // ── Interfaces ────────────────────────────────────────────────────────────────

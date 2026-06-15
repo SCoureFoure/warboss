@@ -400,3 +400,45 @@ test("AC4f loadOwnerAnswers — duplicate escalation string → throws", async (
     /duplicate/i,
   );
 });
+
+// ── AC10 (rev 2): renderDecisionBlock authoring-diversity hint ────────────────
+
+const DIVERSITY_HINT =
+  "When you author an example to pin one of these behaviors, prefer a " +
+  "distinctive, non-trivial representative input over the single smallest or " +
+  "most obvious case — a varied example pins the behavior just as well.";
+
+test("AC10 renderDecisionBlock — diversity hint appended after the bullets when decisions present", () => {
+  const result = renderDecisionBlock(["A.", "B."]);
+
+  // Hint present, verbatim
+  assert.ok(result.includes(DIVERSITY_HINT), `diversity hint present: ${result}`);
+
+  // Hint comes AFTER the last bullet (it is a trailing authoring note)
+  assert.ok(
+    result.indexOf(DIVERSITY_HINT) > result.lastIndexOf("- B."),
+    "diversity hint appears after the last bullet",
+  );
+
+  // Bullet count is UNCHANGED — the hint is not itself a bullet (no leading "- ")
+  const bullets = result.split("\n").filter((l) => l.startsWith("- "));
+  assert.equal(bullets.length, 2, "still exactly two bullets — hint is not a bullet");
+
+  // Header lines still verbatim (the rev-1 invariants hold)
+  assert.ok(
+    result.includes("inputs) that pin exactly these:"),
+    "third header line still present verbatim",
+  );
+
+  // Hint is literal-free: no entry(args) form, no === membrane syntax
+  assert.ok(!result.includes("parseDuration("), "hint contains no entry(args) form");
+  assert.ok(!result.includes("==="), "hint contains no === membrane syntax");
+});
+
+test("AC10 renderDecisionBlock([]) — NO diversity hint when decision list is empty (header only)", () => {
+  const result = renderDecisionBlock([]);
+  assert.ok(!result.includes(DIVERSITY_HINT), "no hint for empty decision list");
+  // Empty case is byte-unchanged from rev 1: header lines, no bullet, no hint
+  const lines = result.split("\n").filter((l) => l.startsWith("- "));
+  assert.equal(lines.length, 0, "no bullets for empty decision list");
+});

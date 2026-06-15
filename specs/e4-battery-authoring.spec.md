@@ -1,6 +1,21 @@
 # Spec — E4 battery authoring (close the kick-back loop: God answers, warboss re-authors, re-run on a neutral oracle)
 
-> Status: active · rev 3 · Feature: e4-battery-authoring · Added: 2026-06-13 · Rev 2: 2026-06-13 · Rev 3: 2026-06-14 · Maps to: PLAN Phase 4 follow-on (E3 standing consequence #1) + the delegation bet's end-to-end close.
+> Status: active · rev 4 · Feature: e4-battery-authoring · Added: 2026-06-13 · Rev 2: 2026-06-13 · Rev 3: 2026-06-14 · Rev 4: 2026-06-15 · Maps to: PLAN Phase 4 follow-on (E3 standing consequence #1) + the delegation bet's end-to-end close.
+> **Rev 4 change** (the E4 rev-3 rerun — `reports/e4-verdict.md` addendum —
+> discharged candidates #2 decimal and #4 replication but left #3 ORDERING
+> HAPPY-LIFT open; self-echo is now the dominant residual-erosion mechanism,
+> 3/3 exclusions): the warboss author coincidentally echoed the obvious ordering
+> ruling inputs (`30m30m`, `30m1h`) as its own examples, so the residual filter
+> excluded those exact God-battery cases and the ordering class went unscored.
+> Rev 4 appends a literal-free authoring-diversity HINT to the SHARED
+> `renderDecisionBlock` (`DECISION_DIVERSITY_HINT`, owned by
+> `kickback-pipeline.spec.md` rev 2), steering the author toward a distinctive
+> representative so the case survives the residual. `renderOwnerDecisions`
+> inherits it through the unchanged delegation, so it reaches the e4 author
+> context with no `runE4` change. The fix is **probabilistic** (a literal-free
+> hint cannot name the inputs to avoid without re-leaking them); offline AC13
+> pins only the plumbing, and the **owner-gated e4 rerun is the real proof**.
+> The hard guarantee remains `extraCases` (rev 3, AC11).
 > **Rev 3 changes** (the E4 live run — `reports/e4-verdict.md`, PASS — left two
 > measurement holes; rev 3 closes both, both verdict §Consequence candidates #2
 > and #3):
@@ -355,9 +370,10 @@ interface RunE4Result { readonly deadRun: boolean; }
 ### Module layout & CLI
 
 ```text
-src/experiment/e4.ts    rev 3: GodRuling gains optional `extraCases`; loadGodAnswers + buildGodBattery + self-leak guard span extra inputs. (rev 2: prose-only renderOwnerDecisions + self-leak guard; E4 owns the shared Ledger)
+src/kickback.ts         rev 4 (kickback rev 2): renderDecisionBlock appends DECISION_DIVERSITY_HINT — inherited by renderOwnerDecisions, no e4 code change
+src/experiment/e4.ts    rev 3: GodRuling gains optional `extraCases`; loadGodAnswers + buildGodBattery + self-leak guard span extra inputs. (rev 2: prose-only renderOwnerDecisions + self-leak guard; E4 owns the shared Ledger) — UNCHANGED in rev 4
 src/experiment/e2.ts    rev 4: add `ledger?` option (rev 3 hiddenOverride already shipped) — UNCHANGED in e4 rev 3
-test/e4.test.ts         AC1–AC12, offline; rev 3 adds AC11 (extraCases + decimal survives collision) + AC12 (ordering overrides)
+test/e4.test.ts         AC1–AC13, offline; rev 4 adds AC13 (diversity hint reaches author context); rev 3 adds AC11 (extraCases + decimal survives collision) + AC12 (ordering overrides)
 tasks/duration-parse/god-answers.json   rev 3: decimal ruling gains `extraCases` (2.5h, 0.5h); two ordering rulings added (30m30m, 30m1h)
 ```
 
@@ -456,10 +472,24 @@ tasks/duration-parse/god-answers.json   rev 3: decimal ruling gains `extraCases`
     wins, `coveredBy: []`); `godBattery.overridden` counts them. `renderOwnerDecisions`
     emits their literal-free `decision` bullets (no `"30m30m"` / `"30m1h"`
     substring in the block). No new battery code path — pure override reuse.
+13. **AC13 — authoring-diversity hint reaches the author context (rev 4).**
+    `renderOwnerDecisions` (which `runE4` feeds VERBATIM into the decompose
+    `context`) includes `DECISION_DIVERSITY_HINT` (inherited from the shared
+    `renderDecisionBlock` — `kickback-pipeline.spec.md` rev 2), while staying
+    literal-free (no ruling input substring) with the bullet count unchanged.
+    **Why (candidate #3, ordering happy-lift):** the E4 rev-3 rerun
+    (`reports/e4-verdict.md` addendum) left ordering unscored because the warboss
+    author echoed the obvious ruling inputs (`30m30m`, `30m1h`) as its own
+    examples → the residual filter excluded those exact God-battery cases. The
+    hint steers the author toward a distinctive representative so the case
+    survives the residual. This AC pins only the **plumbing** (the hint reaches
+    the author prompt); whether the live author stops echoing is **probabilistic**
+    and measured by the **owner-gated e4 rerun**, not offline. The hard guarantee
+    stays `extraCases` (AC11); the hint is the global discipline lever for #3.
 
 ## Verifies-with
 
-- Tests: `test/e4.test.ts` — AC1–AC10, offline, fake `MessagesClient` + fixture
+- Tests: `test/e4.test.ts` — AC1–AC13, offline, fake `MessagesClient` + fixture
   `god-answers.json` (with `decision` fields) + a fixture decompose artifact
   (written by the test into a temp `out` dir). The rev-1 e4 tests are revised:
   AC3 to prose-only rendering, AC7 to contested-cases-survive, plus new AC8

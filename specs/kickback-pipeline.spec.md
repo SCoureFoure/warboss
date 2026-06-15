@@ -1,6 +1,24 @@
 # Spec — kick-back pipeline (escalations → owner-answer queue → re-author, in the live path)
 
-> Status: active · rev 1 · Feature: kickback-pipeline · Added: 2026-06-14 · Maps to: PLAN Phase 4 follow-on (E4 standing consequence #1 — production wiring).
+> Status: active · rev 2 · Feature: kickback-pipeline · Added: 2026-06-14 · Rev 2: 2026-06-15 · Maps to: PLAN Phase 4 follow-on (E4 standing consequence #1 — production wiring; rev 2 = E4 consequence #3, ordering happy-lift).
+> **Rev 2 change** (E4 rev-3 rerun left candidate #3 open — `reports/e4-verdict.md`
+> addendum): the shared `renderDecisionBlock` now appends a literal-free
+> authoring-diversity HINT after the bullets when ≥1 decision is present
+> (`DECISION_DIVERSITY_HINT`). The E4 rev-3 rerun showed self-echo is the dominant
+> residual-erosion mechanism (3/3 exclusions): the warboss author coincidentally
+> chose a ruling's obvious input (`30m30m`, `30m1h`) as its own representative
+> example, so the residual filter excluded that exact God-battery case and the
+> ordering class went unscored. The hint steers the author toward a distinctive
+> representative, lowering the echo probability so the case survives the residual.
+> It is **global** (one change in the shared renderer, so E4 and the live path
+> share it) and **benign in the live path** — there is no scoring battery there,
+> and a distinctive example pins a real contract just as well. The fix is
+> **probabilistic, not a guarantee**: a literal-free hint cannot name the inputs
+> to avoid (naming them would re-leak the literals and re-contaminate the
+> measurement — the whole reason the block is prose-only). Offline ACs pin the
+> hint plumbing; the owner-gated e4 rerun is the only real proof it holds. The
+> hard guarantee remains `extraCases` (e4 spec rev 3); the hint is the global
+> discipline lever chosen for candidate #3.
 > Source of truth for the STANDING (non-experiment) kick-back loop: the live
 > `decompose-run` path emits a machine-readable owner-answer queue from its
 > escalations; the owner answers by hand; a re-author pass folds those answers
@@ -119,6 +137,15 @@ export function loadOwnerAnswers(path: string): Promise<AnswerQueue>;
   One bullet per decision, input order, each bullet the decision string
   VERBATIM. `renderDecisionBlock([])` returns the three header lines with no
   bullets (empty decision list is a caller error upstream, not here).
+  **Rev 2:** when ≥1 decision is present, the exported `DECISION_DIVERSITY_HINT`
+  is appended as a single trailing line after the bullets, separated by a blank
+  line: `… - <last decision>\n\n<hint>`. The hint is literal-free, does not start
+  with a `-` bullet marker (so it is not a bullet) and carries no
+  `entry(args)`/`===` form, and is
+  ABSENT from the empty-list output (that output is byte-unchanged from rev 1).
+  The three header lines (including the trailing `inputs) that pin exactly
+  these:`) are byte-unchanged, so the parity with `renderOwnerDecisions` and all
+  rev-1 `.includes`/bullet-count assertions still hold.
 - **`buildAnswerQueue`** produces one `OwnerAnswer` per escalation, in
   escalation order, with `decision: ""`. `requirementId` is the substring of the
   escalation before the first `": "` **iff** that prefix matches the warboss id
@@ -256,6 +283,16 @@ new flags. **npm eats `--flags` on Windows** — invoke directly:
    (phase-1 re-applied to the re-author artifact), so the loop can continue;
    that fresh queue's `artifact` points at the NEW (re-author) artifact, not the
    source.
+10. **AC10 (rev 2) — authoring-diversity hint.** Given decisions `["A.", "B."]`
+    → `DECISION_DIVERSITY_HINT` appears in the output, AFTER the last bullet
+    (`indexOf(hint) > lastIndexOf("- B.")`); the bullet count is still exactly 2
+    (the hint is not a bullet); the third header line `inputs) that pin exactly
+    these:` is still present verbatim; the hint contains no `entry(args)` form
+    and no `===`. Given `[]` → the hint is ABSENT (header-only output unchanged
+    from rev 1). (E4 inherits the hint through the unchanged
+    `renderOwnerDecisions` delegation — see `e4-battery-authoring.spec.md` rev 4
+    AC13; the live author-prompt effect is measured by the owner-gated e4 rerun,
+    not asserted offline.)
 
 ## Verifies-with
 

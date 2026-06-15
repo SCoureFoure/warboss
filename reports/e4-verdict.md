@@ -199,3 +199,23 @@ oracle.** The delegation bet is won on the load-bearing experiment.
 
 One shared `cost-ledger-20260614T144326Z.jsonl` (E4 rev-2 single-sidecar fix —
 authoring + grinding in one file).
+
+---
+
+## Addendum — rev-4 render-hint rerun (2026-06-15, PASS), candidate #3 DISCHARGED
+
+**Run:** `e4-20260615T141249Z.json` · re-author `runs/decompose-20260615T141316Z.json` · total **$0.606278** (authoring $0.073270 HIGH, grinding $0.533008 LOW). H-30 / e4 spec rev 4 / kickback spec rev 2.
+
+**Result: PASS — warboss 0.985 ≥ 0.900 × human 0.615 (threshold 0.554).** God battery total=14, residual=13, **exclusions = 1** (down from **3** in the rev-3 rerun).
+
+**The render-hint discharged candidate #3 (ordering happy-lift).** The literal-free `DECISION_DIVERSITY_HINT` (appended to the shared `renderDecisionBlock`) steered the warboss author off the obvious ordering inputs: the rev-3 rerun excluded BOTH `repeat-units "30m30m"` and `reversed-order "30m1h"` (author self-echo); this run excludes **neither** — both survive the residual and are scored. With ordering in-battery, warboss is 0.985 overall versus its earlier 0.77 dip on exactly those two cases. The dominant residual-erosion mechanism (self-echo, 3/3 last run) collapsed to 1/3.
+
+**The one residual exclusion is the decimal extra-case `"2.5h"`** (`god-2-extra-0`, `leakedBy: ["warboss"]`) — the author still coincidentally echoed one fractional input. **But the decimal CLASS stayed scored anyway**, exactly as rev-3 `extraCases` was designed: with `{1.5h, 2.5h, 0.5h}` all pinning the same ruling, one echo does not erase the class. This is the **hint (probabilistic) and extraCases (hard backstop) working together** — the hint removed two of three echoes, the backstop absorbed the third.
+
+**Reading the measurement.** The offline ACs (kickback AC10, e4 AC13) only proved the hint reaches the author prompt; this live rerun is the proof it *changes author behavior* — self-echo fell from 3 to 1. It remains probabilistic (a literal-free hint cannot name the inputs to avoid), so the residual `2.5h` echo is expected, not a regression; the `extraCases` redundancy is the guarantee, the hint is the global discipline that makes echoes rare.
+
+**Cost note:** total **$0.61**, ~4× the $0.15 pre-estimate — grinding 30 sessions × 2 arms on the denser warboss contract dominates ($0.533). The estimate was low; the result is unaffected.
+
+## Consequence
+
+**All four e4-verdict §Consequence candidates are now discharged** (#1 production wiring, #2 decimal, #3 ordering happy-lift, #4 multi-task replication). The E1→E4 chain is closed with no open residual. Next: **H-31 SYNTHESIS.md** — the correctness-per-dollar writeup over the whole chain.
