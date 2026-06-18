@@ -33,7 +33,7 @@ export interface DraftSet {
   requirements: readonly RequirementDraft[];
   contracts: readonly Contract[];
   auditGaps: readonly string[];
-  escalations: readonly string[];  // rev 4: God-facing kick-back questions
+  escalations: readonly string[];  // rev 4: Leader-facing kick-back questions
   costUsd: number;
 }
 

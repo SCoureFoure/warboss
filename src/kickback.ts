@@ -34,7 +34,7 @@ import { readFile } from "node:fs/promises";
  * distinctive representative input rather than the single most obvious one. In
  * E4 this is the fix for verdict candidate #3 (ordering happy-lift): the author
  * coincidentally echoed a ruling's obvious input as its own example, so the
- * residual filter excluded that exact God-battery case and the class went
+ * residual filter excluded that exact Leader-battery case and the class went
  * unscored. Reducing the echo probability lets the case survive the residual.
  * The hint is benign in the live path (no scoring battery there) — a distinctive
  * example pins a real contract just as well. The hint is NOT a bullet (no `- `

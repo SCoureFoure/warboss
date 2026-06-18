@@ -10,7 +10,7 @@
 > Outcome: **rung 1 settled.** Contract effect unambiguous. C1's instrument
 > diagnosed as broken under viability gating; corrected. E1b unblocked.
 > Recommend proceeding to E1b; do **not** escalate to rung 2 (no saturation).
-> Recorded deviation from pre-registered escalation — God assent sought for the
+> Recorded deviation from pre-registered escalation — Leader assent sought for the
 > next spend.
 
 ---
@@ -201,7 +201,7 @@ hence the instrument is *corrected in the spec*, not waived.
 3. **Do not escalate to rung 2.** csv-quoting stays shelved for if/when a *real*
    saturation appears.
 4. **Spend gate:** both the E1b dispatch and any future live run spend money;
-   per project rule that is God's call. This verdict authorizes the analysis
+   per project rule that is Leader's call. This verdict authorizes the analysis
    (rev-3 re-score, free) and recommends E1b as the next spend.
 
 ---

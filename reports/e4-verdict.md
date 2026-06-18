@@ -1,12 +1,12 @@
 # E4 verdict — battery authoring (close the kick-back loop)
 
-> **E4 criterion: PASS** — on a NEUTRAL God-authored oracle the re-authored
+> **E4 criterion: PASS** — on a NEUTRAL Leader-authored oracle the re-authored
 > warboss contract reaches **0.918**, not merely ≥ 0.90 × human (0.724) but
 > **above human outright**. The same comparison FAILed as E2 (0.667) against the
 > old human-coin-flip battery. The driver is error coverage: human scores
-> **0.000** on every error-path God case (its contract pins no error behavior —
-> the Corollary-D hole), warboss **0.878** (God told it to throw; it authored
-> throws examples). **The kick-back loop — escalate → God answers → re-author —
+> **0.000** on every error-path Leader case (its contract pins no error behavior —
+> the Corollary-D hole), warboss **0.878** (Leader told it to throw; it authored
+> throws examples). **The kick-back loop — escalate → Leader answers → re-author —
 > closes the E2 gap end-to-end, measured on a battery that encodes neither
 > author's coin flips.** Total cost: $0.252.
 > Artifact: `runs/e4-20260614T144326Z.json` · re-author:
@@ -27,12 +27,12 @@
 
 | | human | warboss | threshold |
 | --- | --- | --- | --- |
-| meanFinalHiddenScore (God oracle) | 0.545 | **0.961** | ≥ 0.491 → **PASS** |
+| meanFinalHiddenScore (Leader oracle) | 0.545 | **0.961** | ≥ 0.491 → **PASS** |
 | meanHappyScore | 0.750 | 1.000 | — |
 | **meanErrorScore** | **0.000** | **0.856** | — |
 | meanAttempts | 1.00 | 1.13 | — |
 
-God battery: total **14** = 7 untouched task-hidden + 5 overrides-in-place +
+Leader battery: total **14** = 7 untouched task-hidden + 5 overrides-in-place +
 **2 appended decimal extras** (`"2.5h"`→9000, `"0.5h"`→1800). Residual **11**,
 exclusions **3**.
 
@@ -50,7 +50,7 @@ canonical self-echo.
 **New residual — ordering happy-lift still unmeasured (verdict candidate #3,
 NOT discharged).** The three exclusions this run were `decimal-hours`,
 `repeat-units "30m30m"`, and `reversed-order "30m1h"` — all `leakedBy: ["warboss"]`.
-H-28 added God ordering rulings (`30m30m`→3600, `30m1h`→5400) precisely to
+H-28 added Leader ordering rulings (`30m30m`→3600, `30m1h`→5400) precisely to
 measure whether the loop lifts the happy path on repeat/reversed unit order. But
 the warboss author echoed **both** ordering inputs as its own examples, so both
 were excluded from the residual — the ordering rulings overrode the hidden cases
@@ -73,16 +73,16 @@ pair; see `reports/kickback-live-verdict.md`.
 ## Run metadata
 
 Run: 2026-06-14 · task `duration-parse` · N=30 sessions/source · granularity
-`full` · `deadRun: false`. God-answers: `tasks/duration-parse/god-answers.json`
+`full` · `deadRun: false`. Leader-answers: `tasks/duration-parse/leader-answers.json`
 (3 rulings: `"120"`→throws, `" 1h 30m "`→5400, `"1.5h"`→5400).
 
 - **Author arm:** HIGH (opus-4-8) — one rev-4 `decompose`, `maxRequirements: 1`,
-  God decisions rendered into `context` as **literal-free prose** (E4 rev 2 /
+  Leader decisions rendered into `context` as **literal-free prose** (E4 rev 2 /
   H-26). Authoring cost $0.056.
-- **Grinding arm:** LOW (haiku-4-5) — `runE2` over the God battery, both contract
+- **Grinding arm:** LOW (haiku-4-5) — `runE2` over the Leader battery, both contract
   sources, same loop. Grinding cost $0.196.
 
-God battery: 12 cases = 9 untouched task-hidden + 3 God rulings, each of which
+Leader battery: 12 cases = 9 untouched task-hidden + 3 Leader rulings, each of which
 **overrode an existing hidden case in place** (all three contested inputs were
 already in the hidden battery). Scored residual: **11** (one excluded, below).
 
@@ -90,7 +90,7 @@ already in the hidden battery). Scored residual: **11** (one excluded, below).
 
 | | human | warboss | threshold |
 | --- | --- | --- | --- |
-| meanFinalHiddenScore (God oracle) | 0.724 | **0.918** | warboss ≥ 0.652 → **PASS** |
+| meanFinalHiddenScore (Leader oracle) | 0.724 | **0.918** | warboss ≥ 0.652 → **PASS** |
 | meanHappyScore (8 cases) | 0.996 | 0.933 | — |
 | **meanErrorScore (3 cases)** | **0.000** | **0.878** | — |
 | greenRate | 1.00 | 1.00 | — |
@@ -100,11 +100,11 @@ already in the hidden battery). Scored residual: **11** (one excluded, below).
 
 Compare E2 (`reports/e2-verdict.md`, old fixed battery): warboss 0.667 < 0.700 =
 **FAIL**. Same loop, same grunt; the change is (a) the neutral oracle and (b) the
-re-author informed by God's answers.
+re-author informed by Leader's answers.
 
 ## Per-case scoring (residual, 30 sessions/source)
 
-| idx | case | God ruling | human | warboss |
+| idx | case | Leader ruling | human | warboss |
 | --- | --- | --- | --- | --- |
 | 4 | `bare-number-2` `"120"` | **throws** (was happy `120` in E2) | **0.00** | **1.00** |
 | 8 | `whitespace` `" 1h 30m "` | 5400 | 0.97 | 1.00 |
@@ -119,16 +119,16 @@ re-author informed by God's answers.
 
 1. **The error path is the whole story — and it is the kick-back loop's payoff.**
    The human `duration-parse` contract carries zero `throws` examples (the
-   Corollary-D hole E1b first measured). On the three God error cases the human
+   Corollary-D hole E1b first measured). On the three Leader error cases the human
    grunt scores 0.000 across the board — it never learned to reject. Warboss,
-   handed God's "this input is invalid" rulings, authored throws examples and its
+   handed Leader's "this input is invalid" rulings, authored throws examples and its
    grunt scores 0.878. This is exactly the sharp prediction E2 made and could not
    confirm (E2's battery was confounded); E4 confirms it on a neutral oracle.
 
 2. **`"120"` is the clean confound-removal datum.** In E2 the fixed battery
    encoded the human author's coin flip `"120" → 120` (treat as 120 seconds), and
-   warboss — which threw on bare numbers — *lost* that case 0/30. God independently
-   ruled `"120"` **invalid → throws**. On the God oracle the polarity flips:
+   warboss — which threw on bare numbers — *lost* that case 0/30. Leader independently
+   ruled `"120"` **invalid → throws**. On the Leader oracle the polarity flips:
    warboss 1.00, human 0.00. The E2 "loss" was never a warboss error; it was the
    battery scoring warboss against one human's arbitrary resolution. Replace the
    coin flip with the owner's ruling and the delegation bet wins the case.
@@ -153,7 +153,7 @@ re-author informed by God's answers.
    dwarfs the happy-path give-back (−0.063); net warboss > human.
 
 5. **Treatment asymmetry stands, and is the point.** Only the warboss arm
-   received God's answers; the human contract is frozen and never got a
+   received Leader's answers; the human contract is frozen and never got a
    kick-back. E4 measures the VALUE OF THE LOOP — machine authoring *with*
    escalation-and-answer vs human authoring *without* — not authoring talent in
    the abstract. A symmetric test is impossible (the human asset cannot be
@@ -178,11 +178,11 @@ oracle.** The delegation bet is won on the load-bearing experiment.
    path so the kick-back is a standing pipeline stage, not an experiment harness.
 2. **E4 rev 3 — decimal measurement** — `"1.5h"` was excluded by a coincidental
    warboss self-example. Options: forbid the author from using the exact ruling
-   input as an example (a render hint), or run a second God battery whose decimal
+   input as an example (a render hint), or run a second Leader battery whose decimal
    case uses a different fractional input (`"2.5h"`) so the prose ruling and the
    scored input differ. Either lets E4 score the decimal case it currently can't.
 3. **Owner happy-path coverage** — warboss's two happy dips (`30m30m`, `30m1h` at
-   0.77) suggest the re-author under-pins repeat/reversed unit ordering; a God
+   0.77) suggest the re-author under-pins repeat/reversed unit ordering; a Leader
    ruling on ordering semantics (or a denser author mandate there) would test
    whether the loop also lifts the happy path, not just the error path.
 4. **Multi-task replication** — E4 is one task (`duration-parse`). The loop's
@@ -206,11 +206,11 @@ authoring + grinding in one file).
 
 **Run:** `e4-20260615T141249Z.json` · re-author `runs/decompose-20260615T141316Z.json` · total **$0.606278** (authoring $0.073270 HIGH, grinding $0.533008 LOW). H-30 / e4 spec rev 4 / kickback spec rev 2.
 
-**Result: PASS — warboss 0.985 ≥ 0.900 × human 0.615 (threshold 0.554).** God battery total=14, residual=13, **exclusions = 1** (down from **3** in the rev-3 rerun).
+**Result: PASS — warboss 0.985 ≥ 0.900 × human 0.615 (threshold 0.554).** Leader battery total=14, residual=13, **exclusions = 1** (down from **3** in the rev-3 rerun).
 
 **The render-hint discharged candidate #3 (ordering happy-lift).** The literal-free `DECISION_DIVERSITY_HINT` (appended to the shared `renderDecisionBlock`) steered the warboss author off the obvious ordering inputs: the rev-3 rerun excluded BOTH `repeat-units "30m30m"` and `reversed-order "30m1h"` (author self-echo); this run excludes **neither** — both survive the residual and are scored. With ordering in-battery, warboss is 0.985 overall versus its earlier 0.77 dip on exactly those two cases. The dominant residual-erosion mechanism (self-echo, 3/3 last run) collapsed to 1/3.
 
-**The one residual exclusion is the decimal extra-case `"2.5h"`** (`god-2-extra-0`, `leakedBy: ["warboss"]`) — the author still coincidentally echoed one fractional input. **But the decimal CLASS stayed scored anyway**, exactly as rev-3 `extraCases` was designed: with `{1.5h, 2.5h, 0.5h}` all pinning the same ruling, one echo does not erase the class. This is the **hint (probabilistic) and extraCases (hard backstop) working together** — the hint removed two of three echoes, the backstop absorbed the third.
+**The one residual exclusion is the decimal extra-case `"2.5h"`** (`leader-2-extra-0`, `leakedBy: ["warboss"]`) — the author still coincidentally echoed one fractional input. **But the decimal CLASS stayed scored anyway**, exactly as rev-3 `extraCases` was designed: with `{1.5h, 2.5h, 0.5h}` all pinning the same ruling, one echo does not erase the class. This is the **hint (probabilistic) and extraCases (hard backstop) working together** — the hint removed two of three echoes, the backstop absorbed the third.
 
 **Reading the measurement.** The offline ACs (kickback AC10, e4 AC13) only proved the hint reaches the author prompt; this live rerun is the proof it *changes author behavior* — self-echo fell from 3 to 1. It remains probabilistic (a literal-free hint cannot name the inputs to avoid), so the residual `2.5h` echo is expected, not a regression; the `extraCases` redundancy is the guarantee, the hint is the global discipline that makes echoes rare.
 

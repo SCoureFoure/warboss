@@ -73,7 +73,7 @@ would have masked decimal; probe-only would have masked the two with consensus.
 ### E4 — closing the loop wins on a neutral oracle, and replicates
 
 The owner answers the escalations once; warboss re-authors with those decisions
-locked; re-run on a **neutral God-authored oracle** (not the confounded human
+locked; re-run on a **neutral Leader-authored oracle** (not the confounded human
 battery). Every datum:
 
 | Run | warboss | human | note |
@@ -83,9 +83,9 @@ battery). Every datum:
 | E4 rev-4 (ordering scored) | **0.985** | 0.615 | render-hint stopped both ordering self-echoes — exclusions 3→1 |
 | parse-range (2nd task) | **1.000** | 0.646 | replication: loop value is not task-specific |
 
-The driver is error coverage every time (human 0.000 on error-path God cases,
+The driver is error coverage every time (human 0.000 on error-path Leader cases,
 warboss 0.88–1.00). `"120"` is the clean confound-removal datum: E2 scored it
-warboss-0/human-30 against one human's coin flip; God independently ruled it
+warboss-0/human-30 against one human's coin flip; Leader independently ruled it
 invalid, flipping it to warboss-1.00/human-0.00. **The E2 "loss" was never a
 warboss error.** Production-wired live (`kickback-live-verdict.md`): a real
 escalating intent drained **9 → 3 escalations monotonically** through
@@ -107,7 +107,7 @@ end-to-end on a neutral oracle (E4), replicated and production-wired.**
    that stands.** The expensive model decides; the cheap model does not get to
    judge whether the decision is done.
 
-2. **E4 is a treatment-asymmetric test.** Only the warboss arm receives God's
+2. **E4 is a treatment-asymmetric test.** Only the warboss arm receives Leader's
    answers; the human contract is frozen and never kicked back. E4 measures **the
    value of the loop** (machine authoring *with* escalation-and-answer vs human
    authoring *without*), not "machines author better than humans." A symmetric

@@ -55,7 +55,7 @@
   escalation) — PASS robust, attribution not. Probe nonviable rate 4/8.
   **Leg 7 = the five follow-on items below (H-21…H-25), specced and queued
   2026-06-13.** Only H-21 (battery-authoring) carries live spend (~$0.15,
-  God-gated on the owner authoring `god-answers.json`); H-22…H-25 are offline.
+  Leader-gated on the owner authoring `leader-answers.json`); H-22…H-25 are offline.
 - **e3 rev-2 gap (H-20 fail-up):** the probe-prompt format
   `Implement: ${entry}${signature}` has no signature source — `loadTask`'s
   TaskDef carries none, and the per-requirement signature is author-arm
@@ -142,7 +142,7 @@ three funded live runs of 2026-06-11:**
     config A — where the hole is REAL — flags it only 2/20. Mirror pathology
     of gruntJudge (over-confident, 0 recall) vs deriveCheck (over-skeptical,
     low precision). **Cheap-judge gate line shelved by default (two FAILs);
-    probe stays mandatory.** Open option if God wants one more datum: MID-tier
+    probe stays mandatory.** Open option if Leader wants one more datum: MID-tier
     comparison (~$0.10) before burying it; rev-2 instrument ideas in the
     verdict (hole-level matrix metric, subtract-pinned-set prompt).
 - **decompose-run rev 2 gap list grew:** `--max-requirements` is a
@@ -158,7 +158,7 @@ three funded live runs of 2026-06-11:**
   cannot `git merge` (permission layer) — they sync via
   `git checkout main -- <paths>`; expect merge-identical, not fast-forward.
   H-12's grunt left an rtk shim at `C:\Users\SCora\bin\rtk` (outside repo) —
-  God may delete if unwanted.
+  Leader may delete if unwanted.
 
 ---
 
@@ -238,7 +238,7 @@ pair on a real escalating intent ~$0.20–0.30 → confirm re-author drains
 escalations; (2) e4 rev-3 rerun ~$0.15 → decimal now scorable + ordering
 happy-path lift → verdict; (3) parse-range E4 ~$0.15–0.25 → replication verdict
 (`reports/e4-parse-range-verdict.md`). Each waited on the owner authoring/answering
-by hand (the God-gate). Recurring lesson: agent worktrees branch from a STALE
+by hand (the Leader-gate). Recurring lesson: agent worktrees branch from a STALE
 session-start HEAD
 (`7a0ad09`), so each later item's grunt sees a low test count and must
 `git checkout main -- <predecessor files>`; the planner's 3-way merge still
@@ -297,13 +297,13 @@ before building. Rebase the rev-3 `extraCases` changes onto the promoted form.
 
 **Scope checklist:**
 
-- `src/experiment/e4.ts`: `GodRuling` gains optional `extraCases:
-  { input, expected, throws? }[]`; `loadGodAnswers` validates them + extends the
+- `src/experiment/e4.ts`: `LeaderRuling` gains optional `extraCases:
+  { input, expected, throws? }[]`; `loadLeaderAnswers` validates them + extends the
   self-leak guard to span canonical `input` AND every `extraCases` input + dedups
   inputs across a ruling's `input`+`extraCases` and across rulings;
-  `buildGodBattery` emits each extra case by the same override-or-append rule
+  `buildLeaderBattery` emits each extra case by the same override-or-append rule
   immediately after the canonical case.
-- `tasks/duration-parse/god-answers.json`: decimal ruling gains `extraCases`
+- `tasks/duration-parse/leader-answers.json`: decimal ruling gains `extraCases`
   (`2.5h`→9000, `0.5h`→1800); add two ordering rulings (`30m30m`→3600,
   `30m1h`→5400) with literal-free `decision`s.
 - `test/e4.test.ts`: AC11 (extraCases enter battery + decimal class survives a
@@ -317,7 +317,7 @@ before building. Rebase the rev-3 `extraCases` changes onto the promoted form.
   `decision` is rendered once, literal-free.
 - The decimal CLASS is scored when ≥1 of {canonical, extras} survives the
   residual; the author can echo at most one input.
-- Ordering rulings need NO new battery code — pure `buildGodBattery` override
+- Ordering rulings need NO new battery code — pure `buildLeaderBattery` override
   reuse (their inputs deep-equal existing `repeat-units`/`reversed-order` hidden
   cases).
 - npm eats `--flags` on Windows. Worktree grunts sync via `git checkout main --`.
@@ -327,14 +327,14 @@ before building. Rebase the rev-3 `extraCases` changes onto the promoted form.
 **Spec (frozen):** [multi-task-replication.spec.md](specs/multi-task-replication.spec.md) rev 1.
 **Worktree:** your assigned worktree only — never the main checkout (rule 4).
 **Dispatch order:** AFTER H-28 merges. FIRST step: `git checkout main --
-src/experiment/e4.ts tasks/duration-parse/god-answers.json` (H-28's
-`extraCases`-aware `loadGodAnswers`/`buildGodBattery`) and VERIFY the
-`extraCases` field exists on `GodRuling` before building. Rebase the
+src/experiment/e4.ts tasks/duration-parse/leader-answers.json` (H-28's
+`extraCases`-aware `loadLeaderAnswers`/`buildLeaderBattery`) and VERIFY the
+`extraCases` field exists on `LeaderRuling` before building. Rebase the
 `requiredInputs` change onto it.
 
 **Scope checklist:**
 
-- `src/experiment/e4.ts`: `loadGodAnswers` gains a `requiredInputs:
+- `src/experiment/e4.ts`: `loadLeaderAnswers` gains a `requiredInputs:
   readonly (readonly unknown[])[]` param (coverage check now driven by it, not a
   module constant); DELETE `E3_KNOWN_INPUTS`. `runE4` reads
   `tasks/<task>/contested.json` → passes `inputs` as `requiredInputs`; missing
@@ -345,7 +345,7 @@ src/experiment/e4.ts tasks/duration-parse/god-answers.json` (H-28's
 - `tasks/parse-range/*` (NEW — owner-gated authoring): `requirement.md`,
   `task.json` (entry `parseRange`, ≥2 examples incl. a `throws`, `armCSubset`),
   `hidden-battery.json` (happy + error split), `contested.json`,
-  `god-answers.json` (literal-free `decision` per contested input).
+  `leader-answers.json` (literal-free `decision` per contested input).
 - `test/e4.test.ts`: AC-MT1 (contested.json drives coverage; `E3_KNOWN_INPUTS`
   gone) + AC-MT2 (runE4 reads contested.json; missing → throw) + AC-MT3
   (parse-range loads + runs offline). Existing ACs re-run with contested.json
@@ -356,7 +356,7 @@ src/experiment/e4.ts tasks/duration-parse/god-answers.json` (H-28's
 - parse-range is the RECOMMENDED second task; the owner may substitute any pure,
   synchronous task with ≥3 contested inputs + a happy/error hidden split (spec
   Decisions). If the owner has not authored parse-range assets at build time, the
-  grunt builds the harness generalization (loadGodAnswers/runE4/contested.json +
+  grunt builds the harness generalization (loadLeaderAnswers/runE4/contested.json +
   duration-parse back-compat) and STUBS parse-range AC-MT3 as a fail-up note —
   the live replication run waits on owner authoring.
 - `loadTask`/`task.ts` is UNCHANGED — `contested.json` is read by e4, not loadTask.
@@ -372,8 +372,8 @@ live spend.** Frozen-spec scope bodies live in each spec + the Log table below._
 
 - **E4 RAN 2026-06-14 — PASS** ($0.252, artifact `runs/e4-20260614T144326Z.json`,
   verdict `reports/e4-verdict.md`, commit `391ecb3`). warboss **0.918** vs human
-  **0.724** on the neutral God oracle (E2 FAILed 0.667 on the old confounded
-  battery). Driver = error coverage (human 0.000, warboss 0.878 — God ruled the
+  **0.724** on the neutral Leader oracle (E2 FAILed 0.667 on the old confounded
+  battery). Driver = error coverage (human 0.000, warboss 0.878 — Leader ruled the
   inputs invalid, warboss authored throws). `"120"` flipped polarity vs E2
   (warboss 1.00 / human 0.00) = clean confound removal. `"1.5h"` excluded
   (warboss coincidentally echoed it as its own example — spec rev-2 prediction #3
@@ -381,7 +381,7 @@ live spend.** Frozen-spec scope bodies live in each spec + the Log table below._
   NEXT-leg candidates (verdict §Consequence): (1) production wiring
   escalations→owner-answer queue→re-author into live `decompose-run`; (2) E4 rev 3
   to score decimal (render-hint forbidding the author from echoing the ruling
-  input, or a 2nd God battery using `"2.5h"`); (3) owner happy-path ruling on
+  input, or a 2nd Leader battery using `"2.5h"`); (3) owner happy-path ruling on
   repeat/reversed unit ordering (warboss dips to 0.77 there); (4) multi-task
   replication.
 - **e3-needle-matcher rev-2 (spec defect, found by the H-25 grunt):** AC5 as
@@ -485,15 +485,15 @@ below. Per-item build outcomes recorded in the Log._
 | --- | --- | --- |
 | **H-31** · SYNTHESIS.md — whole-program verdict | `reports/SYNTHESIS.md`: thesis → E1→E4 evidence chain → 5 honest boundaries → correctness-per-dollar verdict → ~$3.305 program ledger (12 runs) | accepted 2026-06-15, offline/zero-spend, planner-written; **research arc CLOSED — bet settled in its favor on the tasks tested; the harness answered its question** |
 | **H-30** · e4 rev-4 render-hint — kill ordering self-echo | shared `renderDecisionBlock` appends literal-free `DECISION_DIVERSITY_HINT` after bullets when ≥1 decision (inherited by `renderOwnerDecisions`, no `runE4` change), kickback spec rev 2 AC10 + e4 spec rev 4 AC13 (`src/kickback.ts`) | accepted 2026-06-15, **297/297** offline + typecheck clean; planner-built (one-function change); **live rev-4 rerun PASS** ($0.606, `runs/e4-20260615T141249Z.json`): warboss 0.985 vs human 0.615, exclusions 3→1, both ordering self-echoes gone → **candidate #3 DISCHARGED**; lone residual exclusion = decimal extra `2.5h` but class stayed scored (extraCases backstop). **All four e4 §Consequence candidates discharged — chain closed. NEXT = H-31 SYNTHESIS.md** |
-| **H-29** · multi-task replication — contested.json + parse-range | `loadGodAnswers` parameterized on `requiredInputs` (`E3_KNOWN_INPUTS` deleted), `runE4` reads `tasks/<task>/contested.json` (throws if missing), `tasks/duration-parse/contested.json` back-compat, full `tasks/parse-range/` asset set (requirement/task/hidden/contested/god-answers), AC-MT1–AC-MT3 (`src/experiment/e4.ts`, `tasks/*`) | accepted 2026-06-14, **294/294** offline post-merge, typecheck clean; sonnet grunt; 1 deviation (parse-range `1-3,2-4`→`[1,2,3,4]` union/dedup fixture ruling — defensible owner call); stale-worktree base again → 3-way merge preserved H-27/H-28, two conflicts resolved by planner (`E3_KNOWN_INPUTS`-loop→`requiredInputs` in `e4.ts`; AC-MT tail-append in `e4.test.ts`); **Leg 8 production-wiring path COMPLETE offline — live runs pending owner gate** |
-| **H-28** · E4 rev 3 — extraCases + ordering rulings | `GodRuling.extraCases` (decimal class survives an author self-echo via 2.5h/0.5h), self-leak guard + dedup span extra inputs, `buildGodBattery` places extras after canonical, `god-answers.json` decimal extraCases + ordering rulings (30m30m/30m1h), AC11–AC12 (`src/experiment/e4.ts`, `tasks/duration-parse/god-answers.json`) | accepted 2026-06-14, **285/285** offline post-merge, typecheck clean; sonnet grunt; 1 deviation (appended extra-case name `god-<i>-extra-<ec>-<input>` — spec pinned only uniqueness); **stale-worktree-branch-point RECURRED** (worktree base `7a0ad09` pre-H-27; grunt saw 258, main 279) — 3-way merge preserved H-27 (missing files untouched on worktree side), one trivial comment-conflict in `e4.ts` resolved by planner; **NEXT = H-29 (multi-task)** |
+| **H-29** · multi-task replication — contested.json + parse-range | `loadLeaderAnswers` parameterized on `requiredInputs` (`E3_KNOWN_INPUTS` deleted), `runE4` reads `tasks/<task>/contested.json` (throws if missing), `tasks/duration-parse/contested.json` back-compat, full `tasks/parse-range/` asset set (requirement/task/hidden/contested/leader-answers), AC-MT1–AC-MT3 (`src/experiment/e4.ts`, `tasks/*`) | accepted 2026-06-14, **294/294** offline post-merge, typecheck clean; sonnet grunt; 1 deviation (parse-range `1-3,2-4`→`[1,2,3,4]` union/dedup fixture ruling — defensible owner call); stale-worktree base again → 3-way merge preserved H-27/H-28, two conflicts resolved by planner (`E3_KNOWN_INPUTS`-loop→`requiredInputs` in `e4.ts`; AC-MT tail-append in `e4.test.ts`); **Leg 8 production-wiring path COMPLETE offline — live runs pending owner gate** |
+| **H-28** · E4 rev 3 — extraCases + ordering rulings | `LeaderRuling.extraCases` (decimal class survives an author self-echo via 2.5h/0.5h), self-leak guard + dedup span extra inputs, `buildLeaderBattery` places extras after canonical, `leader-answers.json` decimal extraCases + ordering rulings (30m30m/30m1h), AC11–AC12 (`src/experiment/e4.ts`, `tasks/duration-parse/leader-answers.json`) | accepted 2026-06-14, **285/285** offline post-merge, typecheck clean; sonnet grunt; 1 deviation (appended extra-case name `leader-<i>-extra-<ec>-<input>` — spec pinned only uniqueness); **stale-worktree-branch-point RECURRED** (worktree base `7a0ad09` pre-H-27; grunt saw 258, main 279) — 3-way merge preserved H-27 (missing files untouched on worktree side), one trivial comment-conflict in `e4.ts` resolved by planner; **NEXT = H-29 (multi-task)** |
 | **H-27** · kick-back pipeline — production wiring | shared `src/kickback.ts` (`renderDecisionBlock` promoted from e4 + `OwnerAnswer`/`AnswerQueue` + `buildAnswerQueue` + `loadOwnerAnswers`), decompose-run phase-1 `answers-needed-<ts>.json` emit + phase-3 `--reauthor-from`/`--answers` re-author mode + `reauthorOf`/`answersPath` provenance, e4 `renderOwnerDecisions` factored onto `renderDecisionBlock` (byte-identical), AC1–AC9 | accepted 2026-06-14, **279/279** offline, typecheck clean; sonnet grunt worktree, zero deviations of substance (intent:"" placeholder in reauthor-mode parseCliArgs, overridden from source artifact); merge `--no-ff`; **NEXT = H-28 (e4 rev 3)** |
-| **H-26** · E4 rev 2 — prose-only decisions + shared ledger | literal-free `decision` rendering + self-leak guard + `runE2` `ledger?` (`src/experiment/e4.ts`, `e2.ts` rev 4, `god-answers.json`), AC3/AC7/AC8/AC9 | accepted 2026-06-14, 252/252 offline; grunt session-limited pre-commit → planner committed + fixed AC7-variant assertion (find excluded by `leakedBy`, not name: `"120"` overrides hidden `bare-number-2` in place); **unblocks the live E4 run** |
+| **H-26** · E4 rev 2 — prose-only decisions + shared ledger | literal-free `decision` rendering + self-leak guard + `runE2` `ledger?` (`src/experiment/e4.ts`, `e2.ts` rev 4, `leader-answers.json`), AC3/AC7/AC8/AC9 | accepted 2026-06-14, 252/252 offline; grunt session-limited pre-commit → planner committed + fixed AC7-variant assertion (find excluded by `leakedBy`, not name: `"120"` overrides hidden `bare-number-2` in place); **unblocks the live E4 run** |
 | **H-25** · E3 needle matcher rev 2 | tighten `E3_NEEDLES` to literals + unambiguous phrases, kill the decimal substring FP (`src/experiment/e3.ts`), AC1–AC5 | accepted 2026-06-13, 248/248; grunt caught a spec contradiction in AC5 (lists contain single-word needles) → fail-up reimplemented AC5 as dropped-tokens-absent → needle-matcher rev 2 candidate; AC4 pinned from verdict strings (`runs/` gitignored) |
 | **H-24** · intent-probe viability | `intentProbe` rev 3 — `noEntry`/`viable`/`nonviable` three-way split keyed on sandbox sentinel + scaffolded `PROBE_DEFAULT_SYSTEM` (`src/gate.ts`, `src/experiment/e3.ts`), AC1–AC6 | accepted 2026-06-13, 248/248; zero deviations; invariant `generated === noEntry+viable+nonviable` |
 | **H-23** · probe signature | optional task-asset `signature` → `TaskDef` → E3 probe prompt; closes the H-20 `signature=""` fail-up (`src/experiment/task.ts`, `e3.ts`, `task.json`), AC1–AC5 | accepted 2026-06-13, 248/248; `RawTask.signature` typed `unknown` for validation (intended) |
 | **H-22** · decompose-run rev 2 | jsonl cost sidecar, `--max-requirements` NaN/range guard, blessed deadRun-omit + CRLF readings (`src/experiment/decompose-run.ts`), AC7–AC9 | accepted 2026-06-13, 248/248; zero deviations/gaps |
-| **H-21** · E4 battery-authoring | God-answers re-author + neutral oracle battery + `runE2` `hiddenOverride` (`src/experiment/e4.ts`, `e2.ts` rev 3, `god-answers.json`), AC1–AC9 | accepted 2026-06-13, 248/248 offline; 2 deviations → e4 rev-2 (split cost-ledger: `runE2` owns its ledger; contested-input contamination masks the oracle — render owner decisions prose-only) |
+| **H-21** · E4 battery-authoring | Leader-answers re-author + neutral oracle battery + `runE2` `hiddenOverride` (`src/experiment/e4.ts`, `e2.ts` rev 3, `leader-answers.json`), AC1–AC9 | accepted 2026-06-13, 248/248 offline; 2 deviations → e4 rev-2 (split cost-ledger: `runE2` owns its ledger; contested-input contamination masks the oracle — render owner decisions prose-only) |
 | **H-20** · E3 intent-divergence runner | `runE3` + `evaluateE3Criterion` + pinned `E3_CANDIDATE_INPUTS`/`E3_NEEDLES` (`src/experiment/e3.ts`), AC1–AC8 | accepted 2026-06-12, 204/204; **live verdict DONE 2026-06-13 — E3 PASS $0.087** (`reports/e3-verdict.md`); spawned Leg 7 items H-21…H-25 (signature fail-up → H-23, nonviable 4/8 → H-24, needle FP → H-25) |
 | **H-19** · readiness-gate rev 2 — `intentProbe` | contract-free K-grunt pre-freeze divergence instrument (`src/gate.ts`), AC11–AC16 | accepted 2026-06-12, 185/185 at merge; zero deviations/gaps |
 | **H-18** · warboss-decomposition rev 4 | fiat-flagging `resolutions` + escalation channel + probe-only admission + prompt-injected req cap (`src/warboss.ts`, `src/experiment/decompose-run.ts`), AC1–AC17 | accepted 2026-06-12, 191/191 at merge; zero deviations/gaps; grunt correctly placed `resolutions` validation at stage 3 (AC12 ledger-count forces it) |

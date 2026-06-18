@@ -20,7 +20,7 @@ seconds."* — chosen as a known under-determined intent (bare-number / whitespa
 - **Phase-1 (decompose):** `--intent …` → 9 escalations →
   `runs/answers-needed-20260614T222745Z.json`. Artifact
   `runs/decompose-20260614T222745Z.json`. Cost $0.0589.
-- **God-gate:** owner authored all 9 `decision` fields by hand (6 fiat affirmed
+- **Leader-gate:** owner authored all 9 `decision` fields by hand (6 fiat affirmed
   the warboss-proposed resolutions; 3 intent-undecided were new rulings:
   leading-zeros/safe-int overflow, Error type/text, non-string coercion).
 - **Phase-3 (re-author):** `--reauthor-from … --answers …` → 3 escalations →

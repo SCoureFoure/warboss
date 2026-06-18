@@ -151,7 +151,7 @@ a dense contract collapses interpretation; here it can collapse it onto the
 3. **The admission gate missed both divergences.** `admit` passed this
    contract with **0 questions** (auditGaps 0), yet bare-number and whitespace
    are exactly the kick-back questions a working gate should have raised to
-   God. Third independent datum that the cheap-judge admission line is blind
+   Leader. Third independent datum that the cheap-judge admission line is blind
    (gruntJudge FAIL, deriveCheck FAIL, now admit-in-anger miss).
 4. **Loop economics held**: both sources green 1.00; warboss needed 1.70
    attempts vs 1.00 (34 examples are harder to satisfy) → 3.75× cost/green,

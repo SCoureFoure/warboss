@@ -2,7 +2,7 @@
  * decompose-run — live decomposition runner: intent → artifact.
  *
  * The thin CLI shell around `decompose` + `admit` (src/warboss.ts): takes
- * God's intent, drives the warboss pipeline once, and persists everything a
+ * Leader's intent, drives the warboss pipeline once, and persists everything a
  * human needs to judge the output. Orchestration only — ALL pipeline
  * semantics live in `specs/warboss-decomposition.spec.md`; this module never
  * re-validates or re-parses model output.

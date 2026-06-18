@@ -11,7 +11,7 @@
  * distinct fields.
  *
  * E2 does NOT author the warboss contract — that is `decompose`/`decompose-run`
- * (H-9/H-14), run off-band as a God-funded spend; its artifact is an INPUT here.
+ * (H-9/H-14), run off-band as a Leader-funded spend; its artifact is an INPUT here.
  * E2 keeps no loop logic of its own: `runLoop` + `judge` are reused verbatim.
  *
  * Spec: specs/e2-contract-authorship.spec.md (rev 2).

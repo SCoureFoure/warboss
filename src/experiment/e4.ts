@@ -1,11 +1,11 @@
 /**
- * E4 — battery authoring (close the kick-back loop: God answers, warboss
+ * E4 — battery authoring (close the kick-back loop: Leader answers, warboss
  * re-authors, re-run on a neutral oracle).
  *
- * God answers the E3 escalations once; those answers become:
+ * Leader answers the E3 escalations once; those answers become:
  *   (a) a neutral oracle battery (replacing the confounded human-coin-flip battery), and
  *   (b) locked decisions fed back into a warboss re-author.
- * Then E2 re-runs human-vs-re-authored-warboss against the God battery.
+ * Then E2 re-runs human-vs-re-authored-warboss against the Leader battery.
  *
  * Spec: specs/e4-battery-authoring.spec.md rev 2.
  */
@@ -29,13 +29,13 @@ const DEFAULT_TASKS_DIR = join(_thisDir, "..", "..", "tasks");
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
-export interface GodExtraCase {
+export interface LeaderExtraCase {
   readonly input: readonly unknown[];
   readonly expected: unknown;
   readonly throws?: true;
 }
 
-export interface GodRuling {
+export interface LeaderRuling {
   readonly input: readonly unknown[];
   readonly expected: unknown;
   readonly throws?: true;
@@ -44,13 +44,13 @@ export interface GodRuling {
   /** Rev 2: optional, never rendered into any prompt. May contain anything including input literals. */
   readonly rationale?: string;
   /** Rev 3: optional additional held-out battery cases exercising the SAME decided behavior with DIFFERENT inputs. Never rendered. */
-  readonly extraCases?: readonly GodExtraCase[];
+  readonly extraCases?: readonly LeaderExtraCase[];
 }
 
 export interface RunE4Options {
   client?: MessagesClient;   // fake for tests; omitted → real client
   task?: string;             // default "duration-parse"
-  godAnswers?: string;       // path to god-answers.json; default tasks/<task>/god-answers.json
+  leaderAnswers?: string;       // path to leader-answers.json; default tasks/<task>/leader-answers.json
   n?: number;                // default 30 per source (E2 default)
   granularity?: FeedbackArm; // default "full"
   out?: string;              // default "runs"
@@ -68,7 +68,7 @@ export interface E4Criterion {
 // ── Pure helpers (exported for unit tests AC1–AC5) ────────────────────────────
 
 /**
- * Load and validate the God-answers asset from `path`.
+ * Load and validate the Leader-answers asset from `path`.
  *
  * Throws a descriptive error if:
  * - File cannot be read or is not valid JSON
@@ -78,16 +78,16 @@ export interface E4Criterion {
  * `requiredInputs` defaults to [] (no coverage constraint).
  * Returns the rulings verbatim (throws ruling's expected is "<throws>").
  */
-export async function loadGodAnswers(
+export async function loadLeaderAnswers(
   path: string,
   requiredInputs: readonly (readonly unknown[])[] = [],
-): Promise<readonly GodRuling[]> {
+): Promise<readonly LeaderRuling[]> {
   let raw: string;
   try {
     raw = await readFile(path, "utf8");
   } catch (err) {
     throw new Error(
-      `loadGodAnswers: cannot read file at "${path}": ${(err as Error).message}`,
+      `loadLeaderAnswers: cannot read file at "${path}": ${(err as Error).message}`,
     );
   }
 
@@ -110,13 +110,13 @@ export async function loadGodAnswers(
     parsed = JSON.parse(raw) as typeof parsed;
   } catch (err) {
     throw new Error(
-      `loadGodAnswers: invalid JSON in "${path}": ${(err as Error).message}`,
+      `loadLeaderAnswers: invalid JSON in "${path}": ${(err as Error).message}`,
     );
   }
 
   if (!Array.isArray(parsed.rulings)) {
     throw new Error(
-      `loadGodAnswers: 'rulings' must be an array in "${path}"`,
+      `loadLeaderAnswers: 'rulings' must be an array in "${path}"`,
     );
   }
 
@@ -131,7 +131,7 @@ export async function loadGodAnswers(
     // Dedup canonical inputs across rulings
     if (seenAll.includes(key)) {
       throw new Error(
-        `loadGodAnswers: duplicate input tuple ${key} in "${path}"`,
+        `loadLeaderAnswers: duplicate input tuple ${key} in "${path}"`,
       );
     }
     seenAll.push(key);
@@ -140,7 +140,7 @@ export async function loadGodAnswers(
     // Rev 2: `decision` is REQUIRED and must be a string
     if (typeof r.decision !== "string") {
       throw new Error(
-        `loadGodAnswers: ruling ${key} is missing a required 'decision' string in "${path}"`,
+        `loadLeaderAnswers: ruling ${key} is missing a required 'decision' string in "${path}"`,
       );
     }
 
@@ -149,7 +149,7 @@ export async function loadGodAnswers(
       const needle = JSON.stringify(elem);
       if ((r.decision as string).includes(needle)) {
         throw new Error(
-          `loadGodAnswers: self-leak in ruling ${key}: 'decision' contains the input literal ${needle}. ` +
+          `loadLeaderAnswers: self-leak in ruling ${key}: 'decision' contains the input literal ${needle}. ` +
           `Move input literals to 'rationale' (which is never rendered) and rephrase 'decision' without the literal.`,
         );
       }
@@ -159,13 +159,13 @@ export async function loadGodAnswers(
     if (r.extraCases !== undefined) {
       if (!Array.isArray(r.extraCases)) {
         throw new Error(
-          `loadGodAnswers: ruling ${key} 'extraCases' must be an array in "${path}"`,
+          `loadLeaderAnswers: ruling ${key} 'extraCases' must be an array in "${path}"`,
         );
       }
       for (const ec of r.extraCases) {
         if (!Array.isArray(ec.input)) {
           throw new Error(
-            `loadGodAnswers: ruling ${key} has an extraCases entry with non-array 'input' in "${path}"`,
+            `loadLeaderAnswers: ruling ${key} has an extraCases entry with non-array 'input' in "${path}"`,
           );
         }
         const ecKey = JSON.stringify(ec.input);
@@ -173,7 +173,7 @@ export async function loadGodAnswers(
         // Dedup: extraCases input must not duplicate canonical or other extraCases or other rulings
         if (seenAll.includes(ecKey)) {
           throw new Error(
-            `loadGodAnswers: duplicate input tuple ${ecKey} (in extraCases of ruling ${key}) in "${path}"`,
+            `loadLeaderAnswers: duplicate input tuple ${ecKey} (in extraCases of ruling ${key}) in "${path}"`,
           );
         }
         seenAll.push(ecKey);
@@ -183,7 +183,7 @@ export async function loadGodAnswers(
           const needle = JSON.stringify(elem);
           if ((r.decision as string).includes(needle)) {
             throw new Error(
-              `loadGodAnswers: self-leak in ruling ${key}: 'decision' contains the extra-case input literal ${needle}. ` +
+              `loadLeaderAnswers: self-leak in ruling ${key}: 'decision' contains the extra-case input literal ${needle}. ` +
               `Rephrase 'decision' so it contains no input literals from canonical or extraCases inputs.`,
             );
           }
@@ -202,7 +202,7 @@ export async function loadGodAnswers(
   }
   if (missingKnowns.length > 0) {
     throw new Error(
-      `loadGodAnswers: asset must cover every required contested input; ` +
+      `loadLeaderAnswers: asset must cover every required contested input; ` +
       `missing: ${missingKnowns.join(", ")} in "${path}"`,
     );
   }
@@ -226,21 +226,21 @@ export async function loadGodAnswers(
 }
 
 /**
- * Build the God battery from the task's hidden cases and the God rulings.
+ * Build the Leader battery from the task's hidden cases and the Leader rulings.
  *
  * 1. Start from taskHidden (original order, mutable copy).
  * 2. For each ruling in asset order:
  *    - If ruling's input deep-equals an existing hidden case's input → REPLACE
- *      that case in place (same position, keep original name, God's expected/throws win,
+ *      that case in place (same position, keep original name, Leader's expected/throws win,
  *      coveredBy = []).
- *    - Otherwise → APPEND after the originals (god-<i>-<json-input> name).
+ *    - Otherwise → APPEND after the originals (leader-<i>-<json-input> name).
  * 3. Result name-uniqueness is asserted (throws if violated).
  *
  * Returns the resulting battery.
  */
-export function buildGodBattery(
+export function buildLeaderBattery(
   taskHidden: readonly HiddenCase[],
-  rulings: readonly GodRuling[],
+  rulings: readonly LeaderRuling[],
 ): readonly HiddenCase[] {
   function inputsEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
     if (a.length !== b.length) return false;
@@ -263,13 +263,13 @@ export function buildGodBattery(
     caseInput: readonly unknown[],
     caseExpected: unknown,
     caseThrows: true | undefined,
-    godName: string,
+    leaderName: string,
     insertAfterIdx: number,
   ): number {
     // Check for override
     for (let i = 0; i < result.length; i++) {
       if (inputsEqual(result[i]!.input as readonly unknown[], caseInput)) {
-        // Override in place: keep original name, God's expected/throws win, coveredBy = []
+        // Override in place: keep original name, Leader's expected/throws win, coveredBy = []
         const originalName = result[i]!.name;
         result[i] = {
           name: originalName,
@@ -283,7 +283,7 @@ export function buildGodBattery(
     }
     // Append immediately after insertAfterIdx (or at end if insertAfterIdx < 0)
     const newEntry: HiddenCase = {
-      name: godName,
+      name: leaderName,
       input: caseInput,
       expected: caseThrows === true ? "<throws>" : caseExpected,
       ...(caseThrows === true ? { throws: true as const } : {}),
@@ -295,16 +295,16 @@ export function buildGodBattery(
   }
 
   // Process rulings: override in place or append; then process extraCases immediately after
-  for (let godIndex = 0; godIndex < rulings.length; godIndex++) {
-    const ruling = rulings[godIndex]!;
-    const godName = `god-${godIndex}-${JSON.stringify(ruling.input)}`;
+  for (let leaderIndex = 0; leaderIndex < rulings.length; leaderIndex++) {
+    const ruling = rulings[leaderIndex]!;
+    const leaderName = `leader-${leaderIndex}-${JSON.stringify(ruling.input)}`;
 
     // Place canonical case
     const canonicalIdx = placeCase(
       ruling.input,
       ruling.expected,
       ruling.throws,
-      godName,
+      leaderName,
       result.length - 1,
     );
 
@@ -313,12 +313,12 @@ export function buildGodBattery(
     if (ruling.extraCases !== undefined) {
       for (let ecIndex = 0; ecIndex < ruling.extraCases.length; ecIndex++) {
         const ec = ruling.extraCases[ecIndex]!;
-        const ecGodName = `god-${godIndex}-extra-${ecIndex}-${JSON.stringify(ec.input)}`;
+        const ecLeaderName = `leader-${leaderIndex}-extra-${ecIndex}-${JSON.stringify(ec.input)}`;
         afterIdx = placeCase(
           ec.input,
           ec.expected,
           ec.throws,
-          ecGodName,
+          ecLeaderName,
           afterIdx,
         );
       }
@@ -330,7 +330,7 @@ export function buildGodBattery(
   for (const c of result) {
     if (nameSet.has(c.name)) {
       throw new Error(
-        `buildGodBattery: duplicate name "${c.name}" in result battery`,
+        `buildLeaderBattery: duplicate name "${c.name}" in result battery`,
       );
     }
     nameSet.add(c.name);
@@ -340,13 +340,13 @@ export function buildGodBattery(
 }
 
 /**
- * Compute God battery statistics for the artifact.
+ * Compute Leader battery statistics for the artifact.
  */
-function godBatteryStats(
+function leaderBatteryStats(
   taskHidden: readonly HiddenCase[],
-  rulings: readonly GodRuling[],
+  rulings: readonly LeaderRuling[],
   battery: readonly HiddenCase[],
-): { total: number; fromTask: number; fromGod: number; overridden: number } {
+): { total: number; fromTask: number; fromLeader: number; overridden: number } {
   function inputsEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
     if (a.length !== b.length) return false;
     for (let i = 0; i < a.length; i++) {
@@ -356,7 +356,7 @@ function godBatteryStats(
   }
 
   let overridden = 0;
-  let fromGodAppended = 0;
+  let fromLeaderAppended = 0;
 
   for (const ruling of rulings) {
     const matchesTask = taskHidden.some((c) =>
@@ -365,7 +365,7 @@ function godBatteryStats(
     if (matchesTask) {
       overridden++;
     } else {
-      fromGodAppended++;
+      fromLeaderAppended++;
     }
 
     // Rev 3: count extraCases contributions
@@ -377,7 +377,7 @@ function godBatteryStats(
         if (ecMatchesTask) {
           overridden++;
         } else {
-          fromGodAppended++;
+          fromLeaderAppended++;
         }
       }
     }
@@ -388,7 +388,7 @@ function godBatteryStats(
   return {
     total: battery.length,
     fromTask,
-    fromGod: fromGodAppended,
+    fromLeader: fromLeaderAppended,
     overridden,
   };
 }
@@ -411,9 +411,9 @@ function godBatteryStats(
  * of its own input (a self-leak is a hard error, never a silent exclusion).
  */
 export function renderOwnerDecisions(
-  rulings: readonly GodRuling[],
+  rulings: readonly LeaderRuling[],
 ): string {
-  // Self-leak guard (belt-and-braces — loadGodAnswers also checks, but we guard here too
+  // Self-leak guard (belt-and-braces — loadLeaderAnswers also checks, but we guard here too
   // so that test-injected rulings without going through the loader are also protected).
   // This guard is battery-specific and has no analogue in the battery-free live path.
   // Rev 3: guard spans canonical input AND every extraCases input.
@@ -453,19 +453,19 @@ export function renderOwnerDecisions(
 /**
  * Evaluate the E4 criterion.
  *
- * PASS iff warboss.meanFinalHiddenScore >= 0.90 × human.meanFinalHiddenScore (God battery residual).
+ * PASS iff warboss.meanFinalHiddenScore >= 0.90 × human.meanFinalHiddenScore (Leader battery residual).
  * Degenerate guard: human.meanFinalHiddenScore === 0 → pass: false, detail names the degenerate baseline.
- * detail always carries both means, 0.90 threshold, residualGodCaseCount, and exclusionCount.
+ * detail always carries both means, 0.90 threshold, residualLeaderCaseCount, and exclusionCount.
  */
 export function evaluateE4Criterion(
   human: FeedbackArmAnalysis,
   warboss: FeedbackArmAnalysis,
-  residualGodCaseCount: number,
+  residualLeaderCaseCount: number,
   exclusionCount: number,
 ): E4Criterion {
   const h = human.meanFinalHiddenScore;
   const w = warboss.meanFinalHiddenScore;
-  const residualDetail = `residualGodCases=${residualGodCaseCount} exclusions=${exclusionCount}`;
+  const residualDetail = `residualLeaderCases=${residualLeaderCaseCount} exclusions=${exclusionCount}`;
 
   if (h === 0) {
     return {
@@ -498,8 +498,8 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
 
   const task = loadTask(join(tasksDir, taskName));
 
-  const godAnswersPath =
-    opts.godAnswers ?? join(tasksDir, taskName, "god-answers.json");
+  const leaderAnswersPath =
+    opts.leaderAnswers ?? join(tasksDir, taskName, "leader-answers.json");
 
   // ── Load contested.json (required for E4-eligibility) ────────────────────
   const contestedPath = join(tasksDir, taskName, "contested.json");
@@ -514,12 +514,12 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
   const contestedParsed = JSON.parse(contestedRaw) as { inputs: readonly (readonly unknown[])[] };
   const requiredInputs: readonly (readonly unknown[])[] = contestedParsed.inputs;
 
-  // ── Load God answers ──────────────────────────────────────────────────────
-  const rulings = await loadGodAnswers(godAnswersPath, requiredInputs);
+  // ── Load Leader answers ──────────────────────────────────────────────────────
+  const rulings = await loadLeaderAnswers(leaderAnswersPath, requiredInputs);
 
-  // ── Build God battery ─────────────────────────────────────────────────────
-  const godBattery = buildGodBattery(task.hidden, rulings);
-  const godStats = godBatteryStats(task.hidden, rulings, godBattery);
+  // ── Build Leader battery ─────────────────────────────────────────────────────
+  const leaderBattery = buildLeaderBattery(task.hidden, rulings);
+  const leaderStats = leaderBatteryStats(task.hidden, rulings, leaderBattery);
 
   // ── Render owner-decision block (rev 2: prose-only, no entry param) ─────────
   const ownerDecisionBlock = renderOwnerDecisions(rulings);
@@ -584,7 +584,7 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
   // Reconstruct the warboss contract from the draftSet via the artifact shape
   const warbossContract = reconstructWarbossContract(reauthorArtifact);
 
-  // ── E2 re-run with God battery as hiddenOverride ──────────────────────────
+  // ── E2 re-run with Leader battery as hiddenOverride ──────────────────────────
   // Rev 2: pass the shared ledger so E2 does NOT open its own cost-ledger-*.jsonl sink.
   const e2Opts: RunE2Options = {
     ...(opts.client !== undefined ? { client: opts.client } : {}),
@@ -594,7 +594,7 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
     granularity,
     out: outDir,
     tasksDir,
-    hiddenOverride: godBattery,
+    hiddenOverride: leaderBattery,
     ledger,
     ...(opts.live !== undefined ? { live: opts.live } : {}),
   };
@@ -628,13 +628,13 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
     excluded: Array<{ name: string; leakedBy: string[] }>;
   };
 
-  const residualGodCaseCount = e2HiddenBattery.residualCount;
+  const residualLeaderCaseCount = e2HiddenBattery.residualCount;
   const exclusionCount = e2HiddenBattery.excluded.length;
 
   const e4Criterion = evaluateE4Criterion(
     e2Analysis.human,
     e2Analysis.warboss,
-    residualGodCaseCount,
+    residualLeaderCaseCount,
     exclusionCount,
   );
 
@@ -650,7 +650,7 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
   // Build E4 artifact
   const artifact = {
     config: { task: taskName, n, granularity },
-    godAnswersPath,
+    leaderAnswersPath,
     rulings: rulings.map((r) => ({
       input: r.input,
       expected: r.expected,
@@ -660,7 +660,7 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
       ...(r.extraCases !== undefined ? { extraCases: r.extraCases } : {}),
     })),
     reauthorArtifactPath,
-    godBattery: godStats,
+    leaderBattery: leaderStats,
     e2: e2Artifact,
     e4Criterion,
     authoringCostUsd,
@@ -679,8 +679,8 @@ export async function runE4(opts: RunE4Options = {}): Promise<RunE4Result> {
   // Console summary
   console.log(`\n=== E4 Results — ${taskName} (N=${n} per source) ===\n`);
   console.log(
-    `God battery: total=${godStats.total} fromTask=${godStats.fromTask} ` +
-    `fromGod=${godStats.fromGod} overridden=${godStats.overridden}`,
+    `Leader battery: total=${leaderStats.total} fromTask=${leaderStats.fromTask} ` +
+    `fromLeader=${leaderStats.fromLeader} overridden=${leaderStats.overridden}`,
   );
   console.log(`Re-author artifact: ${reauthorArtifactPath}`);
   console.log(
@@ -722,8 +722,8 @@ if (
       ? { granularity: getArg("--granularity")! as FeedbackArm }
       : {}),
     ...(getArg("--out") !== undefined ? { out: getArg("--out")! } : {}),
-    ...(getArg("--god-answers") !== undefined
-      ? { godAnswers: getArg("--god-answers")! }
+    ...(getArg("--leader-answers") !== undefined
+      ? { leaderAnswers: getArg("--leader-answers")! }
       : {}),
   };
 

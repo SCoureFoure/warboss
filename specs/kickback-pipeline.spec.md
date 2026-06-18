@@ -7,7 +7,7 @@
 > (`DECISION_DIVERSITY_HINT`). The E4 rev-3 rerun showed self-echo is the dominant
 > residual-erosion mechanism (3/3 exclusions): the warboss author coincidentally
 > chose a ruling's obvious input (`30m30m`, `30m1h`) as its own representative
-> example, so the residual filter excluded that exact God-battery case and the
+> example, so the residual filter excluded that exact Leader-battery case and the
 > ordering class went unscored. The hint steers the author toward a distinctive
 > representative, lowering the echo probability so the case survives the residual.
 > It is **global** (one change in the shared renderer, so E4 and the live path
@@ -34,7 +34,7 @@
 
 E4 proved offline that once the owner answers the author tier's escalations, a
 re-authored contract closes the gap (`reports/e4-verdict.md`, PASS). E4 did this
-inside the experiment runner with a God-answers asset and a scoring battery.
+inside the experiment runner with a Leader-answers asset and a scoring battery.
 **This spec wires the same loop into the live `decompose-run` path as a standing
 two-phase stage, with no scoring battery** (production freezes real contracts;
 there is no held-out oracle):
@@ -43,9 +43,9 @@ there is no held-out oracle):
    array, `runDecompose` writes an **owner-answer queue** file
    `answers-needed-<ts>.json` beside the decompose artifact: one stub per
    escalation, each with a blank `decision` for the owner to fill by hand.
-2. **Phase 2 — answer (God-gated, off-harness).** The owner hand-fills each
+2. **Phase 2 — answer (Leader-gated, off-harness).** The owner hand-fills each
    `decision` with a prose ruling. No model authors the answers — exactly the
-   E4 God-gate, now a standing manual step.
+   E4 Leader-gate, now a standing manual step.
 3. **Phase 3 — re-author.** `decompose-run` in `--reauthor-from <artifact>
    --answers <queue>` mode loads the original intent + context from the source
    artifact, appends the filled owner decisions as an owner-decided prose block
@@ -85,7 +85,7 @@ drift.
   same as today's `decompose-run` — only now the escalations have a structured
   answer path and a re-author that consumes it.
 - **Not automated answering.** Phase 2 is manual and off-harness by design
-  (the God-gate). The harness emits the queue and consumes the filled queue; it
+  (the Leader-gate). The harness emits the queue and consumes the filled queue; it
   never fills a `decision`.
 
 ### Shared module — `src/kickback.ts`

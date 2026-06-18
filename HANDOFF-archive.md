@@ -10,7 +10,7 @@
 
 ---
 
-## H-series leg 2 (2026-06-10, God-scoped): loop-core + readiness gate + Phase 4
+## H-series leg 2 (2026-06-10, Leader-scoped): loop-core + readiness gate + Phase 4
 
 > Context note as written: loop-core + readiness gate + Phase 4 (decomposition
 > + sandbox), plus the rev-3 instrument fix. Build order H-5 → H-6 → H-7 →
@@ -18,7 +18,7 @@
 > other). E1b harness already existed (built pre-r2, commit `98fc083`) with an
 > INLINE loop — its spec was amended to rev 2: loop semantics owned by
 > loop-core, `e1b.ts` refactored onto `runLoop` in H-6. Its live dispatch
-> stays a God spend decision.
+> stays a Leader spend decision.
 
 ### H-5 · E1a rev-3 rescore (C1 instrument fix) — `accepted`
 
@@ -157,7 +157,7 @@ X/failed/X sequence. Reopened as **H-10**.
 - Contamination audit: inputs only (same rationale as e1a's amended AC4); the
   probe battery is the "hidden" set here.
 - Do NOT build the calibration experiment (live, costs money) — it is
-  documented in the spec as a future God-gated run.
+  documented in the spec as a future Leader-gated run.
 - `convergenceProbe` with `k` generations: failed/no-code generations are
   non-survivors, not errors; only `probes: []` and hash mismatch throw.
 
@@ -266,7 +266,7 @@ network is not gated — both accepted.
   only-if-clean rule as H-7's concurrency helper).
 - Exactly ONE audit→amend round. If the amend leaves gaps, they go in
   `auditGaps` — no loops, no third roll.
-- No live run, no CLI in this item. First live decomposition is a God spend
+- No live run, no CLI in this item. First live decomposition is a Leader spend
   decision.
 
 **Report back (implementer → planner):**
@@ -383,7 +383,7 @@ Background, not normative: [reports/e1a-verdict.md](reports/e1a-verdict.md).
 - Existing artifacts in `runs/` are rev-1 evidence. Do not migrate, re-score,
   or delete them.
 - Do NOT run the live experiment. Offline green is the deliverable; the live
-  E1a-r2 dispatch (N=30×4, spends money) is a planner/God decision.
+  E1a-r2 dispatch (N=30×4, spends money) is a planner/Leader decision.
 - Match existing style: strict TS, `"type": "module"`, `.ts` import
   extensions, fake-client test pattern from `test/e1a.test.ts`.
 
@@ -485,7 +485,7 @@ implement first).
   expected values are in the spec table — trust the table over your own
   parse of the canon prose if they ever seem to disagree (they don't).
 - Do NOT run the live experiment (`npm run e1a` with a key). Offline green is
-  the deliverable; the live N=30 run is a planner/God decision (it spends money).
+  the deliverable; the live N=30 run is a planner/Leader decision (it spends money).
 - TypeScript is strict + `"type": "module"`, imports carry `.ts` extensions
   (tsx runtime) — match the existing style in `src/`.
 
@@ -561,7 +561,7 @@ satisfiable. Rulings on the two report items:
 ## Planner-built items (full log-entry text)
 
 - **H-11 · Entropy-reduction mandates (both layers)** — planner-built +
-  accepted 2026-06-10. God's ruling on the H-6 root cause: control the author
+  accepted 2026-06-10. Leader's ruling on the H-6 root cause: control the author
   tier, leave grunts simple machines. (1) Dev loop: `specs/README.md` Rules
   gain the authoring mandates — every normative sentence maps to an AC that
   fails when violated; two-readings sentences must be killed by an AC;
@@ -616,7 +616,7 @@ satisfiable. Rulings on the two report items:
 
 ---
 
-## H-series leg 3 (2026-06-11, God-funded): rev-3 gaps + live-run substrate
+## H-series leg 3 (2026-06-11, Leader-funded): rev-3 gaps + live-run substrate
 
 > Context note as written: warboss-decomposition rev 3 sentinel (H-12), the
 > two live-run CLIs (H-13 gate-calibration, H-14 decompose-run), dispatched
@@ -1033,7 +1033,7 @@ error path fully closed (warboss 1.000 vs human 0.000) — full reading in
 **Spec:** warboss-decomposition.spec.md rev 4. **Commit:** `86ea878` (merged `743419b`).
 
 The kick-back leg's author-tier half. Shipped: `Resolution` type + mandatory
-`resolutions` field on `RequirementDraft`; `DraftSet.escalations` (God-facing
+`resolutions` field on `RequirementDraft`; `DraftSet.escalations` (Leader-facing
 kick-back channel, fiat-first ordering); rev-4 `DECOMPOSE_SYSTEM`/`AUDIT_SYSTEM`
 strings; requirement cap injected into the decompose prompt (closes the H-14
 post-validation-only gap); audit gaps classified `intentDecides` (fail-closed:
@@ -1080,7 +1080,7 @@ pinned 12-input `E3_CANDIDATE_INPUTS`), pure exported `evaluateE3Criterion`
 match over `escalations` ONLY, auditGaps untouched; PASS iff all three knowns
 surfaced; `viable===0` degenerate guard), artifact + jsonl sidecar + dead-run
 guard, split authoring/probing costs. `E3_CANDIDATE_INPUTS`/`E3_NEEDLES` copied
-verbatim (pre-registered). AC1–AC8, offline. Live verdict run God-gated (~$0.20).
+verbatim (pre-registered). AC1–AC8, offline. Live verdict run Leader-gated (~$0.20).
 
 **Report:** zero deviations; ONE fail-up gap (textbook): the probe-prompt format
 `Implement: ${entry}${signature}` has no signature source (TaskDef carries none;

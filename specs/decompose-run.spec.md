@@ -1,7 +1,7 @@
 # Spec — decompose-run (live decomposition runner: intent → artifact)
 
-> Status: active · rev 2 · Feature: decompose-run · Added: 2026-06-11 · Rev 2: 2026-06-13 · Maps to: PLAN Phase 4 integration ("first live decomposition", God-funded 2026-06-11)
-> The thin CLI shell around `decompose` + `admit`: takes God's intent, drives
+> Status: active · rev 2 · Feature: decompose-run · Added: 2026-06-11 · Rev 2: 2026-06-13 · Maps to: PLAN Phase 4 integration ("first live decomposition", Leader-funded 2026-06-11)
+> The thin CLI shell around `decompose` + `admit`: takes Leader's intent, drives
 > the warboss pipeline once, and persists everything a human needs to judge
 > the output. Orchestration only — ALL pipeline semantics live in
 > `specs/warboss-decomposition.spec.md` (rev 4) and are not restated here.
@@ -172,7 +172,7 @@ fake client.
 ## Verifies-with
 
 - Tests: `test/decompose-run.test.ts` — AC1–AC9, offline.
-- Integration: first live decomposition (HIGH tier, God-funded 2026-06-11)
+- Integration: first live decomposition (HIGH tier, Leader-funded 2026-06-11)
   against a real intent chosen at run time; artifact kept under `runs/`,
   reviewed against the E2 quality bar before any admitted contract is
   dispatched to a grunt.

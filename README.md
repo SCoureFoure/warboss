@@ -56,8 +56,8 @@ ever spent in the top band; everything below the membrane runs cheap.
   │             │            error-       │  probe                       │
   │             │            coverage     │  agrees?                     │
   │             ▼            mandate       ▼                              │
-  │      underdetermined?              NOT-READY ─▶ kick back to God      │
-  │      escalate to God ──────────────────────────▶ (answer + re-author)│
+  │      underdetermined?              NOT-READY ─▶ kick back to Leader      │
+  │      escalate to Leader ──────────────────────────▶ (answer + re-author)│
   └────────────────────────────────────┬─────────────────────────────────┘
                                         │  frozen contract crosses the membrane
   ┌─ DO (cheapest viable model, metered) ▼ ─────────────────────────────┐
@@ -86,11 +86,11 @@ Two facts make this honest rather than hopeful:
 The roles borrow orc lore, but the structure is doing real work.
 
 ```text
-GOD (you) ─▶ WARBOSS ─▶ WARCHIEF ─▶ SERGEANT ─▶ GRUNT
+LEADER (you) ─▶ WARBOSS ─▶ WARCHIEF ─▶ SERGEANT ─▶ GRUNT
   decide      author      carry       dispatch    do
 ```
 
-- **You are God.** You speak only to your chosen champions — never to the horde.
+- **You are Leader.** You speak only to your chosen champions — never to the horde.
 - A **Warboss** interprets your goal and sets the contract. It never touches a
   grunt.
 - **Warchiefs / Sergeants** carry frozen slices down the chain and dispatch the
@@ -167,9 +167,9 @@ criterion and a real (small) live spend. Full detail in [duh_plan.md](duh_plan.m
         BEFORE freezing (instead of guessing)?                ambiguities surfaced
                                                               pre-freeze ($0.087).
   ────────────────────────────────────────────────────────────────────────────
-  E4    Close the loop: God answers the escalations →       ✅ PASS  warboss 0.918
+  E4    Close the loop: Leader answers the escalations →       ✅ PASS  warboss 0.918
         warboss re-authors → re-run on a NEUTRAL oracle.      vs human 0.724 on a
-                                                              neutral God battery
+                                                              neutral Leader battery
                                                               ($0.252).
   ────────────────────────────────────────────────────────────────────────────
         E1 ─▶ E2 ─▶ E3 ─▶ E4 chain CLOSED.

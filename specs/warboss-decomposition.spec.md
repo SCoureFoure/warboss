@@ -1,8 +1,8 @@
 # Spec — warboss-decomposition (intent → requirements → frozen contracts)
 
-> Status: active · **rev 4** (2026-06-12: underdetermined-semantics kick-back, driven by the E2 measurement `reports/e2-verdict.md` — (1) fiat-flagging: every requirement carries a `resolutions` array naming each semantic choice and whether the intent forced it (`basis: "intent"`) or the warboss chose by fiat (`basis: "fiat"`); fiat entries escalate to God; (2) audit gaps are classified `intentDecides: true|false` — intent-undecided gaps are NEVER self-amended, they escalate; (3) `admit` drops the introspective `gruntJudge` from the decision path (three calibration FAILs: `reports/gate-calibration-verdict.md`, `reports/derive-calibration-verdict.md`, E2 admit-in-anger 0-questions miss) — the convergence probe is the only admission instrument, fail-closed when no battery; (4) `maxRequirements` is injected into the decompose prompt, closing the H-14 gap where the cap was post-validation only) · rev 3 2026-06-11: H-9 gaps closed — audit double parse-failure pinned to sentinel (was silent fail-open), `auditGaps` entry format pinned, audit prompt cosmetic fixed to match code; AC10/AC11 added · rev 2 2026-06-10: entropy-reduction mandates in `DECOMPOSE_SYSTEM` · Feature: warboss-decomposition · Added: 2026-06-10 · Maps to: PLAN Phase 4 (warboss decomposition) + E2 substrate
+> Status: active · **rev 4** (2026-06-12: underdetermined-semantics kick-back, driven by the E2 measurement `reports/e2-verdict.md` — (1) fiat-flagging: every requirement carries a `resolutions` array naming each semantic choice and whether the intent forced it (`basis: "intent"`) or the warboss chose by fiat (`basis: "fiat"`); fiat entries escalate to Leader; (2) audit gaps are classified `intentDecides: true|false` — intent-undecided gaps are NEVER self-amended, they escalate; (3) `admit` drops the introspective `gruntJudge` from the decision path (three calibration FAILs: `reports/gate-calibration-verdict.md`, `reports/derive-calibration-verdict.md`, E2 admit-in-anger 0-questions miss) — the convergence probe is the only admission instrument, fail-closed when no battery; (4) `maxRequirements` is injected into the decompose prompt, closing the H-14 gap where the cap was post-validation only) · rev 3 2026-06-11: H-9 gaps closed — audit double parse-failure pinned to sentinel (was silent fail-open), `auditGaps` entry format pinned, audit prompt cosmetic fixed to match code; AC10/AC11 added · rev 2 2026-06-10: entropy-reduction mandates in `DECOMPOSE_SYSTEM` · Feature: warboss-decomposition · Added: 2026-06-10 · Maps to: PLAN Phase 4 (warboss decomposition) + E2 substrate
 > Source of truth for the machine that manufactures the membrane: a HIGH-tier
-> warboss takes God's intent and emits requirements, each carrying acceptance
+> warboss takes Leader's intent and emits requirements, each carrying acceptance
 > examples (AHN bootstrap rule), each frozen into an executable contract, each
 > admitted or kicked back by the readiness gate before any grunt sees it.
 > **This is where the thesis most plausibly dies** (a warboss that writes
@@ -23,7 +23,7 @@ each requirement into a contract; run a model self-audit pass that names
 behaviors the examples fail to pin AND classifies each gap by whether the
 intent decides it — intent-decided gaps are amended once, intent-undecided
 gaps are escalated, never self-amended; surface every fiat resolution and
-every escalated gap in `DraftSet.escalations` as God-facing kick-back
+every escalated gap in `DraftSet.escalations` as Leader-facing kick-back
 questions; and partition the frozen contracts through the convergence probe
 into admitted contracts and kicked-back contracts with their disagreement
 questions (fail-closed when a contract has no probe battery). Every model
@@ -82,7 +82,7 @@ src/warboss.ts:
 
   interface DecomposeOptions {
     agent: Agent;                  // HIGH tier by policy (caller passes it)
-    intent: string;                // God's goal, prose
+    intent: string;                // Leader's goal, prose
     context?: string;              // optional constraints (stack, environment)
     maxRequirements?: number;      // default 8; more → reject (decompose further up, not wider here)
     tags?: Record<string, string | number>;
@@ -112,7 +112,7 @@ src/warboss.ts:
                                          // the audit-unavailable sentinel (see stage 4) — its
                                          // "id" is `<audit-unavailable>`, which cannot collide
                                          // with kebab-case requirement ids.
-    escalations: readonly string[];      // rev 4: God-facing kick-back questions. Two sources,
+    escalations: readonly string[];      // rev 4: Leader-facing kick-back questions. Two sources,
                                          // exact formats pinned (see "Escalations"):
                                          //   fiat resolution → `${id}: fiat — ${point} → ${chosen}`
                                          //   intent-undecided audit gap → `${id}: intent-undecided — ${gap}`
@@ -207,7 +207,7 @@ src/warboss.ts:
      `${id}: intent-undecided — ${gap}`. Rationale: amending an
      intent-undecided gap means the warboss invents the resolution — exactly
      the silent fiat that produced both E2 happy-path losses. The question
-     goes up the chain; only God (or a rank with intent authority) may
+     goes up the chain; only Leader (or a rank with intent authority) may
      resolve it.
    One HIGH-tier call (`kind: "warboss.amend"`): the drafts + the AMENDABLE
    gap list only (capture-assertable — no intent-undecided gap text may
@@ -224,7 +224,7 @@ src/warboss.ts:
    with identical requirement/entry/version/examples).
    `DraftSet.costUsd` = sum of all calls in stages 1–5.
 
-### Escalations (rev 4 — the God-facing kick-back channel)
+### Escalations (rev 4 — the Leader-facing kick-back channel)
 
 `DraftSet.escalations` is the up-the-pyramid output: the list of questions
 this decomposition could not decide without inventing intent. Pinned rules:
@@ -237,7 +237,7 @@ this decomposition could not decide without inventing intent. Pinned rules:
   then intent-undecided entries in audit-output order.
 - **Escalations do NOT block freezing.** Contracts freeze with the fiat
   choices their examples pin — a downstream consumer (E3, a future sergeant
-  layer, God) decides whether an escalated contract may dispatch or must be
+  layer, Leader) decides whether an escalated contract may dispatch or must be
   re-authored with a ruling. The decomposition's job is to SURFACE, not to
   stall (mirrors the rev-3 audit-sentinel philosophy: surface the unknown,
   keep the artifact usable).
@@ -281,7 +281,7 @@ this decomposition could not decide without inventing intent. Pinned rules:
   leg AFTER E3 validates the instrument).
 - No multi-round audit convergence (one round, bounded, gaps surfaced).
 - No resolution of escalations (this module surfaces them; resolving them is
-  a God/intent-authority act that produces a NEW intent for a fresh
+  a Leader/intent-authority act that produces a NEW intent for a fresh
   decompose — never an in-place edit).
 - E2 itself (the human-vs-warboss contract quality experiment) is a separate
   spec when funded; this module is its substrate.
@@ -379,7 +379,7 @@ this decomposition could not decide without inventing intent. Pinned rules:
   mandatory) and AC7/AC8 fixtures change from judge scripts to probe
   scripts — these are spec-driven test amendments, not drive-by edits.
 - Integration: first live rev-4 decomposition = the E3 authoring run
-  (`specs/e3-intent-divergence.spec.md`), HIGH tier, God-gated; artifact
+  (`specs/e3-intent-divergence.spec.md`), HIGH tier, Leader-gated; artifact
   kept under `runs/`.
 - Falsifies / experiment link: **E3** (`specs/e3-intent-divergence.spec.md`)
   — pre-registered: rev-4 fiat-flagging/escalation must surface the known

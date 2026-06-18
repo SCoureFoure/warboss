@@ -67,7 +67,7 @@ offline via the injected fake client.
 - E2 measures the **comparison**: two contract sources driving the identical
   product loop. It does **not** author the warboss contract itself — authoring
   is `decompose`/`decompose-run` (already built, H-9/H-14), run off-band as a
-  God-funded live spend; its artifact is an *input* to E2. This keeps authoring
+  Leader-funded live spend; its artifact is an *input* to E2. This keeps authoring
   (HIGH tier) and measurement (LOW tier grinding) on separate ledgers and lets
   the offline test inject a fixture contract without driving the warboss model.
 - Rationale for the split (reuse, don't rebuild): the warboss pipeline is a
@@ -444,7 +444,7 @@ test/e2.test.ts         AC1–AC13 (offline, fake MessagesClient + fixture artif
 
 - Tests: `test/e2.test.ts` — AC1–AC13, offline, fake `MessagesClient` + a small
   fixture decompose artifact (written by the test into a temp `out` dir).
-- Integration (live, God-gated — rev 2 needs ONE spend, the authoring artifact
+- Integration (live, Leader-gated — rev 2 needs ONE spend, the authoring artifact
   already exists):
   1. ~~decompose-run~~ DONE 2026-06-12: `runs/decompose-20260612T132205Z.json`
      ($0.1632, 1 requirement, 34 examples / 22 throws, admitted, auditGaps 0).

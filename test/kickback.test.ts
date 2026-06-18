@@ -12,7 +12,7 @@ import {
   type AnswerQueue,
 } from "../src/kickback.ts";
 import { renderOwnerDecisions } from "../src/experiment/e4.ts";
-import type { GodRuling } from "../src/experiment/e4.ts";
+import type { LeaderRuling } from "../src/experiment/e4.ts";
 
 // ── AC1: renderDecisionBlock format + E4 parity ───────────────────────────────
 
@@ -55,7 +55,7 @@ test("AC1 renderDecisionBlock([]) — header lines only, no bullet", () => {
 
 test("AC1 E4 parity — renderDecisionBlock output equals renderOwnerDecisions for same three decisions", () => {
   // Three rulings whose decision strings match what E4 tests use
-  const rulings: GodRuling[] = [
+  const rulings: LeaderRuling[] = [
     {
       input: ["120"],
       expected: "<throws>",

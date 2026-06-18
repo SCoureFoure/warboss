@@ -1,6 +1,6 @@
 # Spec — gate-calibration (READY-rate vs r2 modal-share anchors)
 
-> Status: active · rev 1 · Feature: gate-calibration · Added: 2026-06-11 · Maps to: readiness-gate spec "Calibration protocol" (`specs/readiness-gate.spec.md` lines 111–120, recorded there 2026-06-10, God-funded 2026-06-11)
+> Status: active · rev 1 · Feature: gate-calibration · Added: 2026-06-11 · Maps to: readiness-gate spec "Calibration protocol" (`specs/readiness-gate.spec.md` lines 111–120, recorded there 2026-06-10, Leader-funded 2026-06-11)
 > Builds the runner for the open question the gate instrument exists to
 > answer: does LOW-tier `gruntJudge` READY correlate with E1a-r2 modal share,
 > or does it over-claim? Depends on: `specs/readiness-gate.spec.md`
@@ -101,5 +101,5 @@ pinned r2 modal-share anchors. Offline test path via injected fake client.
 
 - Tests: `test/calibrate-gate.test.ts` — AC1–AC5, offline.
 - Integration: `npm run calibrate-gate` live (≈60 LOW-tier judge calls,
-  God-funded 2026-06-11); artifact under `runs/`, read against the
+  Leader-funded 2026-06-11); artifact under `runs/`, read against the
   readiness-gate spec's "useful signal" paragraph.

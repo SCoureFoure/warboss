@@ -86,7 +86,7 @@ Three rules ride on this and must never be broken:
   `admit()` (probe-only). rev-4 concepts: every requirement MUST carry a
   `resolutions[]` array flagging each chosen-but-undecided behavior as
   `intent|fiat`; `fiat` choices and intent-undecided audit gaps become
-  **escalations** (God-facing kick-back questions). Error-behavior example
+  **escalations** (Leader-facing kick-back questions). Error-behavior example
   (`throws`) is mandatory per requirement.
 - **`kickback.ts`** — production kick-back wiring: `renderDecisionBlock`,
   `buildAnswerQueue`, `loadOwnerAnswers`. Pure/offline. Turns escalations into an
@@ -98,7 +98,7 @@ Three rules ride on this and must never be broken:
 
 ## The horde (comms topology)
 
-`GOD → WARBOSS → WARCHIEF → SERGEANT → GRUNT`. Each rank talks **only to its
+`LEADER → WARBOSS → WARCHIEF → SERGEANT → GRUNT`. Each rank talks **only to its
 neighbor** (noise isolation — a bad reading can't skip a layer). Ranks absorb
 entropy by *decomposing* for the rank below, not by being the one that finally
 satisfies a dense contract. Rank ≠ tier.
@@ -143,7 +143,7 @@ agent files. The mapping:
 | hidden battery | tests the doer **does not** run (it has no Bash) — you judge with them |
 | judge → feedback → retry | you run the verify command; on red, re-dispatch the doer with the failure output |
 | residual-entropy → tier | the rung (and its model) you pick from `tiers.json` for each slice |
-| escalate fiat to God | ambiguity you can't resolve from code/spec → ask the user, never guess |
+| escalate fiat to Leader | ambiguity you can't resolve from code/spec → ask the user, never guess |
 
 **The loop, when a task is decided enough to delegate** (run `/warboss-horde:delegate`):
 

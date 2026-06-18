@@ -13,12 +13,12 @@ import type { HiddenCase } from "../src/experiment/task.ts";
 import type { FeedbackArmAnalysis } from "../src/experiment/e1b.ts";
 import type { DecomposeArtifact } from "../src/experiment/decompose-run.ts";
 import {
-  loadGodAnswers,
-  buildGodBattery,
+  loadLeaderAnswers,
+  buildLeaderBattery,
   renderOwnerDecisions,
   evaluateE4Criterion,
   runE4,
-  type GodRuling,
+  type LeaderRuling,
   type RunE4Result,
 } from "../src/experiment/e4.ts";
 
@@ -27,8 +27,8 @@ const TASKS_DIR = join(_thisDir, "..", "tasks");
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-/** A valid god-answers.json covering all three E3 knowns (rev 2: includes decision fields) */
-const VALID_GOD_ANSWERS = JSON.stringify({
+/** A valid leader-answers.json covering all three E3 knowns (rev 2: includes decision fields) */
+const VALID_LEADER_ANSWERS = JSON.stringify({
   task: "duration-parse",
   answeredAgainstArtifact: "e3-fixture",
   rulings: [
@@ -78,7 +78,7 @@ const VALID_1REQ_FENCED = "```json\n" + VALID_1REQ_JSON + "\n```";
 const EMPTY_GAPS_FENCED = "```json\n[]\n```";
 
 // A correct parseDuration implementation that passes the contamination-clean hidden cases.
-// It avoids the three God-override inputs (120, " 1h 30m ", 1.5h) in examples,
+// It avoids the three Leader-override inputs (120, " 1h 30m ", 1.5h) in examples,
 // but passes the residual cases.
 const CORRECT_IMPL = `
 function parseDuration(s) {
@@ -173,21 +173,21 @@ function e4Responses(n: number, extraResponses: string[] = []): string[] {
   ];
 }
 
-// ── Helper: write god-answers fixture and return path ─────────────────────────
+// ── Helper: write leader-answers fixture and return path ─────────────────────────
 
-async function writeGodAnswers(dir: string, content = VALID_GOD_ANSWERS): Promise<string> {
-  const path = join(dir, "god-answers.json");
+async function writeLeaderAnswers(dir: string, content = VALID_LEADER_ANSWERS): Promise<string> {
+  const path = join(dir, "leader-answers.json");
   await writeFile(path, content);
   return path;
 }
 
-// ── AC1: god-answers loader ───────────────────────────────────────────────────
+// ── AC1: leader-answers loader ───────────────────────────────────────────────────
 
-test("AC1 loadGodAnswers — valid asset covering three E3 knowns → returns rulings verbatim", async () => {
+test("AC1 loadLeaderAnswers — valid asset covering three E3 knowns → returns rulings verbatim", async () => {
   const dir = await mkdtemp(join(tmpdir(), "e4-ac1-"));
-  const path = await writeGodAnswers(dir);
+  const path = await writeLeaderAnswers(dir);
 
-  const rulings = await loadGodAnswers(path);
+  const rulings = await loadLeaderAnswers(path);
 
   assert.equal(rulings.length, 3, "three rulings loaded");
 
@@ -225,11 +225,11 @@ test("AC1 variant: asset missing '1.5h' → descriptive throw naming the missing
       // missing: ["1.5h"]
     ],
   });
-  const path = await writeGodAnswers(dir, missing);
+  const path = await writeLeaderAnswers(dir, missing);
 
-  // Pass requiredInputs explicitly so coverage check runs (H-29: loadGodAnswers now takes requiredInputs param)
+  // Pass requiredInputs explicitly so coverage check runs (H-29: loadLeaderAnswers now takes requiredInputs param)
   await assert.rejects(
-    loadGodAnswers(path, [["120"], [" 1h 30m "], ["1.5h"]]),
+    loadLeaderAnswers(path, [["120"], [" 1h 30m "], ["1.5h"]]),
     /1\.5h|missing/i,
   );
 });
@@ -245,17 +245,17 @@ test("AC1 variant: duplicate input tuple → descriptive throw", async () => {
       { input: ["1.5h"], expected: 5400, decision: "A fractional quantity before a unit is accepted.", rationale: "d" },
     ],
   });
-  const path = await writeGodAnswers(dir, dup);
+  const path = await writeLeaderAnswers(dir, dup);
 
   await assert.rejects(
-    loadGodAnswers(path),
+    loadLeaderAnswers(path),
     /duplicate/i,
   );
 });
 
-// ── AC2: God battery override + append ───────────────────────────────────────
+// ── AC2: Leader battery override + append ───────────────────────────────────────
 
-test("AC2 buildGodBattery — override replaces in place, novel ruling appended; coveredBy=[]; names unique", () => {
+test("AC2 buildLeaderBattery — override replaces in place, novel ruling appended; coveredBy=[]; names unique", () => {
   // Use a synthetic hidden battery where one case matches a ruling input
   const taskHidden: HiddenCase[] = [
     { name: "happy-a", input: ["2h"], expected: 7200, coveredBy: ["basic-hm"] },
@@ -264,7 +264,7 @@ test("AC2 buildGodBattery — override replaces in place, novel ruling appended;
     { name: "error-a", input: ["-1h"], expected: "<throws>", throws: true, coveredBy: [] },
   ];
 
-  const rulings: GodRuling[] = [
+  const rulings: LeaderRuling[] = [
     {
       input: ["120"],          // matches "match-me" → override in place
       expected: "<throws>",
@@ -280,15 +280,15 @@ test("AC2 buildGodBattery — override replaces in place, novel ruling appended;
     },
   ];
 
-  const battery = buildGodBattery(taskHidden, rulings);
+  const battery = buildLeaderBattery(taskHidden, rulings);
 
   // Total = 4 original + 1 appended = 5
-  assert.equal(battery.length, 5, "4 task cases + 1 appended God case = 5");
+  assert.equal(battery.length, 5, "4 task cases + 1 appended Leader case = 5");
 
   // Override: "match-me" replaced in place at index 2
   const overridden = battery[2]!;
   assert.equal(overridden.name, "match-me", "override keeps original name");
-  assert.equal(overridden.throws, true, "God's throws wins");
+  assert.equal(overridden.throws, true, "Leader's throws wins");
   assert.deepEqual([...overridden.coveredBy], [], "coveredBy = []");
 
   // Original cases at positions 0, 1, 3 unchanged (except their coveredBy may vary)
@@ -296,9 +296,9 @@ test("AC2 buildGodBattery — override replaces in place, novel ruling appended;
   assert.equal(battery[1]!.name, "happy-b");
   assert.equal(battery[3]!.name, "error-a");
 
-  // Appended God case at position 4
+  // Appended Leader case at position 4
   const appended = battery[4]!;
-  assert.ok(appended.name.startsWith("god-"), `appended name starts with 'god-': ${appended.name}`);
+  assert.ok(appended.name.startsWith("leader-"), `appended name starts with 'leader-': ${appended.name}`);
   assert.deepEqual([...appended.input], ["1.5h"], "appended input is ['1.5h']");
   assert.equal(appended.expected, 5400, "appended expected is 5400");
   assert.equal(appended.throws, undefined, "appended case is not throwing");
@@ -315,13 +315,13 @@ test("AC2 variant: all rulings are novel → all appended in asset order", () =>
     { name: "h1", input: ["2h"], expected: 7200, coveredBy: [] },
     { name: "e1", input: ["-1h"], expected: "<throws>", throws: true, coveredBy: [] },
   ];
-  const rulings: GodRuling[] = [
+  const rulings: LeaderRuling[] = [
     { input: ["120"], expected: "<throws>", throws: true, decision: "A bare integer with no time unit is invalid input and must throw.", rationale: "a" },
     { input: ["1.5h"], expected: 5400, decision: "A fractional quantity before a unit is accepted and scaled by that unit.", rationale: "b" },
     { input: [" 1h 30m "], expected: 5400, decision: "A duration with whitespace between components is accepted.", rationale: "c" },
   ];
 
-  const battery = buildGodBattery(taskHidden, rulings);
+  const battery = buildLeaderBattery(taskHidden, rulings);
   assert.equal(battery.length, 5, "2 original + 3 appended");
 
   // First two are original
@@ -329,20 +329,20 @@ test("AC2 variant: all rulings are novel → all appended in asset order", () =>
   assert.equal(battery[1]!.name, "e1");
 
   // Appended in asset order (indices 0, 1, 2)
-  assert.ok(battery[2]!.name.includes("120") || battery[2]!.name.startsWith("god-0"), `battery[2] is god-0: ${battery[2]!.name}`);
-  assert.ok(battery[3]!.name.startsWith("god-"), `battery[3] is god-1: ${battery[3]!.name}`);
-  assert.ok(battery[4]!.name.startsWith("god-"), `battery[4] is god-2: ${battery[4]!.name}`);
+  assert.ok(battery[2]!.name.includes("120") || battery[2]!.name.startsWith("leader-0"), `battery[2] is leader-0: ${battery[2]!.name}`);
+  assert.ok(battery[3]!.name.startsWith("leader-"), `battery[3] is leader-1: ${battery[3]!.name}`);
+  assert.ok(battery[4]!.name.startsWith("leader-"), `battery[4] is leader-2: ${battery[4]!.name}`);
 
   // All coveredBy = []
   for (const c of battery.slice(2)) {
-    assert.deepEqual([...c.coveredBy], [], `God case ${c.name} coveredBy = []`);
+    assert.deepEqual([...c.coveredBy], [], `Leader case ${c.name} coveredBy = []`);
   }
 });
 
 // ── AC3: owner-decision rendering (rev 2, PROSE ONLY) ────────────────────────
 
 test("AC3 renderOwnerDecisions — prose-only, one bullet per ruling = decision VERBATIM, asset order", () => {
-  const rulings: GodRuling[] = [
+  const rulings: LeaderRuling[] = [
     {
       input: ["120"],
       expected: "<throws>",
@@ -415,7 +415,7 @@ test("AC3 renderOwnerDecisions — prose-only, one bullet per ruling = decision 
 
 test("AC3 renderOwnerDecisions — no bullet omitted (throwing ruling NOT skipped)", () => {
   // Specifically test that throwing rulings are not omitted (kills "skip throwing" reading)
-  const rulings: GodRuling[] = [
+  const rulings: LeaderRuling[] = [
     { input: ["foo"], expected: "<throws>", throws: true, decision: "Input without a recognizable structure must be rejected with an error.", rationale: "invalid" },
     { input: ["bar"], expected: 42, decision: "A well-formed input returns the numeric result.", rationale: "valid" },
   ];
@@ -433,7 +433,7 @@ test("AC4 runE4 — calls decompose with maxRequirements:1, context contains own
   const outDir = await mkdtemp(join(tmpdir(), "e4-ac4-"));
   const tasksDir = TASKS_DIR;
 
-  const godAnswersPath = await writeGodAnswers(outDir);
+  const leaderAnswersPath = await writeLeaderAnswers(outDir);
 
   const capturedBodies: Array<{ prompt: string; system: string; callIndex: number }> = [];
 
@@ -453,7 +453,7 @@ test("AC4 runE4 — calls decompose with maxRequirements:1, context contains own
     n: 1,
     out: outDir,
     tasksDir,
-    godAnswers: godAnswersPath,
+    leaderAnswers: leaderAnswersPath,
     live: false,
   });
 
@@ -522,7 +522,7 @@ test("AC5 evaluateE4Criterion — warboss 0.95, human 1.0 → pass: true", () =>
   assert.ok(result.detail.includes("0.950"), "detail has warboss mean");
   assert.ok(result.detail.includes("1.000"), "detail has human mean");
   assert.ok(result.detail.includes("0.900"), "detail has threshold");
-  assert.ok(result.detail.includes("residualGodCases=9"), "detail has residual count");
+  assert.ok(result.detail.includes("residualLeaderCases=9"), "detail has residual count");
   assert.ok(result.detail.includes("exclusions=3"), "detail has exclusion count");
 });
 
@@ -531,7 +531,7 @@ test("AC5 evaluateE4Criterion — warboss 0.80, human 1.0 → pass: false", () =
   assert.equal(result.pass, false, "0.80 < 0.90 × 1.0 → fail");
   assert.ok(result.detail.includes("0.800"), "detail has warboss mean");
   assert.ok(result.detail.includes("1.000"), "detail has human mean");
-  assert.ok(result.detail.includes("residualGodCases=9"), "detail has residual count");
+  assert.ok(result.detail.includes("residualLeaderCases=9"), "detail has residual count");
   assert.ok(result.detail.includes("exclusions=3"), "detail has exclusion count");
 });
 
@@ -541,7 +541,7 @@ test("AC5 evaluateE4Criterion — human 0 → pass: false, degenerate detail", (
   assert.ok(/degenerate/i.test(result.detail), "detail names degenerate baseline");
   assert.ok(result.detail.includes("0.000"), "detail has human mean 0.000");
   assert.ok(result.detail.includes("0.500"), "detail has warboss mean 0.500");
-  assert.ok(result.detail.includes("residualGodCases=5"), "detail has residual count");
+  assert.ok(result.detail.includes("residualLeaderCases=5"), "detail has residual count");
   assert.ok(result.detail.includes("exclusions=2"), "detail has exclusion count");
 });
 
@@ -550,8 +550,8 @@ test("AC5 evaluateE4Criterion — human 0 → pass: false, degenerate detail", (
 test("AC6 runE2 hiddenOverride — when present, scores against the override battery (not task.hidden)", async () => {
   const outDir = await mkdtemp(join(tmpdir(), "e4-ac6-"));
 
-  // Build a synthetic God battery with known structure
-  const godBattery: HiddenCase[] = [
+  // Build a synthetic Leader battery with known structure
+  const leaderBattery: HiddenCase[] = [
     { name: "g1", input: ["2h"], expected: 7200, coveredBy: [] },
     { name: "g2", input: ["-1h"], expected: "<throws>", throws: true, coveredBy: [] },
   ];
@@ -570,7 +570,7 @@ test("AC6 runE2 hiddenOverride — when present, scores against the override bat
     ],
   });
 
-  // Run with hiddenOverride = godBattery
+  // Run with hiddenOverride = leaderBattery
   const result = await runE2({
     client: fixedClient(fence(CORRECT_IMPL)),
     warbossContract,
@@ -578,13 +578,13 @@ test("AC6 runE2 hiddenOverride — when present, scores against the override bat
     n: 1,
     out: outDir,
     tasksDir: TASKS_DIR,
-    hiddenOverride: godBattery,
+    hiddenOverride: leaderBattery,
     live: false,
   });
 
   assert.equal(result.deadRun, false);
 
-  // Read the artifact and verify hiddenBattery reflects God battery, not task.hidden
+  // Read the artifact and verify hiddenBattery reflects Leader battery, not task.hidden
   const files = await readdir(outDir);
   const e2File = files.find((f) => f.startsWith("e2-") && f.endsWith(".json"));
   assert.ok(e2File !== undefined, "e2 artifact written");
@@ -598,16 +598,16 @@ test("AC6 runE2 hiddenOverride — when present, scores against the override bat
     errorCount: number;
   };
 
-  // God battery has 2 cases (not the 12 from task.hidden)
-  assert.equal(hb.total, 2, "hiddenBattery.total = God battery size (2), not task.hidden size (12)");
+  // Leader battery has 2 cases (not the 12 from task.hidden)
+  assert.equal(hb.total, 2, "hiddenBattery.total = Leader battery size (2), not task.hidden size (12)");
 
-  // finalVector lengths equal residualCount (from God battery)
+  // finalVector lengths equal residualCount (from Leader battery)
   const sessions = artifact["sessions"] as Array<{ finalVector: boolean[] }>;
   for (const s of sessions) {
     assert.equal(
       s.finalVector.length,
       hb.residualCount,
-      "finalVector length = residualCount from God battery",
+      "finalVector length = residualCount from Leader battery",
     );
   }
 });
@@ -653,14 +653,14 @@ test("AC6 omitting hiddenOverride → reproduces rev-2 behavior (existing e2 tes
 // ── AC7: contested inputs SURVIVE the residual (rev 2) ───────────────────────
 
 /**
- * AC7: prose-only decisions carry no input literal, so the three contested God
+ * AC7: prose-only decisions carry no input literal, so the three contested Leader
  * cases are NOT leaked into the warboss prompt and SURVIVE the residual.
  * Variant: a warboss example that coincidentally equals a contested input →
  * that one case IS excluded, sessions still run, no throw.
  */
-test("AC7 contested God inputs SURVIVE residual — prose-only decisions do not leak them", async () => {
+test("AC7 contested Leader inputs SURVIVE residual — prose-only decisions do not leak them", async () => {
   const outDir = await mkdtemp(join(tmpdir(), "e4-ac7-survive-"));
-  const godAnswersPath = await writeGodAnswers(outDir);
+  const leaderAnswersPath = await writeLeaderAnswers(outDir);
 
   // Warboss decompose uses examples with inputs DISTINCT from "120", " 1h 30m ", "1.5h"
   // so none of the three contested cases are leaked.
@@ -671,7 +671,7 @@ test("AC7 contested God inputs SURVIVE residual — prose-only decisions do not 
       entry: "parseDuration",
       signature: "(s: string) => number",
       examples: [
-        { name: "basic", input: ["2h30m"], expected: 9000 },         // distinct from all God inputs
+        { name: "basic", input: ["2h30m"], expected: 9000 },         // distinct from all Leader inputs
         { name: "invalid-nounit", input: ["xyz"], expected: "<throws>", throws: true }, // distinct
       ],
       resolutions: [],
@@ -693,7 +693,7 @@ test("AC7 contested God inputs SURVIVE residual — prose-only decisions do not 
     n: 1,
     out: outDir,
     tasksDir: TASKS_DIR,
-    godAnswers: godAnswersPath,
+    leaderAnswers: leaderAnswersPath,
     live: false,
   });
 
@@ -713,17 +713,17 @@ test("AC7 contested God inputs SURVIVE residual — prose-only decisions do not 
 
   // The three contested inputs should NOT appear in excluded
   const excludedNames = hb.excluded.map((e) => e.name);
-  const contestedGodNames = ["120", "1h 30m", "1.5h"]; // substrings to check
-  for (const contested of contestedGodNames) {
+  const contestedLeaderNames = ["120", "1h 30m", "1.5h"]; // substrings to check
+  for (const contested of contestedLeaderNames) {
     const excludedContest = excludedNames.find((n) =>
       n.includes(contested.replace(/ /g, "").replace(/"/g, "")),
     );
-    // Note: God cases have names like "god-0-[\"120\"]" — check for the input value
-    const godCasesExcluded = hb.excluded.filter((e) =>
+    // Note: Leader cases have names like "leader-0-[\"120\"]" — check for the input value
+    const leaderCasesExcluded = hb.excluded.filter((e) =>
       e.name.includes("120") || e.name.includes("1h 30m") || e.name.includes("1.5h"),
     );
-    if (godCasesExcluded.length > 0) {
-      assert.fail(`Contested God case(s) should not be excluded with prose-only decisions: ${JSON.stringify(godCasesExcluded)}`);
+    if (leaderCasesExcluded.length > 0) {
+      assert.fail(`Contested Leader case(s) should not be excluded with prose-only decisions: ${JSON.stringify(leaderCasesExcluded)}`);
     }
     break; // check once
   }
@@ -732,9 +732,9 @@ test("AC7 contested God inputs SURVIVE residual — prose-only decisions do not 
 
 test("AC7 variant: warboss coincidentally chooses a contested input → that case excluded, sessions run, no throw", async () => {
   const outDir = await mkdtemp(join(tmpdir(), "e4-ac7-coincidental-"));
-  const godAnswersPath = await writeGodAnswers(outDir);
+  const leaderAnswersPath = await writeLeaderAnswers(outDir);
 
-  // Warboss decompose uses "120" as an example — coincidentally equal to the God ruling input
+  // Warboss decompose uses "120" as an example — coincidentally equal to the Leader ruling input
   const coincidentalDecomposeJson = JSON.stringify([
     {
       id: "parse-duration",
@@ -744,8 +744,8 @@ test("AC7 variant: warboss coincidentally chooses a contested input → that cas
       examples: [
         { name: "basic", input: ["2h30m"], expected: 9000 },
         // Coincidental: warboss chose "120" as a DIFFERENT example (maybe 120s or a throws)
-        // But since "120" is a God battery input, the residual filter will exclude it.
-        { name: "coincidental", input: ["120"], expected: 120 }, // warboss chose this; God says throws
+        // But since "120" is a Leader battery input, the residual filter will exclude it.
+        { name: "coincidental", input: ["120"], expected: 120 }, // warboss chose this; Leader says throws
         { name: "invalid", input: ["abc"], expected: "<throws>", throws: true },
       ],
       resolutions: [],
@@ -769,7 +769,7 @@ test("AC7 variant: warboss coincidentally chooses a contested input → that cas
       n: 1,
       out: outDir,
       tasksDir: TASKS_DIR,
-      godAnswers: godAnswersPath,
+      leaderAnswers: leaderAnswersPath,
       live: false,
     });
   } catch (err) {
@@ -793,10 +793,10 @@ test("AC7 variant: warboss coincidentally chooses a contested input → that cas
 
   const hb = e4Artifact.e2.hiddenBattery;
 
-  // The God case for "120" should be excluded with leakedBy including "warboss".
+  // The Leader case for "120" should be excluded with leakedBy including "warboss".
   // NOTE: input "120" already exists in the hidden battery (name "bare-number-2"),
-  // so buildGodBattery OVERRIDES it in place — the god case keeps the original
-  // name "bare-number-2" (spec: override keeps the original name), NOT a "god-…"
+  // so buildLeaderBattery OVERRIDES it in place — the leader case keeps the original
+  // name "bare-number-2" (spec: override keeps the original name), NOT a "leader-…"
   // name. Find it by the warboss leak (the only coincidental exclusion here:
   // warboss examples are "2h30m"/"120"/"abc"; only "120" is a battery input).
   const excluded120 = hb.excluded.find((e) => e.leakedBy.includes("warboss"));
@@ -845,17 +845,17 @@ test("AC8 self-leak guard — decision containing own input literal throws befor
     ],
   });
 
-  const path = join(dir, "god-answers.json");
+  const path = join(dir, "leader-answers.json");
   await writeFile(path, selfLeakAsset);
 
-  // loadGodAnswers must throw with a descriptive error naming the offending ruling
+  // loadLeaderAnswers must throw with a descriptive error naming the offending ruling
   await assert.rejects(
-    loadGodAnswers(path),
+    loadLeaderAnswers(path),
     (err: Error) => {
       assert.ok(/self.?leak|self.?leak|"120"|120/i.test(err.message), `error names the offending ruling: ${err.message}`);
       return true;
     },
-    "loadGodAnswers must throw on self-leak in decision",
+    "loadLeaderAnswers must throw on self-leak in decision",
   );
 });
 
@@ -890,17 +890,17 @@ test("AC8 self-leak guard — rationale containing input literal does NOT throw"
     ],
   });
 
-  const path = join(dir, "god-answers.json");
+  const path = join(dir, "leader-answers.json");
   await writeFile(path, rationaleWithLiteralAsset);
 
   // Must NOT throw — rationale is exempt from the self-leak guard
-  const rulings = await loadGodAnswers(path);
+  const rulings = await loadLeaderAnswers(path);
   assert.equal(rulings.length, 3, "rulings loaded successfully despite literal in rationale");
 });
 
 test("AC8 self-leak guard via renderOwnerDecisions — injected ruling with self-leak throws", () => {
   // Even if a ruling bypassed the loader (e.g., test-injected), renderOwnerDecisions also guards
-  const selfLeakRulings: GodRuling[] = [
+  const selfLeakRulings: LeaderRuling[] = [
     {
       input: ["bad-value"],
       expected: "<throws>",
@@ -921,7 +921,7 @@ test("AC8 self-leak guard via renderOwnerDecisions — injected ruling with self
 
 test("AC9 runE4 end-to-end offline — single cost-ledger sidecar for BOTH phases; artifact fields correct", async () => {
   const outDir = await mkdtemp(join(tmpdir(), "e4-ac9-"));
-  const godAnswersPath = await writeGodAnswers(outDir);
+  const leaderAnswersPath = await writeLeaderAnswers(outDir);
 
   const responses = e4Responses(1);
   const client = scriptedClient(responses);
@@ -932,7 +932,7 @@ test("AC9 runE4 end-to-end offline — single cost-ledger sidecar for BOTH phase
     n: 1,
     out: outDir,
     tasksDir: TASKS_DIR,
-    godAnswers: godAnswersPath,
+    leaderAnswers: leaderAnswersPath,
     live: false,
   });
 
@@ -958,10 +958,10 @@ test("AC9 runE4 end-to-end offline — single cost-ledger sidecar for BOTH phase
   const raw = await readFile(join(outDir, e4Files[0]!), "utf8");
   const artifact = JSON.parse(raw) as {
     config: { task: string; n: number; granularity: string };
-    godAnswersPath: string;
+    leaderAnswersPath: string;
     rulings: unknown[];
     reauthorArtifactPath: string;
-    godBattery: { total: number; fromTask: number; fromGod: number; overridden: number };
+    leaderBattery: { total: number; fromTask: number; fromLeader: number; overridden: number };
     e2: Record<string, unknown>;
     e4Criterion: { pass: boolean; detail: string };
     authoringCostUsd: number;
@@ -975,8 +975,8 @@ test("AC9 runE4 end-to-end offline — single cost-ledger sidecar for BOTH phase
   assert.equal(artifact.config.task, "duration-parse");
   assert.equal(artifact.config.n, 1);
 
-  // godAnswersPath recorded
-  assert.ok(typeof artifact.godAnswersPath === "string", "godAnswersPath is a string");
+  // leaderAnswersPath recorded
+  assert.ok(typeof artifact.leaderAnswersPath === "string", "leaderAnswersPath is a string");
 
   // rulings verbatim (3 rulings from fixture)
   assert.equal(artifact.rulings.length, 3, "3 rulings in artifact");
@@ -988,11 +988,11 @@ test("AC9 runE4 end-to-end offline — single cost-ledger sidecar for BOTH phase
     "reauthorArtifactPath recorded",
   );
 
-  // godBattery counts
-  assert.ok(typeof artifact.godBattery.total === "number", "godBattery.total");
-  assert.ok(typeof artifact.godBattery.fromTask === "number", "godBattery.fromTask");
-  assert.ok(typeof artifact.godBattery.fromGod === "number", "godBattery.fromGod");
-  assert.ok(typeof artifact.godBattery.overridden === "number", "godBattery.overridden");
+  // leaderBattery counts
+  assert.ok(typeof artifact.leaderBattery.total === "number", "leaderBattery.total");
+  assert.ok(typeof artifact.leaderBattery.fromTask === "number", "leaderBattery.fromTask");
+  assert.ok(typeof artifact.leaderBattery.fromLeader === "number", "leaderBattery.fromLeader");
+  assert.ok(typeof artifact.leaderBattery.overridden === "number", "leaderBattery.overridden");
 
   // e2 embedded
   assert.ok(typeof artifact.e2 === "object" && artifact.e2 !== null, "e2 embedded");
@@ -1002,7 +1002,7 @@ test("AC9 runE4 end-to-end offline — single cost-ledger sidecar for BOTH phase
   // e4Criterion
   assert.equal(typeof artifact.e4Criterion.pass, "boolean", "e4Criterion.pass is boolean");
   assert.ok(typeof artifact.e4Criterion.detail === "string", "e4Criterion.detail is string");
-  assert.ok(artifact.e4Criterion.detail.includes("residualGodCases"), "e4Criterion.detail includes residualGodCases");
+  assert.ok(artifact.e4Criterion.detail.includes("residualLeaderCases"), "e4Criterion.detail includes residualLeaderCases");
 
   // Cost accounting: totalCostUsd = authoringCostUsd + grindingCostUsd
   assert.ok(
@@ -1055,7 +1055,7 @@ function splitCostClient(
 
 test("AC9 dead-run guard — live: true + zero grinding cost → deadRun: true", async () => {
   const outDir = await mkdtemp(join(tmpdir(), "e4-ac9-live-zero-"));
-  const godAnswersPath = await writeGodAnswers(outDir);
+  const leaderAnswersPath = await writeLeaderAnswers(outDir);
 
   // Decompose (call 0) + audit (call 1) succeed; grinding (calls 2+) get zero-usage
   // → E2's grindingCostUsd = 0 → E2 deadRun = true → E4 deadRun = true
@@ -1067,7 +1067,7 @@ test("AC9 dead-run guard — live: true + zero grinding cost → deadRun: true",
     n: 1,
     out: outDir,
     tasksDir: TASKS_DIR,
-    godAnswers: godAnswersPath,
+    leaderAnswers: leaderAnswersPath,
     live: true,  // live: true → dead-run guard active
   });
 
@@ -1083,7 +1083,7 @@ test("AC9 dead-run guard — live: true + zero grinding cost → deadRun: true",
 
 test("AC9 dead-run guard — live: false + zero scores → no dead-run failure", async () => {
   const outDir = await mkdtemp(join(tmpdir(), "e4-ac9-offline-"));
-  const godAnswersPath = await writeGodAnswers(outDir);
+  const leaderAnswersPath = await writeLeaderAnswers(outDir);
 
   const deadGrindResponses = [
     VALID_1REQ_FENCED,
@@ -1099,7 +1099,7 @@ test("AC9 dead-run guard — live: false + zero scores → no dead-run failure",
     n: 1,
     out: outDir,
     tasksDir: TASKS_DIR,
-    godAnswers: godAnswersPath,
+    leaderAnswers: leaderAnswersPath,
     live: false,  // live: false → dead-run guard NOT active
   });
 
@@ -1108,7 +1108,7 @@ test("AC9 dead-run guard — live: false + zero scores → no dead-run failure",
 
 test("AC9 dead-run guard — live: true + nonzero costs + working impl → deadRun: false", async () => {
   const outDir = await mkdtemp(join(tmpdir(), "e4-ac9-live-ok-"));
-  const godAnswersPath = await writeGodAnswers(outDir);
+  const leaderAnswersPath = await writeLeaderAnswers(outDir);
 
   const responses = e4Responses(1);
   const client = scriptedClient(responses);
@@ -1119,7 +1119,7 @@ test("AC9 dead-run guard — live: true + nonzero costs + working impl → deadR
     n: 1,
     out: outDir,
     tasksDir: TASKS_DIR,
-    godAnswers: godAnswersPath,
+    leaderAnswers: leaderAnswersPath,
     live: true,
   });
 
@@ -1133,13 +1133,13 @@ test("AC9 dead-run guard — live: true + nonzero costs + working impl → deadR
 
 // ── AC11: extraCases enter the battery + decimal-class survives canonical collision ──
 
-test("AC11 buildGodBattery — extraCases produce distinct cases immediately after canonical", () => {
+test("AC11 buildLeaderBattery — extraCases produce distinct cases immediately after canonical", () => {
   const taskHidden: HiddenCase[] = [
     { name: "happy-a", input: ["2h"], expected: 7200, coveredBy: [] },
     { name: "error-a", input: ["-1h"], expected: "<throws>", throws: true, coveredBy: [] },
   ];
 
-  const rulings: GodRuling[] = [
+  const rulings: LeaderRuling[] = [
     {
       input: ["1.5h"],
       expected: 5400,
@@ -1151,7 +1151,7 @@ test("AC11 buildGodBattery — extraCases produce distinct cases immediately aft
     },
   ];
 
-  const battery = buildGodBattery(taskHidden, rulings);
+  const battery = buildLeaderBattery(taskHidden, rulings);
 
   // Original 2 + canonical 1 + 2 extra = 5
   assert.equal(battery.length, 5, "2 task cases + 1 canonical + 2 extras = 5");
@@ -1162,7 +1162,7 @@ test("AC11 buildGodBattery — extraCases produce distinct cases immediately aft
 
   // Canonical at index 2 (appended, novel input)
   const canonical = battery[2]!;
-  assert.ok(canonical.name.startsWith("god-"), `canonical name starts with god-: ${canonical.name}`);
+  assert.ok(canonical.name.startsWith("leader-"), `canonical name starts with leader-: ${canonical.name}`);
   assert.deepEqual([...canonical.input], ["1.5h"], "canonical input is ['1.5h']");
   assert.equal(canonical.expected, 5400, "canonical expected is 5400");
   assert.deepEqual([...canonical.coveredBy], [], "canonical coveredBy = []");
@@ -1172,7 +1172,7 @@ test("AC11 buildGodBattery — extraCases produce distinct cases immediately aft
   assert.deepEqual([...extra0.input], ["2.5h"], "first extra input is ['2.5h']");
   assert.equal(extra0.expected, 9000, "first extra expected is 9000");
   assert.deepEqual([...extra0.coveredBy], [], "first extra coveredBy = []");
-  assert.ok(extra0.name.startsWith("god-"), `first extra name starts with god-: ${extra0.name}`);
+  assert.ok(extra0.name.startsWith("leader-"), `first extra name starts with leader-: ${extra0.name}`);
 
   const extra1 = battery[4]!;
   assert.deepEqual([...extra1.input], ["0.5h"], "second extra input is ['0.5h']");
@@ -1188,8 +1188,8 @@ test("AC11 buildGodBattery — extraCases produce distinct cases immediately aft
 test("AC11 end-to-end: warboss coincidentally uses 1.5h → canonical excluded, 2.5h/0.5h survive", async () => {
   const outDir = await mkdtemp(join(tmpdir(), "e4-ac11-collision-"));
 
-  // God-answers with extraCases on decimal ruling + ordering rulings from asset
-  const godAnswersWithExtra = JSON.stringify({
+  // Leader-answers with extraCases on decimal ruling + ordering rulings from asset
+  const leaderAnswersWithExtra = JSON.stringify({
     task: "duration-parse",
     answeredAgainstArtifact: "e3-fixture",
     rulings: [
@@ -1218,8 +1218,8 @@ test("AC11 end-to-end: warboss coincidentally uses 1.5h → canonical excluded, 
       },
     ],
   });
-  const godAnswersPath = join(outDir, "god-answers.json");
-  await writeFile(godAnswersPath, godAnswersWithExtra);
+  const leaderAnswersPath = join(outDir, "leader-answers.json");
+  await writeFile(leaderAnswersPath, leaderAnswersWithExtra);
 
   // Warboss decompose COINCIDENTALLY uses "1.5h" as its own example
   const coincidentalDecomposeJson = JSON.stringify([
@@ -1230,7 +1230,7 @@ test("AC11 end-to-end: warboss coincidentally uses 1.5h → canonical excluded, 
       signature: "(s: string) => number",
       examples: [
         { name: "basic", input: ["2h30m"], expected: 9000 },
-        { name: "decimal", input: ["1.5h"], expected: 5400 }, // coincidentally equals canonical God input
+        { name: "decimal", input: ["1.5h"], expected: 5400 }, // coincidentally equals canonical Leader input
         { name: "invalid", input: ["abc"], expected: "<throws>", throws: true },
       ],
       resolutions: [],
@@ -1251,7 +1251,7 @@ test("AC11 end-to-end: warboss coincidentally uses 1.5h → canonical excluded, 
     n: 1,
     out: outDir,
     tasksDir: TASKS_DIR,
-    godAnswers: godAnswersPath,
+    leaderAnswers: leaderAnswersPath,
     live: false,
   });
 
@@ -1271,7 +1271,7 @@ test("AC11 end-to-end: warboss coincidentally uses 1.5h → canonical excluded, 
 
   // The canonical 1.5h case should be excluded (warboss chose it as an example)
   const excluded15h = hb.excluded.find((e) =>
-    // The canonical may be a "decimal-hours" override or a god-appended case
+    // The canonical may be a "decimal-hours" override or a leader-appended case
     (e.name.includes("decimal") || e.name.includes("1.5h")) && e.leakedBy.includes("warboss"),
   );
   assert.ok(
@@ -1295,7 +1295,7 @@ test("AC11 end-to-end: warboss coincidentally uses 1.5h → canonical excluded, 
   assert.ok(hb.residualCount > 0, "residual is non-empty");
 });
 
-test("AC11 self-leak guard (rev 3): decision containing an extra-case input → loadGodAnswers throws", async () => {
+test("AC11 self-leak guard (rev 3): decision containing an extra-case input → loadLeaderAnswers throws", async () => {
   const dir = await mkdtemp(join(tmpdir(), "e4-ac11-extraleak-"));
 
   // Ruling with clean canonical input but decision contains extra-case input "2.5h"
@@ -1330,11 +1330,11 @@ test("AC11 self-leak guard (rev 3): decision containing an extra-case input → 
     ],
   });
 
-  const path = join(dir, "god-answers.json");
+  const path = join(dir, "leader-answers.json");
   await writeFile(path, selfLeakExtra);
 
   await assert.rejects(
-    loadGodAnswers(path),
+    loadLeaderAnswers(path),
     (err: Error) => {
       assert.ok(
         /self.?leak|2\.5h/i.test(err.message),
@@ -1342,13 +1342,13 @@ test("AC11 self-leak guard (rev 3): decision containing an extra-case input → 
       );
       return true;
     },
-    "loadGodAnswers must throw when decision contains an extra-case input literal",
+    "loadLeaderAnswers must throw when decision contains an extra-case input literal",
   );
 });
 
 // ── AC12: ordering rulings override happy cases in place ─────────────────────
 
-test("AC12 buildGodBattery — ordering rulings override repeat-units/reversed-order hidden cases in place", () => {
+test("AC12 buildLeaderBattery — ordering rulings override repeat-units/reversed-order hidden cases in place", () => {
   // Use the actual duration-parse hidden battery cases (subset)
   const taskHidden: HiddenCase[] = [
     { name: "plain-hours",    input: ["2h"],       expected: 7200,       coveredBy: [] },
@@ -1359,7 +1359,7 @@ test("AC12 buildGodBattery — ordering rulings override repeat-units/reversed-o
     { name: "negative",       input: ["-1h"],      expected: "<throws>", throws: true, coveredBy: [] },
   ];
 
-  const orderingRulings: GodRuling[] = [
+  const orderingRulings: LeaderRuling[] = [
     {
       input: ["30m30m"],
       expected: 3600,
@@ -1374,7 +1374,7 @@ test("AC12 buildGodBattery — ordering rulings override repeat-units/reversed-o
     },
   ];
 
-  const battery = buildGodBattery(taskHidden, orderingRulings);
+  const battery = buildLeaderBattery(taskHidden, orderingRulings);
 
   // Length unchanged (both are overrides, not appends)
   assert.equal(battery.length, 6, "no cases appended — both were overrides");
@@ -1383,18 +1383,18 @@ test("AC12 buildGodBattery — ordering rulings override repeat-units/reversed-o
   const repeatUnits = battery[2]!;
   assert.equal(repeatUnits.name, "repeat-units", "override keeps original name 'repeat-units'");
   assert.deepEqual([...repeatUnits.input], ["30m30m"], "input preserved");
-  assert.equal(repeatUnits.expected, 3600, "God's expected wins");
+  assert.equal(repeatUnits.expected, 3600, "Leader's expected wins");
   assert.deepEqual([...repeatUnits.coveredBy], [], "coveredBy = []");
 
   // reversed-order at original index 4, overridden
   const reversedOrder = battery[4]!;
   assert.equal(reversedOrder.name, "reversed-order", "override keeps original name 'reversed-order'");
   assert.deepEqual([...reversedOrder.input], ["30m1h"], "input preserved");
-  assert.equal(reversedOrder.expected, 5400, "God's expected wins");
+  assert.equal(reversedOrder.expected, 5400, "Leader's expected wins");
   assert.deepEqual([...reversedOrder.coveredBy], [], "coveredBy = []");
 
   // overridden count = 2
-  // (We verify via godBatteryStats indirectly by checking no new names appeared)
+  // (We verify via leaderBatteryStats indirectly by checking no new names appeared)
   const names = battery.map((c) => c.name);
   assert.deepEqual(
     names,
@@ -1404,7 +1404,7 @@ test("AC12 buildGodBattery — ordering rulings override repeat-units/reversed-o
 });
 
 test("AC12 renderOwnerDecisions — ordering ruling decisions contain no '30m30m' or '30m1h' substring", () => {
-  const orderingRulings: GodRuling[] = [
+  const orderingRulings: LeaderRuling[] = [
     {
       input: ["30m30m"],
       expected: 3600,
@@ -1436,10 +1436,10 @@ test("AC12 renderOwnerDecisions — ordering ruling decisions contain no '30m30m
   );
 });
 
-test("AC12 loadGodAnswers — full asset with ordering rulings loads cleanly (5 rulings)", async () => {
-  // Test with the actual god-answers.json asset (which has 5 rulings after rev 3)
-  const godAnswersPath = join(TASKS_DIR, "duration-parse", "god-answers.json");
-  const rulings = await loadGodAnswers(godAnswersPath);
+test("AC12 loadLeaderAnswers — full asset with ordering rulings loads cleanly (5 rulings)", async () => {
+  // Test with the actual leader-answers.json asset (which has 5 rulings after rev 3)
+  const leaderAnswersPath = join(TASKS_DIR, "duration-parse", "leader-answers.json");
+  const rulings = await loadLeaderAnswers(leaderAnswersPath);
 
   assert.equal(rulings.length, 5, "5 rulings: 3 original E3 knowns + 2 ordering");
 
@@ -1469,15 +1469,15 @@ test("AC12 loadGodAnswers — full asset with ordering rulings loads cleanly (5 
 
 // ── AC-MT1: contested.json drives coverage; E3_KNOWN_INPUTS gone ─────────────
 
-test("AC-MT1 loadGodAnswers — requiredInputs=three tuples, asset covering all → rulings returned", async () => {
-  // Use the duration-parse god-answers.json which covers the 3 original E3 inputs + 2 ordering
-  const godAnswersPath = join(TASKS_DIR, "duration-parse", "god-answers.json");
+test("AC-MT1 loadLeaderAnswers — requiredInputs=three tuples, asset covering all → rulings returned", async () => {
+  // Use the duration-parse leader-answers.json which covers the 3 original E3 inputs + 2 ordering
+  const leaderAnswersPath = join(TASKS_DIR, "duration-parse", "leader-answers.json");
   const required: readonly (readonly unknown[])[] = [["120"], [" 1h 30m "], ["1.5h"]];
-  const rulings = await loadGodAnswers(godAnswersPath, required);
+  const rulings = await loadLeaderAnswers(leaderAnswersPath, required);
   assert.ok(rulings.length >= 3, "rulings returned (≥3 for duration-parse asset)");
 });
 
-test("AC-MT1 loadGodAnswers — requiredInputs=[]: no coverage constraint, minimal valid asset loads", async () => {
+test("AC-MT1 loadLeaderAnswers — requiredInputs=[]: no coverage constraint, minimal valid asset loads", async () => {
   const dir = await mkdtemp(join(tmpdir(), "e4-mt1-noconstraint-"));
   // An asset with only one ruling (would fail if E3 coverage check ran)
   const minimalAsset = JSON.stringify({
@@ -1486,15 +1486,15 @@ test("AC-MT1 loadGodAnswers — requiredInputs=[]: no coverage constraint, minim
       { input: ["foo"], expected: 42, decision: "The simplest input returns forty-two.", rationale: "ok" },
     ],
   });
-  const path = join(dir, "god-answers.json");
+  const path = join(dir, "leader-answers.json");
   await writeFile(path, minimalAsset);
 
   // requiredInputs=[] → no constraint → must not throw
-  const rulings = await loadGodAnswers(path, []);
+  const rulings = await loadLeaderAnswers(path, []);
   assert.equal(rulings.length, 1, "single ruling loaded with no coverage constraint");
 });
 
-test("AC-MT1 loadGodAnswers — asset missing one required tuple → descriptive throw naming the missing tuple", async () => {
+test("AC-MT1 loadLeaderAnswers — asset missing one required tuple → descriptive throw naming the missing tuple", async () => {
   const dir = await mkdtemp(join(tmpdir(), "e4-mt1-missing-"));
   const asset = JSON.stringify({
     task: "test",
@@ -1504,11 +1504,11 @@ test("AC-MT1 loadGodAnswers — asset missing one required tuple → descriptive
       // missing: ["baz"]
     ],
   });
-  const path = join(dir, "god-answers.json");
+  const path = join(dir, "leader-answers.json");
   await writeFile(path, asset);
 
   await assert.rejects(
-    loadGodAnswers(path, [["foo"], ["bar"], ["baz"]]),
+    loadLeaderAnswers(path, [["foo"], ["bar"], ["baz"]]),
     (err: Error) => {
       assert.ok(
         /missing|baz/i.test(err.message),
@@ -1516,7 +1516,7 @@ test("AC-MT1 loadGodAnswers — asset missing one required tuple → descriptive
       );
       return true;
     },
-    "loadGodAnswers must throw naming the missing required tuple",
+    "loadLeaderAnswers must throw naming the missing required tuple",
   );
 });
 
@@ -1563,8 +1563,8 @@ test("AC-MT2 runE4 — fixture task dir with contested.json: inputs passed as re
   const contestedInputs = [[99], [100]];
   await writeFile(join(taskDir, "contested.json"), JSON.stringify({ inputs: contestedInputs }));
 
-  // god-answers.json covering both contested inputs
-  await writeFile(join(taskDir, "god-answers.json"), JSON.stringify({
+  // leader-answers.json covering both contested inputs
+  await writeFile(join(taskDir, "leader-answers.json"), JSON.stringify({
     task: "fake-task",
     rulings: [
       { input: [99], expected: 100, decision: "A large positive integer increments to the next integer.", rationale: "99+1=100" },
@@ -1593,7 +1593,7 @@ test("AC-MT2 runE4 — fixture task dir with contested.json: inputs passed as re
 
   const client = scriptedClient(fakeResponses);
 
-  // Must complete without throwing (contested.json present + god-answers covers both)
+  // Must complete without throwing (contested.json present + leader-answers covers both)
   await runE4({
     client,
     task: "fake-task",
@@ -1694,11 +1694,11 @@ test("AC-MT3 loadTask(tasks/parse-range) — valid TaskDef: pure entry, ≥2 exa
   assert.ok(errorHidden.length >= 1, "hidden battery has ≥1 error case");
 });
 
-test("AC-MT3 runE4 parse-range offline — e4 artifact has config.task='parse-range', God battery from parse-range assets", async () => {
+test("AC-MT3 runE4 parse-range offline — e4 artifact has config.task='parse-range', Leader battery from parse-range assets", async () => {
   const outDir = await mkdtemp(join(tmpdir(), "e4-mt3-parse-range-"));
 
   // A correct parseRange implementation (pure, synchronous)
-  // Uses distinct inputs so no contested/God inputs are leaked
+  // Uses distinct inputs so no contested/Leader inputs are leaked
   const CORRECT_PARSE_RANGE_IMPL = `
 function parseRange(spec) {
   if (!spec || spec.trim() === '') throw new Error('empty spec');
@@ -1726,7 +1726,7 @@ function parseRange(spec) {
 
   const fencedParseRange = "```js\n" + CORRECT_PARSE_RANGE_IMPL + "\n```";
 
-  // Safe decompose response: uses inputs distinct from any God/contested inputs
+  // Safe decompose response: uses inputs distinct from any Leader/contested inputs
   const safeParseRangeDecomposeJson = JSON.stringify([
     {
       id: "parse-range",
@@ -1777,17 +1777,17 @@ function parseRange(spec) {
 
   assert.equal(e4Artifact.config.task, "parse-range", "artifact config.task is 'parse-range'");
 
-  // God battery is built from parse-range hidden cases + god-answers rulings
+  // Leader battery is built from parse-range hidden cases + leader-answers rulings
   const hb = e4Artifact.e2.hiddenBattery;
-  assert.ok(hb.total > 0, "God battery is non-empty");
-  assert.ok(hb.happyCount >= 1, "God battery has ≥1 happy case");
-  assert.ok(hb.errorCount >= 1, "God battery has ≥1 error case");
+  assert.ok(hb.total > 0, "Leader battery is non-empty");
+  assert.ok(hb.happyCount >= 1, "Leader battery has ≥1 happy case");
+  assert.ok(hb.errorCount >= 1, "Leader battery has ≥1 error case");
 });
 
 // ── AC13 (rev 4): authoring-diversity hint reaches the e4 author context ──────
 // Discharges e4-verdict candidate #3 (ordering happy-lift): the warboss author
 // echoed the obvious ruling inputs (30m30m / 30m1h) as its own examples → the
-// residual filter excluded those God-battery cases → ordering never scored.
+// residual filter excluded those Leader-battery cases → ordering never scored.
 // The fix is a literal-free render-hint steering the author toward a distinctive
 // representative. renderOwnerDecisions feeds runE4's decompose context directly,
 // so asserting the hint is present here proves it reaches the live author prompt.
@@ -1800,7 +1800,7 @@ const E4_DIVERSITY_HINT =
   "most obvious case — a varied example pins the behavior just as well.";
 
 test("AC13 renderOwnerDecisions — author context carries the diversity hint, still literal-free", () => {
-  const orderingRulings: GodRuling[] = [
+  const orderingRulings: LeaderRuling[] = [
     {
       input: ["30m30m"],
       expected: 3600,

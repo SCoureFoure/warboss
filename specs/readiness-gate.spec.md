@@ -259,7 +259,7 @@ src/gate.ts:
   instrument; fail-closed without a battery. The composition lives in
   `admit` (warboss-decomposition spec rev 4), not here.
 - **Authoring (prose intent → freeze?):** `intentProbe` runs pre-freeze;
-  its splits are God-facing kick-back questions alongside the warboss's own
+  its splits are Leader-facing kick-back questions alongside the warboss's own
   fiat/escalation flags (warboss-decomposition rev 4). **Wiring into the
   decompose pipeline is deferred until E3 validates the instrument**
   (`specs/e3-intent-divergence.spec.md` composes them experimentally) — this
@@ -330,7 +330,7 @@ src/gate.ts:
 - Tests: `test/gate.test.ts` — AC1–AC16, offline, fake `MessagesClient`.
 - Integration: gruntJudge calibration protocol — RAN, FAIL as gate
   (`reports/gate-calibration-verdict.md`, `reports/derive-calibration-verdict.md`).
-  `intentProbe`'s first live run is E3 (God-gated,
+  `intentProbe`'s first live run is E3 (Leader-gated,
   `specs/e3-intent-divergence.spec.md`).
 - Falsifies / experiment link: **E3** — pre-registered: `intentProbe` must
   split on the duration-parse intent's known underdetermined inputs

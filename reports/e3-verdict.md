@@ -123,7 +123,7 @@ contract provides and the viability floor may limit split resolution at small k.
 1. **Fiat-flagging is the primary kick-back signal.** The two E2 divergences
    (bare-number, whitespace) were recoverable by fiat escalation alone. The
    author arm resolved them with `"basis": "fiat"` and produced an escalation
-   entry that God can now read. Under the kick-back design, these escalations
+   entry that Leader can now read. Under the kick-back design, these escalations
    flow to the human owner as questions before freeze — exactly what was missing
    in the rev-3 decompose that caused the E2 FAIL.
 
@@ -150,8 +150,8 @@ contract provides and the viability floor may limit split resolution at small k.
    not any improvement to the admission probe.
 
 5. **The kick-back loop design is validated end-to-end (offline).** The chain
-   `decompose → fiat-flags → escalations → God query` would have caught bare-number
-   and whitespace before freeze. The only missing piece is a live God-review
+   `decompose → fiat-flags → escalations → Leader query` would have caught bare-number
+   and whitespace before freeze. The only missing piece is a live Leader-review
    session where a human answers the kick-back questions and the contract is
    re-authored with those answers locked in. That is the battery-authoring leg.
 
@@ -160,7 +160,7 @@ contract provides and the viability floor may limit split resolution at small k.
 E3 PASS closes the kick-back leg's falsification check. The pre-registered
 consequence: `decompose-run admission now kicks back everything (no probe
 batteries exist) until a battery-authoring leg`. That consequence stands — the
-escalation list is machine-visible but God has not yet answered the fiat questions,
+escalation list is machine-visible but Leader has not yet answered the fiat questions,
 so no contract in the system is underdetermination-free.
 
 **Next leg candidates (post-E3):**

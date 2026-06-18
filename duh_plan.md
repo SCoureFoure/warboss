@@ -4,7 +4,7 @@
 > Rev 2 (2026-06-09): split E1 into E1a/E1b, added high-model baseline arm + cost logging, feedback-granularity variable, mechanical freeze, sandbox constraints, graded task ladder, contract-authorship experiment, caveman wire protocol scoped to Phase 6.
 > Rev 3 (2026-06-10): E1a run-5 results + second-look verdict folded in (see E1a status block). Rung-2 escalation deferred in favor of a JS-anchored re-run (E1a-r2); E1b blocked on r2; error-behavior coverage pinned for E2.
 > Rev 4 (2026-06-10): E1a-r2 ran clean (N=30×4, $0.585, no language confound). C2 PASS (+0.68, hardcode-clean); thesis money shot reproduced (B haiku+contract beats opus on covered correctness, 10.8× cheaper; opus fails bare-number 0/30). C1 printed FAIL = diagnosed instrument defect (cluster-count is gate-sensitive on A-side, NOT saturation). Rung-2 escalation declined (recorded 2nd deviation); C1 to be re-specified gate-robust (rev-3 spec, free re-analysis). E1b UNBLOCKED. See `reports/e1a-r2-verdict.md`.
-> Rev 5 (2026-06-10): feature-leg pivot (God-scoped). Rung-1 understanding deemed sufficient to build durable product infra: specs frozen for loop-core (Phase 2b loop as product, `specs/loop-core.spec.md`), readiness-gate (lever-1 admission check + pinned grunt-judge idea, `specs/readiness-gate.spec.md`), sandbox-hardening (Phase-4 precondition, `node --permission` child process, `specs/sandbox-hardening.spec.md`), warboss-decomposition (Phase 4 core with the r2 error-coverage mandate enforced mechanically, `specs/warboss-decomposition.spec.md`), plus e1a-harness rev 3 (C1 → modal share, provisional; offline rescore CLI). Handed off as H-5…H-9. E1b harness pre-exists (built before r2, inline loop) — its spec amended to rev 2: loop semantics delegated to loop-core, e1b.ts refactors onto `runLoop` in H-6, dead-run guard added; the experiment must measure the product loop. E1b live dispatch remains a God spend decision.
+> Rev 5 (2026-06-10): feature-leg pivot (Leader-scoped). Rung-1 understanding deemed sufficient to build durable product infra: specs frozen for loop-core (Phase 2b loop as product, `specs/loop-core.spec.md`), readiness-gate (lever-1 admission check + pinned grunt-judge idea, `specs/readiness-gate.spec.md`), sandbox-hardening (Phase-4 precondition, `node --permission` child process, `specs/sandbox-hardening.spec.md`), warboss-decomposition (Phase 4 core with the r2 error-coverage mandate enforced mechanically, `specs/warboss-decomposition.spec.md`), plus e1a-harness rev 3 (C1 → modal share, provisional; offline rescore CLI). Handed off as H-5…H-9. E1b harness pre-exists (built before r2, inline loop) — its spec amended to rev 2: loop semantics delegated to loop-core, e1b.ts refactors onto `runLoop` in H-6, dead-run guard added; the experiment must measure the product loop. E1b live dispatch remains a Leader spend decision.
 
 ## Thesis
 
@@ -26,7 +26,7 @@ Each reference contributes one piece of the harness (see `references/`):
 | **AlphaProof Nexus**          | The loop. Reliable output from an unreliable generator + an honest judge + retry. Intelligence in the loop, not the model. The judge's _why_ (feedback signal) is part of the loop, not an afterthought. _(The ELO tournament is **not** core — see below.)_ |
 | **Fractal Views**             | Constant-size context per agent (reroot at focus, prune by fractal value) → small context → small model viable.                                                                                                                                              |
 | **Shannon / compression**     | Why immutable contracts work. A frozen contract is the lowest-entropy encoding of intent — a solved variable removed from the entropy budget. Compression = prediction = intelligence.                                                                       |
-| **Hive image + Orc lore**     | Topology and role names: God → Warboss → Warchief → Sergeant → Grunt. Adjacent-rank comms only; God speaks solely to champions (Warbosses).                                                                                                                  |
+| **Hive image + Orc lore**     | Topology and role names: Leader → Warboss → Warchief → Sergeant → Grunt. Adjacent-rank comms only; Leader speaks solely to champions (Warbosses).                                                                                                                  |
 | **Intention-decay protocols** | Transmission rules: dense intent, bounded context, continuous injection into agent buffers, stigmergy (shape the environment, don't micro-instruct), redundant role specialization.                                                                          |
 | **Caveman**                   | The wire protocol — compressed instruction format = the info-density principle made concrete for inter-layer messages. Scoped to **Phase 6** (was previously unscoped — references with no phase invite creep).                                              |
 
@@ -49,11 +49,11 @@ may run a high tier while another Sergeant on a trivial slice runs LOW. (Tiers:
 LOW=haiku, MID=sonnet, HIGH=opus — a capability ladder, see `src/models.ts`.)
 
 ```
-            GOD  (the human — below the membrane)
+            LEADER  (the human — below the membrane)
                  │  speaks ONLY to chosen champions; never to the horde
    ┌─────────────▼──────────────┐
    │ WARBOSS                     │  the champion. Absorbs the most entropy.
-   │  - sets the contract        │  Interprets God's goal → requirements →
+   │  - sets the contract        │  Interprets Leader's goal → requirements →
    │  - never touches grunts      │  acceptance examples → CONTRACTS. Talks
    │                             │  down only to Warchiefs.
    └─────────────┬──────────────┘
@@ -74,9 +74,9 @@ LOW=haiku, MID=sonnet, HIGH=opus — a capability ladder, see `src/models.ts`.)
    └────────────────────────────┘
 ```
 
-**Who talks to whom (the only legal edges):** God → Warboss → Warchief →
-Sergeant → Grunt, and judge results back up the same edges. God never instructs a
-grunt; a Warboss never instructs a grunt. Flavor: _I am God — I speak only to my
+**Who talks to whom (the only legal edges):** Leader → Warboss → Warchief →
+Sergeant → Grunt, and judge results back up the same edges. Leader never instructs a
+grunt; a Warboss never instructs a grunt. Flavor: _I am Leader — I speak only to my
 chosen champions. The champions interpret my goals and lead the horde devoted to
 realizing them._
 
@@ -226,7 +226,7 @@ run-5 history in `reports/e1a-findings.md` + `reports/e1a-verdict.md`):**
   void. **Escalation to rung 2 declined** (recorded 2nd deviation); rung 2 stays
   shelved for a real ceiling.
 - **E1b UNBLOCKED** — r2 is its clean rung-1 baseline (Arm D: covered 0.747,
-  mean 0.817, $0.443). Next live spend is E1b; God's call per the spend rule.
+  mean 0.817, $0.443). Next live spend is E1b; Leader's call per the spend rule.
 
 ### E1b — the loop (retry-in-place)
 

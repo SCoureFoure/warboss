@@ -211,7 +211,7 @@ a MID-tier sweep (~$0.07/config) to see if the instrument is tier-limited.
   `test/calibrate-derive.test.ts` (AC5–AC9) — offline, fake `MessagesClient`.
 - Integration: `node --env-file=.env --import tsx
   src/experiment/calibrate-derive.ts --n 20` live (≈60 LOW-tier calls,
-  God-gated, ~$0.07); artifact under `runs/`, read against the "useful signal"
+  Leader-gated, ~$0.07); artifact under `runs/`, read against the "useful signal"
   paragraph. Verdict to `reports/derive-calibration-verdict.md`.
 - Falsifies / experiment link: the gate-calibration rework hypothesis. If
   `deriveCheck` neither reverses the density anti-correlation nor surfaces C's

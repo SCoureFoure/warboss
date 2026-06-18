@@ -3,7 +3,7 @@
 > Status: active · rev 1 · Feature: multi-task-replication · Added: 2026-06-14 · Maps to: PLAN Phase 4 follow-on (E4 standing consequence #4 — replicate before trusting broadly).
 > Source of truth for running the E4 kick-back experiment on a SECOND task, and
 > for the one harness generalization that requires: the contested-input coverage
-> check in `loadGodAnswers` must become task-driven instead of hardcoded to
+> check in `loadLeaderAnswers` must become task-driven instead of hardcoded to
 > `duration-parse`'s three E3 inputs.
 > Depends on: `specs/e4-battery-authoring.spec.md` rev 3 (the runner this drives,
 > via its `--task` option), `specs/e1a-harness.spec.md` (the task-asset shape
@@ -16,7 +16,7 @@ loop produces a contract a cheap grunt satisfies at least as well as a human's,
 on a neutral oracle" — a claim about the LOOP, which must replicate on a second,
 structurally different task before the pipeline is trusted broadly. This spec:
 
-1. **Generalizes the harness** so E4 is task-agnostic: `loadGodAnswers`'s
+1. **Generalizes the harness** so E4 is task-agnostic: `loadLeaderAnswers`'s
    mandatory-coverage check (today hardcoded to `["120"]`, `[" 1h 30m "]`,
    `["1.5h"]`) reads the **required contested inputs from a per-task
    `contested.json`** asset. `duration-parse`'s `contested.json` restates its
@@ -24,19 +24,19 @@ structurally different task before the pipeline is trusted broadly. This spec:
    takes `--task`; after this change, a new task needs only its assets, no code.
 2. **Adds a second task's assets** (owner-gated authoring — the task's
    `requirement.md`, `task.json`, `hidden-battery.json`, `contested.json`, and
-   `god-answers.json` are hand-authored, not model-generated). The recommended
+   `leader-answers.json` are hand-authored, not model-generated). The recommended
    task is **`parse-range`** (decision below; owner confirms).
 3. **Re-runs E4** on the second task and records a verdict; the **replication
-   criterion** is E4's own (warboss ≥ 0.90 × human on the second task's God
+   criterion** is E4's own (warboss ≥ 0.90 × human on the second task's Leader
    battery), with the same sharp error-coverage prediction.
 
 ## Constraints (inherited)
 
 - **Cost-metered.** Same as E4: HIGH re-author + LOW grinding through one shared
   `Ledger`/sidecar. The second task's live run is a fresh E4 run (~$0.15–0.25).
-- **Hidden battery never leaks.** The second task's hidden battery + God battery
+- **Hidden battery never leaks.** The second task's hidden battery + Leader battery
   obey the same contamination-disjoint residual filter; `auditNoContamination`
-  runs over its residual. No God-battery input appears in any grunt prompt.
+  runs over its residual. No Leader-battery input appears in any grunt prompt.
 - **`node:vm` is not a security sandbox.** The second task MUST be a pure,
   synchronous function (so the existing sandbox suffices) — same gate E1 tasks
   pass. A task needing I/O is out of scope for this leg.
@@ -55,7 +55,7 @@ structurally different task before the pipeline is trusted broadly. This spec:
 
   `inputs` is a non-empty array of arg tuples — the contested, intent-
   underdetermined inputs the owner MUST rule on for this task to be E4-eligible.
-- `loadGodAnswers` gains a second parameter `requiredInputs: readonly
+- `loadLeaderAnswers` gains a second parameter `requiredInputs: readonly
   (readonly unknown[])[]` (the tuples from `contested.json`). It enforces that
   the asset covers EVERY `requiredInput` (deep-equal on the tuple), throwing a
   descriptive error naming any missing tuple — the EXISTING behavior, but the
@@ -87,7 +87,7 @@ the owner's rulings matter), distinct from `duration-parse`:
   contested points open), `task.json` (entry `parseRange`, ≥2 public examples
   incl. one `throws`, `armCSubset`), `hidden-battery.json` (held-out cases with a
   happy + error split so the coverage split is non-degenerate),
-  `contested.json` (the contested tuples above), `god-answers.json` (the owner's
+  `contested.json` (the contested tuples above), `leader-answers.json` (the owner's
   ruling per contested input, each with a literal-free `decision`; rev-3
   `extraCases` allowed).
 - **Owner authoring is the gate.** The human contract = `task.grader` (frozen
@@ -102,12 +102,12 @@ the owner's rulings matter), distinct from `duration-parse`:
 
 ### Replication criterion
 
-The pre-registered E4 criterion, computed on the second task's God battery:
+The pre-registered E4 criterion, computed on the second task's Leader battery:
 **PASS iff** `warboss.meanFinalHiddenScore >= 0.90 × human.meanFinalHiddenScore`.
 Sharp predictions carried (recorded, not gating), mirroring the duration-parse
 verdict:
 
-1. The error-coverage gap replicates: on the second task's error-path God cases,
+1. The error-coverage gap replicates: on the second task's error-path Leader cases,
    the human arm scores ≈0 (its contract pins no error behavior — the
    Corollary-D hole) and the warboss arm scores high (it authored throws from the
    owner's "invalid" rulings).
@@ -119,10 +119,10 @@ verdict:
 ### Module layout & CLI
 
 ```text
-src/experiment/e4.ts                  loadGodAnswers gains requiredInputs param; E3_KNOWN_INPUTS deleted; runE4 reads contested.json
+src/experiment/e4.ts                  loadLeaderAnswers gains requiredInputs param; E3_KNOWN_INPUTS deleted; runE4 reads contested.json
 src/experiment/task.ts                UNCHANGED (contested.json is read by e4, not loadTask)
 tasks/duration-parse/contested.json   NEW — the three existing E3 inputs (back-compat)
-tasks/parse-range/*                    NEW — owner-authored second-task assets (requirement.md, task.json, hidden-battery.json, contested.json, god-answers.json)
+tasks/parse-range/*                    NEW — owner-authored second-task assets (requirement.md, task.json, hidden-battery.json, contested.json, leader-answers.json)
 test/e4.test.ts                        AC-MT1..AC-MT3 added; existing AC1/AC9 fixtures gain a contested.json
 ```
 
@@ -132,7 +132,7 @@ test/e4.test.ts                        AC-MT1..AC-MT3 added; existing AC1/AC9 fi
 
 ## Acceptance criteria (Given / When / Then)
 
-1. **AC-MT1 — `contested.json` drives coverage.** `loadGodAnswers(path,
+1. **AC-MT1 — `contested.json` drives coverage.** `loadLeaderAnswers(path,
    requiredInputs)` with `requiredInputs` = three tuples and an asset covering
    all three → returns rulings verbatim. Asset missing one required tuple →
    descriptive throw naming the missing tuple. `requiredInputs = []` → no
@@ -149,8 +149,8 @@ test/e4.test.ts                        AC-MT1..AC-MT3 added; existing AC1/AC9 fi
    returns a valid `TaskDef` (pure entry, ≥2 public examples incl. a `throws`,
    non-empty hidden battery with ≥1 happy + ≥1 error case); `runE4({ task:
    "parse-range", client: fake, n: 1 })` completes offline and writes an
-   `e4-<ts>.json` whose `config.task` is `"parse-range"` and whose God battery is
-   built from the parse-range hidden cases + its god-answers rulings.
+   `e4-<ts>.json` whose `config.task` is `"parse-range"` and whose Leader battery is
+   built from the parse-range hidden cases + its leader-answers rulings.
 
 ## Verifies-with
 
@@ -158,7 +158,7 @@ test/e4.test.ts                        AC-MT1..AC-MT3 added; existing AC1/AC9 fi
   fake client + the committed parse-range assets, or a fixture dir). Existing e4
   ACs re-run unchanged once their fixtures gain a `contested.json`.
 - Integration (live, owner-gated — the gate is the owner authoring the
-  `parse-range` assets + `god-answers.json` by hand): `node --env-file=.env
+  `parse-range` assets + `leader-answers.json` by hand): `node --env-file=.env
   --import tsx src/experiment/e4.ts --task parse-range --n 30 --granularity full`
   (~$0.15–0.25). Verdict → `reports/e4-parse-range-verdict.md`: per-contested-input
   scores, the criterion, the named treatment asymmetry (inherited from E4), and

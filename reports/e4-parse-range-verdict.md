@@ -2,11 +2,11 @@
 
 > **E4 criterion: PASS — replicated.** On a second, independent task
 > (`parse-range`, integer-range expansion) the re-authored warboss contract
-> reaches **1.000** on the neutral God oracle versus human **0.646** —
+> reaches **1.000** on the neutral Leader oracle versus human **0.646** —
 > not merely ≥ 0.90 × human (threshold 0.581) but a perfect score outright.
 > The driver is identical to `duration-parse`: **error coverage**. The human
-> contract scores **0.000** on every error-path God case (no `throws` examples —
-> the Corollary-D hole), warboss **1.000** (God ruled the inputs invalid; warboss
+> contract scores **0.000** on every error-path Leader case (no `throws` examples —
+> the Corollary-D hole), warboss **1.000** (Leader ruled the inputs invalid; warboss
 > authored throws). The E4 result is **not task-specific** — the kick-back loop's
 > value generalizes. Total cost: $0.269.
 > Artifact: `runs/e4-20260614T222537Z.json` · re-author:
@@ -15,33 +15,33 @@
 ## Run metadata
 
 Run: 2026-06-14 · task `parse-range` · N=30 sessions/source · granularity
-`full` · `deadRun: false`. God-answers: `tasks/parse-range/god-answers.json`
+`full` · `deadRun: false`. Leader-answers: `tasks/parse-range/leader-answers.json`
 (5 rulings). Contested inputs from `tasks/parse-range/contested.json` drive the
 coverage check (H-29 generalization — `requiredInputs`, not a module constant).
 
 - **Author arm:** HIGH (opus-4-8) — one rev-4 `decompose`, `maxRequirements: 1`,
-  God decisions rendered into `context` as **literal-free prose**.
+  Leader decisions rendered into `context` as **literal-free prose**.
   Authoring cost $0.073.
-- **Grinding arm:** LOW (haiku-4-5) — `runE2` over the God battery, both contract
+- **Grinding arm:** LOW (haiku-4-5) — `runE2` over the Leader battery, both contract
   sources, same loop. Grinding cost $0.196.
 
-God battery: **9 cases** = 4 untouched task-hidden + 2 appended God cases +
+Leader battery: **9 cases** = 4 untouched task-hidden + 2 appended Leader cases +
 3 overrides-in-place. Scored residual: **8** (one excluded, below).
 
 ## Headline numbers
 
 | | human | warboss | threshold |
 | --- | --- | --- | --- |
-| meanFinalHiddenScore (God oracle) | 0.646 | **1.000** | warboss ≥ 0.581 → **PASS** |
+| meanFinalHiddenScore (Leader oracle) | 0.646 | **1.000** | warboss ≥ 0.581 → **PASS** |
 | meanHappyScore | 0.861 | 1.000 | — |
 | **meanErrorScore** | **0.000** | **1.000** | — |
 | greenRate | 1.00 | 1.00 | — |
 | meanAttempts | 1.00 | 1.60 | — |
 | grinding cost | $0.037 | $0.159 | — |
 
-## God rulings
+## Leader rulings
 
-| input | God ruling | note |
+| input | Leader ruling | note |
 | --- | --- | --- |
 | `"5-1"` | **throws** | reversed bounds — invalid |
 | `"1-3,2-4"` | `[1,2,3,4]` | overlapping ranges → set union, deduped + sorted |
@@ -57,7 +57,7 @@ three; warboss 1.000 — the same Corollary-D split E4 found on `duration-parse`
 1. **The signature replicates exactly.** On both tasks warboss wins entirely on
    the error path (human 0.000, warboss ≥ 0.856) and matches or beats human on
    the happy path. Two independent tasks, one mechanism: the human contract pins
-   no error behavior; the re-authored warboss contract — handed God's "this input
+   no error behavior; the re-authored warboss contract — handed Leader's "this input
    is invalid" rulings — authors throws and its grunt learns to reject. The E4
    PASS is not a `duration-parse` artifact.
 
@@ -74,7 +74,7 @@ three; warboss 1.000 — the same Corollary-D split E4 found on `duration-parse`
 
 4. **Owner authoring ruling on overlap (`"1-3,2-4"` → `[1,2,3,4]`).** The H-29
    grunt's fixture read overlapping ranges as a deduped, sorted set union. The
-   God ruling here affirms that reading. This is a fiat the owner pinned — a
+   Leader ruling here affirms that reading. This is a fiat the owner pinned — a
    different owner could have ruled "concatenate with duplicates"; the point is
    the ruling is explicit and the grunt satisfies it, not that union is the only
    defensible answer.

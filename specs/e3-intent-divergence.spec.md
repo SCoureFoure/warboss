@@ -60,7 +60,7 @@ path is offline via the injected fake client.
 
 - E3 measures **surfacing**: do the pre-freeze instruments raise the right
   kick-back questions? It does NOT measure resolution quality (that requires
-  a God ruling round — out of scope), does NOT re-run the E2 criterion, and
+  a Leader ruling round — out of scope), does NOT re-run the E2 criterion, and
   does NOT test probe-battery auto-generation (the candidate-input set is
   hand-pinned below, so the instrument question is isolated from the
   generation question — one experiment, one variable).
@@ -298,7 +298,7 @@ test/e3.test.ts         AC1–AC8, offline, fake MessagesClient
 ## Verifies-with
 
 - Tests: `test/e3.test.ts` — AC1–AC8, offline, fake `MessagesClient`.
-- Integration (live, God-gated, sequenced AFTER H-18 + H-19 merge): one run,
+- Integration (live, Leader-gated, sequenced AFTER H-18 + H-19 merge): one run,
   `node --env-file=.env --import tsx src/experiment/e3.ts --k 8`
   (~$0.17 HIGH authoring + ~$0.03 LOW probing ≈ **$0.20**). Verdict to
   `reports/e3-verdict.md`: the per-known table, plus prose discussion of any

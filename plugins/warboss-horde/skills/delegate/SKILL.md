@@ -110,7 +110,7 @@ third time.
 
 ## The one invariant
 
-Ambiguity you cannot resolve from the code, the task, or the spec is a **God
+Ambiguity you cannot resolve from the code, the task, or the spec is a **Leader
 question** — escalate to the user. Never guess a fork on a rung's behalf. A
 worker implementing a coherent misreading of an ambiguous instruction is *your*
 defect as author — the same rule every rung below you is held to.
