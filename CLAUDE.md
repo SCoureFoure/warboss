@@ -127,39 +127,47 @@ running, and dispatching real grunts / live experiments.
 
 This repo's bet — *expensive model decides, cheapest model does, entropy is
 removed at authoring time* — is also how work should be delegated **inside this
-harness**. You (the main agent, Opus) are the WARBOSS. The `grunt` subagent
-(`.claude/agents/grunt.md`, Haiku) is the GRUNT. The mapping:
+harness**, and it ships as a reusable Claude Code plugin: **`warboss-horde`**
+(`plugins/warboss-horde/`, listed in `.claude-plugin/marketplace.json`). You (the
+main agent) are the WARBOSS — the top, deciding rung. The plugin gives you one
+generic `doer` subagent (`agents/doer.md`, `model: inherit`), a config-driven
+ladder (`tiers.json` — N models = N rungs), and the `/warboss-horde:delegate`
+skill that encodes the loop below. Dispatch the `doer` at the rung's model via the
+Agent tool's per-call `model` override; the model makes the rung, not separate
+agent files. The mapping:
 
 | warboss | here |
 | --- | --- |
 | executable contract (membrane) | the **verify command** — `npm test` / `npm run typecheck` / a single test file. Pass/fail, no interpretation. |
-| frozen acceptance examples | the ACs you hand the grunt as concrete `input → expected` pairs |
-| hidden battery | tests the grunt **does not** run (it has no Bash) — you judge with them |
-| judge → feedback → retry | you run the verify command; on red, re-dispatch the grunt with the failure output |
+| frozen acceptance examples | the ACs you hand the doer as concrete `input → expected` pairs |
+| hidden battery | tests the doer **does not** run (it has no Bash) — you judge with them |
+| judge → feedback → retry | you run the verify command; on red, re-dispatch the doer with the failure output |
+| residual-entropy → tier | the rung (and its model) you pick from `tiers.json` for each slice |
 | escalate fiat to God | ambiguity you can't resolve from code/spec → ask the user, never guess |
 
-**The loop, when a task is decided enough to delegate:**
+**The loop, when a task is decided enough to delegate** (run `/warboss-horde:delegate`):
 
 1. **Author the entropy out first** (this is the expensive, non-delegable part).
    Write the task as a dense contract: exact entry point / files, ACs as concrete
    `input → expected`, and kill any second reading with a case that fails under
    it. If you can't make it falsifiable, it's not ready to dispatch — decompose
    further or escalate to the user.
-2. **Dispatch to `grunt`** via the Agent tool. Hand it the contract, not your
-   reasoning. Do not give it the verify command output up front — that's the
-   membrane it must satisfy blind.
+2. **Dispatch to `doer`** via the Agent tool, with the per-call `model` set to the
+   rung you picked from `tiers.json`. Hand it the contract, not your reasoning. Do
+   not give it the verify command output up front — that's the membrane it must
+   satisfy blind.
 3. **Judge mechanically.** Run `npm run typecheck` then the relevant tests
-   yourself. Green is green; the grunt's prose doesn't count.
+   yourself. Green is green; the doer's prose doesn't count.
 4. **Retry with feedback**, bounded. On red, re-dispatch with the exact failure
-   output. If two rounds produce materially the same code (stall) or the grunt
+   output. If two rounds produce materially the same code (stall) or the doer
    reports `// UNDECIDED:` gaps, **stop** — that's an authoring defect, not a
    worker failure. Fix the contract or escalate, don't grind.
 
 **Tier follows residual entropy, not task size.** A gnarly, underdetermined slice
-stays with you (Opus) or goes to a MID agent; only push to the Haiku grunt what a
-literal machine could satisfy. A worker implementing a coherent misreading of an
-ambiguous sentence is **your** defect as author — same rule the harness enforces
-on grunts (`GRUNT_DOGMA`).
+stays with you (the top rung) or goes to a MID rung; only push to the cheapest
+rung what a literal machine could satisfy. A worker implementing a coherent
+misreading of an ambiguous sentence is **your** defect as author — same rule the
+harness enforces on grunts (`GRUNT_DOGMA`).
 
 Spec-feature work still goes through the `/spec` skill; this delegation loop is
 for the implementation step *after* a feature's ACs are decided.
