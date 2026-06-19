@@ -1,6 +1,6 @@
 # Spec — intent-probe viability (split the nonviable rate; scaffold the probe)
 
-> Status: active · rev 1 · Feature: intent-probe-viability · Added: 2026-06-13 · Maps to: Lever 1 (gate, behavioral line) + E3 rev-2 (`reports/e3-verdict.md` §"Probe arm" + candidate #4).
+> Status: active · rev 1 · Feature: intent-probe-viability · Added: 2026-06-13 · Maps to: Lever 1 (gate, behavioral line) + E3 rev-2 (`archive/reports/e3-verdict.md` §"Probe arm" + candidate #4).
 > Source of truth for the E3 finding that the intent probe's nonviable rate was
 > **4/8 (50%)**, leaving only 4 impls to vote per input — too thin for reliable
 > split detection at k=8. E3 §probe-arm hypothesised the cause: the probe prompt

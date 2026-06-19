@@ -865,7 +865,7 @@ test("H-25 AC3c leading zeros does NOT match whitespace — dropped bare 'leadin
 test("H-25 AC4 recorded-run regression — pinned escalations re-score correctly", () => {
   // The runs/e3-20260613T191532Z.json artifact is not present in this worktree.
   // Pinning the recorded escalation strings as fixtures per spec AC4 guidance.
-  // Source: reports/e3-verdict.md §Author arm, escalation list.
+  // Source: archive/reports/e3-verdict.md §Author arm, escalation list.
   //
   // The recorded run produced these escalations (from the warboss rev-4 fiat-flagging):
   //   - escalation for bare-number: contained "bare" (now matched via "bare number"/"bare numeric")

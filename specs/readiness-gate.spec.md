@@ -1,6 +1,6 @@
 # Spec — readiness-gate (grunt-readiness admission check)
 
-> Status: active · **rev 2** (2026-06-12: instrument statuses settled by three live runs — `gruntJudge` FAIL as gate (READY anti-correlates with anchors, `reports/gate-calibration-verdict.md`), `deriveCheck` FAIL as gate (decidedRate saturates 0.000, precision broken, `reports/derive-calibration-verdict.md`), `admit`-in-anger miss (E2 contract passed with 0 questions over 2 real ambiguities, `reports/e2-verdict.md`) — **introspective instruments are unwired from admission decisions; behavioral divergence is the only gate signal.** New instrument: **`intentProbe`** — contract-free K-grunt divergence over the PROSE intent, run BEFORE freezing, because the E2 measurement proved the freeze itself destroys divergence: every per-case rate was 0/30 or 30/30, so post-freeze probing cannot see a fiat resolution) · Feature: readiness-gate · Added: 2026-06-10 · Maps to: PLAN "The grunt is a doer, not a planner" lever 1 + pinned idea (2026-06-09, grunt-tier readiness judge — falsified as gate, instrument retained)
+> Status: active · **rev 2** (2026-06-12: instrument statuses settled by three live runs — `gruntJudge` FAIL as gate (READY anti-correlates with anchors, `archive/reports/gate-calibration-verdict.md`), `deriveCheck` FAIL as gate (decidedRate saturates 0.000, precision broken, `archive/reports/derive-calibration-verdict.md`), `admit`-in-anger miss (E2 contract passed with 0 questions over 2 real ambiguities, `archive/reports/e2-verdict.md`) — **introspective instruments are unwired from admission decisions; behavioral divergence is the only gate signal.** New instrument: **`intentProbe`** — contract-free K-grunt divergence over the PROSE intent, run BEFORE freezing, because the E2 measurement proved the freeze itself destroys divergence: every per-case rate was 0/30 or 30/30, so post-freeze probing cannot see a fiat resolution) · Feature: readiness-gate · Added: 2026-06-10 · Maps to: PLAN "The grunt is a doer, not a planner" lever 1 + pinned idea (2026-06-09, grunt-tier readiness judge — falsified as gate, instrument retained)
 > Source of truth for the admission check: no task is dispatched to a grunt
 > until its contract's residual interpretation latitude is proven low.
 > Rev-2 instrument roster:
@@ -161,13 +161,13 @@ src/gate.ts:
 - **Open question — ANSWERED (rev 2, 2026-06-11/12 live runs):** the LOW tier
   over-claims, and worse, anti-correlates. READY rates A 0.85 / B 0.70 /
   C 1.00 against anchors 0.60 / 0.967 / 0.967
-  (`reports/gate-calibration-verdict.md`): the judge rewards interpretation
+  (`archive/reports/gate-calibration-verdict.md`): the judge rewards interpretation
   freedom and penalizes density — the exact inversion of what admission
   needs. C drew 20/20 READY with 0 questions over a real hole. The
   enumeration rework (`deriveCheck`, `specs/gate-judge-derive.spec.md`)
-  showed the mirror pathology (`reports/derive-calibration-verdict.md`), and
+  showed the mirror pathology (`archive/reports/derive-calibration-verdict.md`), and
   the E2 live artifact sailed through `admit` with 0 questions over two real
-  ambiguities (`reports/e2-verdict.md`). **Standing ruling: introspective
+  ambiguities (`archive/reports/e2-verdict.md`). **Standing ruling: introspective
   readiness is not a gate signal. `gruntJudge` and `deriveCheck` stay
   exported for calibration sweeps only; no dispatch decision may consume
   their verdicts.** Root cause matches [[entropy-control-at-author-tier]]:
@@ -329,7 +329,7 @@ src/gate.ts:
 
 - Tests: `test/gate.test.ts` — AC1–AC16, offline, fake `MessagesClient`.
 - Integration: gruntJudge calibration protocol — RAN, FAIL as gate
-  (`reports/gate-calibration-verdict.md`, `reports/derive-calibration-verdict.md`).
+  (`archive/reports/gate-calibration-verdict.md`, `archive/reports/derive-calibration-verdict.md`).
   `intentProbe`'s first live run is E3 (Leader-gated,
   `specs/e3-intent-divergence.spec.md`).
 - Falsifies / experiment link: **E3** — pre-registered: `intentProbe` must

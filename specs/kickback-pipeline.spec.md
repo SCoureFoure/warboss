@@ -1,7 +1,7 @@
 # Spec — kick-back pipeline (escalations → owner-answer queue → re-author, in the live path)
 
 > Status: active · rev 2 · Feature: kickback-pipeline · Added: 2026-06-14 · Rev 2: 2026-06-15 · Maps to: PLAN Phase 4 follow-on (E4 standing consequence #1 — production wiring; rev 2 = E4 consequence #3, ordering happy-lift).
-> **Rev 2 change** (E4 rev-3 rerun left candidate #3 open — `reports/e4-verdict.md`
+> **Rev 2 change** (E4 rev-3 rerun left candidate #3 open — `archive/reports/e4-verdict.md`
 > addendum): the shared `renderDecisionBlock` now appends a literal-free
 > authoring-diversity HINT after the bullets when ≥1 decision is present
 > (`DECISION_DIVERSITY_HINT`). The E4 rev-3 rerun showed self-echo is the dominant
@@ -33,7 +33,7 @@
 ## Requirement
 
 E4 proved offline that once the owner answers the author tier's escalations, a
-re-authored contract closes the gap (`reports/e4-verdict.md`, PASS). E4 did this
+re-authored contract closes the gap (`archive/reports/e4-verdict.md`, PASS). E4 did this
 inside the experiment runner with a Leader-answers asset and a scoring battery.
 **This spec wires the same loop into the live `decompose-run` path as a standing
 two-phase stage, with no scoring battery** (production freezes real contracts;

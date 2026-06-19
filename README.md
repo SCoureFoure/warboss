@@ -122,7 +122,7 @@ Three rules make this more than flavor:
 ## How the parts earn their place
 
 Each idea in [`references/`](references/) contributes one organ of the machine
-(the full synthesis is in [duh_plan.md](duh_plan.md)):
+(the full synthesis is in [archive/duh_plan.md](archive/duh_plan.md)):
 
 | Source | What it gives us |
 | --- | --- |
@@ -137,7 +137,7 @@ Each idea in [`references/`](references/) contributes one organ of the machine
 
 Build order is **falsify-first** — the earliest, cheapest experiments are the
 ones most able to kill the thesis. Each rung had a pre-registered success
-criterion and a real (small) live spend. Full detail in [duh_plan.md](duh_plan.md).
+criterion and a real (small) live spend. Full detail in [archive/duh_plan.md](archive/duh_plan.md).
 
 ```text
   RUNG          QUESTION                                       VERDICT
@@ -291,7 +291,7 @@ generalizes.
 The repo runs spec-driven and eats its own cooking: every harness feature
 deposits a durable spec in [`specs/`](specs/) plus a regression test (via the
 [`/spec`](.claude/skills/spec/SKILL.md) loop), work moves between ranks only
-through [HANDOFF.md](HANDOFF.md) frozen-spec work items, and every model call —
+through [HANDOFF.md](archive/HANDOFF.md) frozen-spec work items, and every model call —
 including our own build loop's — lands in a cost ledger.
 
 ## Repo map
@@ -299,10 +299,9 @@ including our own build loop's — lands in a cost ledger.
 | Where | What |
 | --- | --- |
 | [plugins/warboss-horde/](plugins/warboss-horde/) | The installable plugin: the `/delegate` doctrine, the `doer` subagent, and `tiers.json`. |
-| [duh_plan.md](duh_plan.md) | Thesis, architecture, experiment design — the living plan. |
-| [HANDOFF.md](HANDOFF.md) | The relay: planner writes work items down, implementer reports back. |
 | [specs/](specs/) | Durable source of truth per harness feature, paired with tests. |
-| [reports/](reports/) | Live-run verdicts (E1a, E1b, E2, E3, E4, gate calibrations). |
+| [reports/](reports/) | Where new live-run verdicts land. The lab-phase record (E1a–E4, gate calibrations) is archived in [archive/reports/](archive/reports/). |
+| [archive/](archive/) | The development record: [duh_plan.md](archive/duh_plan.md) (thesis/experiment design), [HANDOFF.md](archive/HANDOFF.md) (the rank relay), and the completed experiment verdicts. |
 | [src/](src/) | The core layers — contract, sandbox, runner, cost ledger, agent, loop, gate, warboss, kickback. |
 | [references/](references/) | The source ideas the machine is assembled from. |
 

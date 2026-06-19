@@ -4,7 +4,7 @@
 > Source of truth for the experiment that tests the E2 consequence head-on:
 > can the harness surface the intent-underdetermined semantic points of a
 > task **before** a warboss freezes fiat resolutions into a contract? E2
-> (`reports/e2-verdict.md`) located the delegation bet's residual failure in
+> (`archive/reports/e2-verdict.md`) located the delegation bet's residual failure in
 > exactly three duration-parse inputs the prose intent does not decide —
 > bare-number `"120"`, padded whitespace `" 1h 30m "`, decimal `"1.5h"` —
 > which rev-3 decomposition resolved silently and which every introspective
@@ -71,7 +71,7 @@ path is offline via the injected fake client.
 
 ### Known underdetermined points (pinned — the measurement targets)
 
-From `reports/e2-verdict.md` per-case table, exactly three, with ids:
+From `archive/reports/e2-verdict.md` per-case table, exactly three, with ids:
 
 | id | input (verbatim) | E2 evidence |
 | --- | --- | --- |
@@ -301,7 +301,7 @@ test/e3.test.ts         AC1–AC8, offline, fake MessagesClient
 - Integration (live, Leader-gated, sequenced AFTER H-18 + H-19 merge): one run,
   `node --env-file=.env --import tsx src/experiment/e3.ts --k 8`
   (~$0.17 HIGH authoring + ~$0.03 LOW probing ≈ **$0.20**). Verdict to
-  `reports/e3-verdict.md`: the per-known table, plus prose discussion of any
+  `archive/reports/e3-verdict.md`: the per-known table, plus prose discussion of any
   needle false negative.
 - Falsifies / experiment link: **E3 pre-registered criterion above.** PASS →
   the kick-back leg is validated; next legs = warboss-authored candidate

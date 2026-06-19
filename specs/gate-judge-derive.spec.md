@@ -1,6 +1,6 @@
 # Spec — gate-judge derive-check (mechanical-enumeration readiness instrument)
 
-> Status: active · rev 1 · Feature: gate-judge-derive · Added: 2026-06-12 · Maps to: readiness-gate spec lever 1 + gate-calibration verdict "Rework candidates" (`reports/gate-calibration-verdict.md`)
+> Status: active · rev 1 · Feature: gate-judge-derive · Added: 2026-06-12 · Maps to: readiness-gate spec lever 1 + gate-calibration verdict "Rework candidates" (`archive/reports/gate-calibration-verdict.md`)
 > Source of truth for a second readiness instrument, born from the
 > gate-calibration FAIL: the LOW-tier `gruntJudge` (a *confidence* call —
 > "are you READY?") anti-correlates with contract density (READY 0.85 for bare
@@ -212,9 +212,9 @@ a MID-tier sweep (~$0.07/config) to see if the instrument is tier-limited.
 - Integration: `node --env-file=.env --import tsx
   src/experiment/calibrate-derive.ts --n 20` live (≈60 LOW-tier calls,
   Leader-gated, ~$0.07); artifact under `runs/`, read against the "useful signal"
-  paragraph. Verdict to `reports/derive-calibration-verdict.md`.
+  paragraph. Verdict to `archive/reports/derive-calibration-verdict.md`.
 - Falsifies / experiment link: the gate-calibration rework hypothesis. If
   `deriveCheck` neither reverses the density anti-correlation nor surfaces C's
   bare-number hole, the mechanical-enumeration reframe is rejected and the
   convergence probe remains the sole admission gate (the standing consequence
-  from `reports/gate-calibration-verdict.md`).
+  from `archive/reports/gate-calibration-verdict.md`).

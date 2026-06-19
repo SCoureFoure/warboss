@@ -2,7 +2,7 @@
 
 > Status: active · rev 1 · Feature: probe-signature · Added: 2026-06-13 · Maps to: Lever 1 (gate, behavioral line) + E3 rev-2 (the H-20 fail-up).
 > Source of truth for closing the H-20 textbook fail-up recorded in
-> `reports/e3-verdict.md` §5.3 and the HANDOFF standing notes: the E3 probe
+> `archive/reports/e3-verdict.md` §5.3 and the HANDOFF standing notes: the E3 probe
 > prompt format is `Implement: ${entry}${signature}`, but no asset carries a
 > per-function signature — `loadTask`'s `TaskDef` has none, and the warboss
 > `RequirementDraft.signature` belongs to the AUTHOR arm and cannot cross to the

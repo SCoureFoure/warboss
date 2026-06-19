@@ -8,7 +8,7 @@ warboss is a research harness testing one bet: **once intent is encoded densely
 enough as an executable contract, the cheapest model can satisfy it** — so the
 expensive model is spent only to *decide* what to build, never to build it. The
 metric the whole project is judged on is **correctness-per-dollar**, so every
-model call is metered. Read [README.md](README.md) and [duh_plan.md](duh_plan.md)
+model call is metered. Read [README.md](README.md) and [duh_plan.md](archive/duh_plan.md)
 for the full thesis; `duh_plan.md` supersedes the README where they disagree.
 
 It is a Node ≥22 / TypeScript CLI + library. No GUI, no build step — `tsx` runs
@@ -119,7 +119,8 @@ feature. Key rules:
 - A *spec* governs the harness we build; a *contract* is the runtime membrane the
   harness freezes for grunts. Don't conflate them.
 
-Work moves between ranks through [HANDOFF.md](HANDOFF.md) frozen-spec work items.
+Work moves between ranks through [HANDOFF.md](archive/HANDOFF.md) frozen-spec work items
+(the lab-phase relay; closed work is in [archive/](archive/)).
 The `run-warboss` skill (`.claude/skills/run-warboss/SKILL.md`) covers building,
 running, and dispatching real grunts / live experiments.
 

@@ -1,6 +1,6 @@
 # Spec — E3 needle matcher rev 2 (kill the substring false positive in author-side attribution)
 
-> Status: active · rev 1 · Feature: e3-needle-matcher · Added: 2026-06-13 · Maps to: E3 rev-2 (`reports/e3-verdict.md` candidate #5 + §"Author arm").
+> Status: active · rev 1 · Feature: e3-needle-matcher · Added: 2026-06-13 · Maps to: E3 rev-2 (`archive/reports/e3-verdict.md` candidate #5 + §"Author arm").
 > Source of truth for the E3 attribution defect the verdict found and proved.
 > `evaluateE3Criterion`'s `surfacedByAuthor` is a case-insensitive SUBSTRING
 > match over `E3_NEEDLES`. The decimal needle `"decimal"` substring-matched an
@@ -149,7 +149,7 @@ phrasing requires) one regression assertion are the whole change.
 - Tests: `test/e3.test.ts` — AC1–AC5, offline (extends the existing
   `evaluateE3Criterion` unit cases). No model call.
 - Integration: none of its own; the corrected attribution is applied to the next
-  live E3 re-run and recorded in `reports/e3-verdict.md` as a rev-2 addendum
+  live E3 re-run and recorded in `archive/reports/e3-verdict.md` as a rev-2 addendum
   (decimal now honestly probe-only).
 - Falsifies / experiment link: n/a (evaluator-precision fix). It makes
   `surfacedByAuthor` trustworthy so the disjoint-arms claim (author 2 / probe 1,

@@ -1,6 +1,6 @@
 {
   "task": "duration-parse",
-  "answeredAgainstArtifact": "e3-run (see reports/e3-verdict.md)",
+  "answeredAgainstArtifact": "e3-run (see archive/reports/e3-verdict.md)",
   "rulings": [
     {
       "input": ["120"],

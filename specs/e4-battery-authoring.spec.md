@@ -1,7 +1,7 @@
 # Spec — E4 battery authoring (close the kick-back loop: Leader answers, warboss re-authors, re-run on a neutral oracle)
 
 > Status: active · rev 4 · Feature: e4-battery-authoring · Added: 2026-06-13 · Rev 2: 2026-06-13 · Rev 3: 2026-06-14 · Rev 4: 2026-06-15 · Maps to: PLAN Phase 4 follow-on (E3 standing consequence #1) + the delegation bet's end-to-end close.
-> **Rev 4 change** (the E4 rev-3 rerun — `reports/e4-verdict.md` addendum —
+> **Rev 4 change** (the E4 rev-3 rerun — `archive/reports/e4-verdict.md` addendum —
 > discharged candidates #2 decimal and #4 replication but left #3 ORDERING
 > HAPPY-LIFT open; self-echo is now the dominant residual-erosion mechanism,
 > 3/3 exclusions): the warboss author coincidentally echoed the obvious ordering
@@ -16,7 +16,7 @@
 > hint cannot name the inputs to avoid without re-leaking them); offline AC13
 > pins only the plumbing, and the **owner-gated e4 rerun is the real proof**.
 > The hard guarantee remains `extraCases` (rev 3, AC11).
-> **Rev 3 changes** (the E4 live run — `reports/e4-verdict.md`, PASS — left two
+> **Rev 3 changes** (the E4 live run — `archive/reports/e4-verdict.md`, PASS — left two
 > measurement holes; rev 3 closes both, both verdict §Consequence candidates #2
 > and #3):
 > (1) **Decimal becomes scorable — `extraCases` per ruling.** The E4 run could
@@ -51,11 +51,11 @@
 > authoring sink + `runE2`'s own grinding sink). Rev 2 threads a shared `Ledger`
 > into `runE2` (e2 rev 4 `ledger?` option) so one sidecar carries both phases.
 > Source of truth for the experiment that finishes the chain E2/E3 opened.
-> E2 (`reports/e2-verdict.md`) located the residual failure in three
+> E2 (`archive/reports/e2-verdict.md`) located the residual failure in three
 > intent-underdetermined `duration-parse` inputs and showed the fixed hidden
 > battery encodes the **human author's** coin flips (the E2 confound — a case
 > neither contract "decides" is scored against one author's arbitrary
-> resolution). E3 (`reports/e3-verdict.md`) showed the rev-4 author tier
+> resolution). E3 (`archive/reports/e3-verdict.md`) showed the rev-4 author tier
 > surfaces those points as machine-visible **escalations** before freeze, but
 > **no human has answered them**, so no contract in the system is
 > underdetermination-free. E4 closes the loop: Leader answers the escalations once;
@@ -478,7 +478,7 @@ tasks/duration-parse/leader-answers.json   rev 3: decimal ruling gains `extraCas
     `renderDecisionBlock` — `kickback-pipeline.spec.md` rev 2), while staying
     literal-free (no ruling input substring) with the bullet count unchanged.
     **Why (candidate #3, ordering happy-lift):** the E4 rev-3 rerun
-    (`reports/e4-verdict.md` addendum) left ordering unscored because the warboss
+    (`archive/reports/e4-verdict.md` addendum) left ordering unscored because the warboss
     author echoed the obvious ruling inputs (`30m30m`, `30m1h`) as its own
     examples → the residual filter excluded those exact Leader-battery cases. The
     hint steers the author toward a distinctive representative so the case
@@ -501,7 +501,7 @@ tasks/duration-parse/leader-answers.json   rev 3: decimal ruling gains `extraCas
      rationale-only asset). Keep the residual viable (≥1 happy + ≥1 error).
   2. `node --env-file=.env --import tsx src/experiment/e4.ts --n 30 --granularity full`
      (~$0.05 HIGH re-author + ~$0.10 LOW grinding ≈ **$0.15**).
-  Verdict → `reports/e4-verdict.md`: the per-contested-input scores (now
+  Verdict → `archive/reports/e4-verdict.md`: the per-contested-input scores (now
   scorable — they survive), the overall criterion, the named treatment
   asymmetry, and the surviving-vs-excluded count.
 - Falsifies / experiment link: **E4 pre-registered criterion above.** PASS →

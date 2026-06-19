@@ -1,10 +1,10 @@
 # Spec — E1a harness (variance experiment runner + duration-parse task assets)
 
 > Status: active · Feature: e1a-harness · Added: 2026-06-10 · Rev 2: 2026-06-10 · Rev 3: 2026-06-10 · Maps to: PLAN Phase 2a (E1a)
-> Rev 2 (post run-5 review, see `reports/e1a-verdict.md`): JS-anchored system
+> Rev 2 (post run-5 review, see `archive/reports/e1a-verdict.md`): JS-anchored system
 > prompt, viability gating on `throws` cases, dead-run guard. AC5 amended,
 > AC14–AC15 added. Re-run under rev 2 is designated **E1a-r2**.
-> Rev 3 (post r2 review, see `reports/e1a-r2-verdict.md`): criterion 1's
+> Rev 3 (post r2 review, see `archive/reports/e1a-r2-verdict.md`): criterion 1's
 > variance instrument replaced (cluster-count → modal share; two misfires on
 > the old one), offline rescore CLI added. AC9 amended, AC17–AC18 added.
 > **No re-run** — rev 3 is a pure re-analysis of the existing r2 artifact.
@@ -348,6 +348,6 @@ its tests live in `test/runner.test.ts` / `test/contract.test.ts`.)
   settles in E1b). If criterion 1 or 2 fails at N=30 on rung 1, escalate to
   rung 2 (csv-quoting) before drawing conclusions — per PLAN saturation note.
   - *Rev 2 standing:* run 5 (rev 1) fired this trigger on a language-confounded
-    measurement; per `reports/e1a-verdict.md` the trigger is re-armed against
+    measurement; per `archive/reports/e1a-verdict.md` the trigger is re-armed against
     **E1a-r2** (this rev). r2 C1+C2 pass → conclude rung 1, proceed to E1b;
     r2 C1 fails → escalate to rung 2 as written.

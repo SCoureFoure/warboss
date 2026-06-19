@@ -1,7 +1,7 @@
 # Spec — E2 contract authorship (human-authored vs warboss-authored contract)
 
 > Status: active · rev 2 · Feature: e2-contract-authorship · Added: 2026-06-12 · Rev 2: 2026-06-12 · Maps to: PLAN Phase 4 "E2 — contract authorship" + `duh_plan.md:255-261`
-> **Rev 2 changes** (driven by the 2026-06-12 live run, `reports/e2-verdict.md`):
+> **Rev 2 changes** (driven by the 2026-06-12 live run, `archive/reports/e2-verdict.md`):
 > (1) the fixed hidden battery is replaced by a **contamination-disjoint
 > residual battery** — collided cases are mechanically excluded and recorded,
 > not fatal (rev 1's abort made the criterion unmeasurable whenever warboss's
@@ -454,7 +454,7 @@ test/e2.test.ts         AC1–AC13 (offline, fake MessagesClient + fixture artif
      (~$0.10 LOW tier). Expected exclusions vs that artifact: `zero-seconds`
      (`"0s"`), `reversed-order` (`"30m1h"`), `negative` (`"-1h"`) — all
      `leakedBy: ["warboss"]`; residual 9 (8 happy + 1 error).
-  Verdict appended to `reports/e2-verdict.md` (rev-2 section).
+  Verdict appended to `archive/reports/e2-verdict.md` (rev-2 section).
 - Falsifies / experiment link: **E2** (PLAN pre-registered). Sharp prediction:
   the warboss arm's `meanErrorScore` exceeds the human arm's (which is ~0, the
   human contract pins no error behavior), lifting `warboss.meanFinalHiddenScore`

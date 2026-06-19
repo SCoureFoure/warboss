@@ -160,7 +160,7 @@ test/e4.test.ts                        AC-MT1..AC-MT3 added; existing AC1/AC9 fi
 - Integration (live, owner-gated — the gate is the owner authoring the
   `parse-range` assets + `leader-answers.json` by hand): `node --env-file=.env
   --import tsx src/experiment/e4.ts --task parse-range --n 30 --granularity full`
-  (~$0.15–0.25). Verdict → `reports/e4-parse-range-verdict.md`: per-contested-input
+  (~$0.15–0.25). Verdict → `archive/reports/e4-parse-range-verdict.md`: per-contested-input
   scores, the criterion, the named treatment asymmetry (inherited from E4), and
   whether the error-coverage gap replicated.
 - Falsifies / experiment link: the E4 criterion on a second task. PASS → the
