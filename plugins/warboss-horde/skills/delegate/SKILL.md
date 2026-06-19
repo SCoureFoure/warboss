@@ -108,6 +108,43 @@ failures:
 When you stop, **fix the contract or escalate** — never grind the same dispatch a
 third time.
 
+## Step 6 — Metering (mostly automatic)
+
+The bet is **correctness-per-dollar**, so an unrecorded dispatch is a hole in the
+metric. You usually do **nothing** here:
+
+**Automatic (default).** The plugin ships a `SubagentStop` hook
+(`hooks/hooks.json` → `scripts/meter-subagent.mjs`) that fires on every subagent
+finish. It reads the subagent's own transcript — which records per-message
+`usage` with the full input/output/cache split — and appends one accurately
+costed line to `./.warboss-horde/ledger.jsonl` in the working directory. No
+discipline required; retries, stalls, and escalated rounds are all captured
+because each is its own dispatch. This is the authoritative path: it uses real
+per-class pricing (`pricing` in `tiers.json`), so the USD is precise, not blended.
+(Set `WARBOSS_METER_DOER_ONLY=1` to log only `doer` dispatches; default meters
+every subagent.)
+
+Read the running total any time:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" summary
+```
+
+**Manual (fallback only).** If the hook can't run — metering disabled, an older
+client with no `transcript_path`, or a cost incurred outside a subagent — record
+it by hand. This path has only an aggregate token count, so its `est_usd` is a
+**blended estimate** (`prices` in `tiers.json`), not the accurate per-class figure:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" add '{"task":"<slug>","slice":"<what>","model":"haiku","tokens":7172,"round":1,"verdict":"green"}'
+```
+
+`model` and `tokens` are required; the rest is optional context. Both paths write
+the same ledger, so `summary` totals them together. Reconcile against the
+Anthropic console for the billed figure. Note: neither path captures the
+WARBOSS's own (orchestrator) tokens — only dispatched workers. Use `/cost` for
+the whole-session figure.
+
 ## The one invariant
 
 Ambiguity you cannot resolve from the code, the task, or the spec is a **Leader
