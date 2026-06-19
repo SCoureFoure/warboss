@@ -188,6 +188,92 @@ form, over-skeptical in another). What survived as the actual admission gate is 
 if the survivors don't agree on held-out cases, the contract isn't decided enough
 to freeze. The model that does the work votes on whether the work is decided.
 
+## How to use
+
+warboss ships in two halves, and which one you want depends on what you're after:
+
+| You want to… | Install | Needs |
+| --- | --- | --- |
+| **Use the delegation doctrine in your own Claude Code** | the **`warboss-horde` plugin** | nothing but Claude Code |
+| **Run the research harness** (membrane, loop, gate, live experiments) | clone this repo | Node ≥ 22; an API key only for live runs |
+
+The plugin is the part most people install — it's the thesis packaged as a
+reusable Claude Code skill. The harness is the lab the thesis was proven in;
+clone it only if you want to run or extend the experiments themselves.
+
+### A. Use the delegation doctrine — install the plugin
+
+The `warboss-horde` plugin turns Claude Code into the WARBOSS: it reads a model
+ladder, routes each slice of work to the cheapest model that can satisfy it, and
+dispatches a single generic `doer` subagent at that model. No Node, no API key,
+no clone — it runs inside Claude Code.
+
+**1. Add the marketplace and install** (in any Claude Code session):
+
+```text
+/plugin marketplace add SCoureFoure/warboss
+/plugin install warboss-horde@warboss-marketplace
+```
+
+**2. Delegate a task.** Once installed, run the skill on any task big enough to
+split up:
+
+```text
+/warboss-horde:delegate add a rate limiter to the /upload route, 10 req/min per IP
+```
+
+The WARBOSS will author the entropy out of your task, pick a rung from the
+ladder, dispatch the `doer` at that model, and judge the result against a verify
+command (your tests / typecheck). It only escalates back to you for forks it
+can't decide from the code or spec.
+
+**3. (Optional) Tune the ladder.** The ladder lives in `tiers.json` inside the
+installed plugin. Each entry is a rung, ordered cheapest → most capable; **N
+models = N rungs.** Edit a rung's `model` to pin it (alias `haiku|sonnet|opus`,
+or a full id like `claude-haiku-4-5-20251001`), or add/remove rungs to change the
+ladder's shape. The highest rung is the WARBOSS itself (`orchestrator: true`) —
+work that lands there is decomposed or escalated, never dispatched.
+
+```jsonc
+// tiers.json — default 3-rung ladder
+"ladder": [
+  { "rung": 1, "tier": "LOW",  "model": "haiku",  "dispatch": true  },  // near-zero entropy → cheapest
+  { "rung": 2, "tier": "MID",  "model": "sonnet", "dispatch": true  },  // decided but subtle
+  { "rung": 3, "tier": "HIGH", "model": "opus",   "dispatch": false }   // undecided → stays with you
+]
+```
+
+The rule that governs it all: **tier follows a task's residual entropy, not its
+size.** Only push to the cheapest rung what a literal machine could satisfy;
+anything still open stays with the WARBOSS or escalates to you.
+
+### B. Run the research harness — clone the repo
+
+The harness is a Node ≥ 22 / TypeScript CLI + library. There is **no build
+step** — `tsx` runs `.ts` directly.
+
+```sh
+git clone https://github.com/SCoureFoure/warboss.git
+cd warboss
+npm install
+
+npm run typecheck      # strict tsc --noEmit — run before declaring done
+npm test               # full offline suite (node:test, ~294 tests) — no key needed
+```
+
+Everything above runs **offline with no API key.** To exercise the full stack or
+the live experiments, add a key:
+
+```sh
+cp .env.example .env   # then add ANTHROPIC_API_KEY
+npm run smoke          # end-to-end; dispatches ONE real grunt if a key is set, else offline-only
+```
+
+**Live experiment runners cost real money** and are owner-gated — they spend
+against the API and write verdicts to [`reports/`](reports/). Run them only on
+purpose: `npm run e1a | e1b | e2 | e3 | e4`, plus `npm run decompose` and
+`npm run calibrate-gate | calibrate-derive`.
+
 ## Where it stands
 
 The machine's organs are built and covered by **294 offline tests**: membrane
@@ -208,17 +294,11 @@ deposits a durable spec in [`specs/`](specs/) plus a regression test (via the
 through [HANDOFF.md](HANDOFF.md) frozen-spec work items, and every model call —
 including our own build loop's — lands in a cost ledger.
 
-```sh
-npm install
-cp .env.example .env   # add ANTHROPIC_API_KEY (only needed for live runs)
-
-npm run typecheck      # strict tsc
-npm test               # node:test — the whole machine, offline (294 tests)
-npm run smoke          # full stack; dispatches one real grunt if a key is set
-```
+## Repo map
 
 | Where | What |
 | --- | --- |
+| [plugins/warboss-horde/](plugins/warboss-horde/) | The installable plugin: the `/delegate` doctrine, the `doer` subagent, and `tiers.json`. |
 | [duh_plan.md](duh_plan.md) | Thesis, architecture, experiment design — the living plan. |
 | [HANDOFF.md](HANDOFF.md) | The relay: planner writes work items down, implementer reports back. |
 | [specs/](specs/) | Durable source of truth per harness feature, paired with tests. |
