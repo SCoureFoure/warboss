@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Jumper 1-1</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: sans-serif;
+  }
+  #game {
+    border: 2px solid #fff;
+    background: #5c94fc;
+    display: block;
+  }
+  #caption {
+    color: #fff;
+    margin-top: 10px;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+  <canvas id="game" width="800" height="416"></canvas>
+  <div id="caption">A/D move &middot; Space/W jump</div>
+
+  <script src="level.js"></script>
+  <script src="physics.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
