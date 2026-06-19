@@ -1,0 +1,11 @@
+{
+  "name": "pong-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A playable Pong demo built by the warboss horde (WARBOSS decides, cheap rungs do).",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "serve": "node server.mjs"
+  }
+}

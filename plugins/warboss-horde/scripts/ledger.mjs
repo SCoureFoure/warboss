@@ -111,8 +111,26 @@ function cmdSummary(args) {
     die(`no ledger at ${file}`);
   }
 
-  const rows = text.split('\n').filter((l) => l.trim().length > 0).map((l) => JSON.parse(l));
-  if (rows.length === 0) die(`ledger empty at ${file}`);
+  const allRows = text.split('\n').filter((l) => l.trim().length > 0).map((l) => JSON.parse(l));
+  if (allRows.length === 0) die(`ledger empty at ${file}`);
+
+  // Dedup hook rows by (agent_id, model): a SubagentStop hook may fire more than
+  // once for the same dispatch, and an older meter re-summed a growing transcript
+  // each time. Keep the LAST line per (agent_id, model) so re-fires/snapshots are
+  // not summed together. Rows without an agent_id (manual `add`) are never merged.
+  const seen = new Map();
+  const rows = [];
+  for (const r of allRows) {
+    if (r && r.agent_id) {
+      const key = `${r.agent_id}::${r.model}`;
+      if (seen.has(key)) {
+        rows[seen.get(key)] = r; // replace earlier snapshot with the latest
+        continue;
+      }
+      seen.set(key, rows.length);
+    }
+    rows.push(r);
+  }
 
   const byModel = new Map();
   let totTok = 0;
