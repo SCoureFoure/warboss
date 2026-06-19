@@ -11,8 +11,11 @@ Drive residual entropy out of a task at authoring time, then push the decided
 work down to the cheapest rung that can satisfy it. You judge; you never
 implement what a cheaper rung could.
 
-Ranks are not lore — a rung **is** a model tier. **Tier follows a task's residual
-entropy, not its size or importance.**
+Ranks are not lore — a rung **is** a model tier. The rung a slice goes to is set
+by that slice's residual entropy alone — not by how big or important the slice
+is. That rule picks the rung for a slice you have **already cut out**; it is never
+a reason to keep a task whole. Always cut the task into slices first (Step 1),
+then tier each slice (Step 2).
 
 ## Step 0 — Build the ladder from config (do this first, every session)
 
@@ -43,9 +46,39 @@ config has been edited to pin rungs to specific models, honor it verbatim.
 Default ladder (use only if config is unreadable): LOW=`haiku` (dispatch),
 MID=`sonnet` (dispatch), HIGH=`opus` (orchestrator / you).
 
-## Step 1 — Estimate residual entropy, pick the rung
+## Step 1 — Cut the task into the smallest independent slices (always, before tiering)
 
-For the task — or each slice of it — ask: *how much interpretation latitude is
+Run this on every task before you tier anything. A task is almost never one
+rung's worth of work, so never tier a task whole — cut it first, then decide on
+the pieces.
+
+Cut the task into slices where each slice is both:
+
+- **independently verifiable** — it has its own pass/fail check that needs no
+  other slice to run, and
+- **disjoint** — no two slices write the same file or the same surface, so they
+  can run in parallel.
+
+Coupled-looking work splits once you fix the seam. **You** define that seam and
+write it into every slice's contract: the shared state shape, the function
+signatures, the data format the slices agree on. Deciding the seam is your job
+and cannot be delegated — it is part of authoring the entropy out.
+
+Cut for cost, not only for difficulty. A task that reads as one "medium-hard"
+block almost always hides lowest-band leaves — static data tables, literal
+input-to-action maps, pure formatters — that the cheapest rung can satisfy
+exactly. Pull every such leaf into its own slice so it routes to the cheapest
+rung. What is left after the leaves are out is the genuinely coupled,
+invariant-bearing core; only that part stays at a higher rung.
+
+The output of this step is a list of slices, each labelled with the surface it
+touches and its own verify check. Tier them in Step 2. You may conclude a task is
+a single slice — but only after trying to cut it, never as the reason to skip
+this step.
+
+## Step 2 — Tier each slice (set its rung by its residual entropy)
+
+For each slice from Step 1, ask: *how much interpretation latitude is
 left?* Match it to a rung's `band`:
 
 - **Lowest band — a literal machine could satisfy it** → the cheapest dispatched
@@ -61,7 +94,7 @@ If you cannot make a slice falsifiable — cannot write its criteria as cases a
 verify command would pass or fail — **it is not ready to dispatch.** Decompose
 further or escalate.
 
-## Step 2 — Author the entropy out (the expensive, non-delegable part)
+## Step 3 — Author the entropy out (the expensive, non-delegable part)
 
 Only you can do this. For the slice you're about to dispatch, write a **dense
 contract**:
@@ -76,24 +109,24 @@ contract**:
 Hand the `doer` the *contract*, not your reasoning. Do **not** give it the verify
 command or its output — that output is the membrane it must satisfy blind.
 
-## Step 3 — Dispatch at the chosen model
+## Step 4 — Dispatch at the chosen model
 
 Dispatch with the Agent tool: subagent = `doer`, and set the **per-call `model`
 override to the rung's `model` from config.** Give it only the contract. One
 slice per dispatch; keep slices independent so they run in parallel.
 
-This is the whole point of the config: the rung you picked in Step 1 selects the
+This is the whole point of the config: the rung you picked in Step 2 selects the
 model here. No per-tier agent files — same `doer`, different model.
 
-## Step 4 — Judge mechanically (you own the membrane)
+## Step 5 — Judge mechanically (you own the membrane)
 
 The `doer` has no Bash and cannot verify itself, by design. **You** run the
 verify command — the project's test / typecheck, a single test file, or a focused
 check that proves exactly the criteria. Green is green; the doer's prose does not
 count. If it reports `// UNDECIDED:` gaps or hands back a decomposition, the
-contract wasn't decided enough → back to Step 2.
+contract wasn't decided enough → back to Step 3.
 
-## Step 5 — Retry with feedback, bounded
+## Step 6 — Retry with feedback, bounded
 
 On red, re-dispatch the **same rung** with the exact failure output. Bound it:
 **two rounds.** Stop on any of these — they are authoring defects, not worker
@@ -108,7 +141,7 @@ failures:
 When you stop, **fix the contract or escalate** — never grind the same dispatch a
 third time.
 
-## Step 6 — Metering (mostly automatic)
+## Step 7 — Metering (mostly automatic)
 
 The bet is **correctness-per-dollar**, so an unrecorded dispatch is a hole in the
 metric. You usually do **nothing** here:
