@@ -1,0 +1,15 @@
+{
+  "$comment": "Automatic worker metering. On every subagent finish, parse its transcript and append a costed line to .warboss-horde/ledger.jsonl. The command reads the hook JSON (transcript_path, cwd, agent_type, session_id) on stdin. No matcher = fires for every subagent; set WARBOSS_METER_DOER_ONLY=1 to restrict to doer dispatches. The script exits 0 on any error so a metering failure never breaks the turn.",
+  "hooks": {
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/meter-subagent.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}

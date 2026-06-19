@@ -1,6 +1,18 @@
 {
   "$comment": "The horde ladder. Ordered cheapest -> most capable. The NUMBER of rungs is the number of entries here: 3 models -> 3 rungs, 2 -> 2. The /delegate skill reads this to know which model serves which entropy band. Edit `model` to pin a rung to a specific model (alias haiku|sonnet|opus, or a full model id like claude-haiku-4-5-20251001). Add or remove a rung to change the ladder; the framework routes across whatever rungs exist. The HIGHEST rung (orchestrator: true) is the main agent / WARBOSS itself — work that lands there is decomposed or escalated, never dispatched to a subagent. Every lower rung is dispatched to the `doer` subagent with `model` set to that rung's model.",
   "doer": "doer",
+  "prices": {
+    "$comment": "BLENDED $/MILLION-tokens, used ONLY by the manual `scripts/ledger.mjs add` fallback (which has just an aggregate token count). The automatic hook path uses `pricing` below instead — prefer it. Set a model to null to log tokens only.",
+    "haiku": 2.4,
+    "sonnet": 9.0,
+    "opus": 45.0
+  },
+  "pricing": {
+    "$comment": "ACCURATE per-class $/MILLION-tokens, used by scripts/meter-subagent.mjs (the SubagentStop hook). The subagent transcript carries the real input/output/cache split, so USD here is precise — not blended. Keys are matched to a transcript's model id by SUBSTRING (e.g. 'claude-sonnet-4-6' -> 'sonnet'). VERIFY against current Anthropic pricing before trusting the dollar figures; as of authoring, cache_read is ~0.1x input and cache_write ~1.25x input. Set a model to null to log tokens only.",
+    "haiku":  { "input": 1,  "output": 5,  "cache_read": 0.1, "cache_write": 1.25 },
+    "sonnet": { "input": 3,  "output": 15, "cache_read": 0.3, "cache_write": 3.75 },
+    "opus":   { "input": 15, "output": 75, "cache_read": 1.5, "cache_write": 18.75 }
+  },
   "ladder": [
     {
       "rung": 1,
