@@ -126,20 +126,31 @@ check that proves exactly the criteria. Green is green; the doer's prose does no
 count. If it reports `// UNDECIDED:` gaps or hands back a decomposition, the
 contract wasn't decided enough → back to Step 3.
 
-## Step 6 — Retry with feedback, bounded
+## Step 6 — Diagnose the cause, then retry with feedback, bounded
 
-On red, re-dispatch the **same rung** with the exact failure output. Bound it:
-**two rounds.** Stop on any of these — they are authoring defects, not worker
-failures:
+Red is a **symptom, not a cause.** Before re-dispatching, name which cause it is —
+reflexive retry only fixes one of the four, and grinds the wrong fix on the rest:
 
-- **Stall** — two rounds produce materially the same code.
-- **Undecided gaps** — the doer reports forks it could not resolve.
-- **Wrong rung** — a cheap rung keeps misreading a slice → it was higher-entropy;
-  lift it one rung (or decompose it smaller). The top dispatched rung keeps
-  stalling → the slice is still undecided; it stays with you or escalates.
+- **Test/criteria wrong** — the verify command asserts something the contract never
+  promised → fix the criteria, not the worker. 0 retries.
+- **Contract under-decided** — the doer guessed a fork (look for `// UNDECIDED:` or a
+  coherent-but-unintended reading) → author the fork out. 0 retries; back to Step 3.
+- **Wrong rung** — a cheap rung keeps misreading a sound contract → it was
+  higher-entropy than tiered; lift it one rung (or decompose smaller). 0 retries at
+  this rung.
+- **Genuine worker miss** — contract sound, criteria right, rung right, code just
+  wrong → **this** is the only bucket you retry.
 
-When you stop, **fix the contract or escalate** — never grind the same dispatch a
-third time.
+For a genuine miss, re-dispatch the **same rung** with the exact failure output.
+Bound it: **two rounds.** Even within the genuine-miss bucket, stop early on:
+
+- **Stall** — two rounds produce materially the same code. The miss wasn't genuine;
+  re-diagnose — it's really one of the other three causes above.
+- **Top dispatched rung stalling** — the slice is still undecided; it stays with you
+  or escalates.
+
+When you stop, **fix the cause you named — contract, criteria, or rung — or
+escalate.** Never grind the same dispatch a third time.
 
 ## Step 7 — Metering (mostly automatic)
 
