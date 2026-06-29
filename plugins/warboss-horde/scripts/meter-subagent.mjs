@@ -45,10 +45,9 @@ function readStdin() {
   }
 }
 
-function loadPricing() {
+function loadTiers() {
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'tiers.json'), 'utf8'));
-    return cfg.pricing && typeof cfg.pricing === 'object' ? cfg.pricing : {};
+    return JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'tiers.json'), 'utf8'));
   } catch {
     return {};
   }
@@ -64,6 +63,26 @@ function priceForModel(pricing, model) {
       const p = pricing[key];
       return p && typeof p === 'object' ? p : null;
     }
+  }
+  return null;
+}
+
+// Map a transcript model id to its ladder tier ('LOW'|'MID'|'HIGH'|...). The
+// ladder's `model` may be an alias ('sonnet') or a full id; the transcript model
+// is always a full id ('claude-sonnet-4-6'). Match by substring either way, with
+// a class-word fallback (haiku/sonnet/opus) so an alias rung still resolves.
+function tierForModel(ladder, model) {
+  if (!Array.isArray(ladder) || !model) return null;
+  const m = model.toLowerCase();
+  for (const rung of ladder) {
+    const lm = String(rung && rung.model ? rung.model : '').toLowerCase();
+    if (lm && (m.includes(lm) || lm.includes(m))) return rung.tier || null;
+  }
+  // Class-word fallback: match the rung whose model shares a class word.
+  for (const word of ['haiku', 'sonnet', 'opus']) {
+    if (!m.includes(word)) continue;
+    const rung = ladder.find((r) => String(r && r.model ? r.model : '').toLowerCase().includes(word));
+    if (rung) return rung.tier || null;
   }
   return null;
 }
@@ -181,7 +200,9 @@ function main() {
   }
 
   const doerOnly = process.env.WARBOSS_METER_DOER_ONLY === '1';
-  const pricing = loadPricing();
+  const tiers = loadTiers();
+  const pricing = tiers.pricing && typeof tiers.pricing === 'object' ? tiers.pricing : {};
+  const ladder = Array.isArray(tiers.ladder) ? tiers.ladder : [];
   const ts = new Date().toISOString();
 
   const ledgerFile = process.env.WARBOSS_LEDGER
@@ -205,6 +226,7 @@ function main() {
 
     for (const [model, u] of byModel) {
       const tokens = u.input + u.output + u.cache_read + u.cache_creation;
+      const tier = tierForModel(ladder, model);
       const line = {
         ts,
         source: 'hook',
@@ -212,6 +234,7 @@ function main() {
         agent_type: agentType || undefined,
         agent_id: agentId,
         model,
+        ...(tier ? { tier } : {}),
         tokens,
         input: u.input,
         output: u.output,

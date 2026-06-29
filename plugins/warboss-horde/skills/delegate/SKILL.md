@@ -46,6 +46,29 @@ config has been edited to pin rungs to specific models, honor it verbatim.
 Default ladder (use only if config is unreadable): LOW=`haiku` (dispatch),
 MID=`sonnet` (dispatch), HIGH=`opus` (orchestrator / you).
 
+## Step 0.5 — Is there a membrane? (classify each slice's verify_kind)
+
+The whole loop rests on an **interpretation-free pass/fail check** — the membrane.
+Before slicing for cost, decide how each piece is even *judgeable*, because a slice
+with no membrane cannot be safely delegated (the doer would be graded on prose, and
+"green" would mean nothing). Tag each slice:
+
+- **`test`** — a command returns pass/fail with no human in the loop (unit test,
+  typecheck, a single headless test file). **Normal delegate path** (Steps 1-7).
+- **`visual`** — correctness is a rendered/perceptual fact (a screenshot, a layout,
+  a sound). The membrane is then a **captured artifact + ground-truth sidecar** the
+  WARBOSS inspects (e.g. a screenshot paired with the world-state it was taken from).
+  You may dispatch the *production*, but **you** judge the artifact — there is no
+  cheap auto-green. If the project has no such capture+inspect path, treat the slice
+  as `none` until one exists.
+- **`none`** — no pass/fail check is possible (exploratory, asset wrangling, a
+  judgement call). **Do not pretend-delegate.** Handle inline, or escalate the
+  decision to the user. A dispatch with no membrane is an authoring defect.
+
+Only `test` (and `visual`, with you as judge) slices proceed. This is the honest
+boundary of the doctrine: it makes cheap workers reliable *because* a frozen check
+grades them — where no check exists, the bet doesn't apply.
+
 ## Step 1 — Cut the task into the smallest independent slices (always, before tiering)
 
 Run this on every task before you tier anything. A task is almost never one
@@ -94,6 +117,16 @@ If you cannot make a slice falsifiable — cannot write its criteria as cases a
 verify command would pass or fail — **it is not ready to dispatch.** Decompose
 further or escalate.
 
+**Default down, and justify every step up.** The cheapest dispatched rung is the
+default; a slice only moves UP a rung when you can name *why* the rung below would
+misread it. When you tier a slice above the cheapest rung, record that reason on
+its eventual verdict as `cause` (Step 5) using the same vocabulary as a red:
+`under_decided` (you haven't authored the fork out yet — fix that first),
+`subtle_invariant`/`wrong_rung` (genuinely needs more capability). If most slices
+land MID with no nameable reason, that is **authoring debt, not entropy** — the
+`summary` board will show it as a low LOW-share. Drive the entropy down instead of
+defaulting up.
+
 ## Step 3 — Author the entropy out (the expensive, non-delegable part)
 
 Only you can do this. For the slice you're about to dispatch, write a **dense
@@ -126,6 +159,21 @@ check that proves exactly the criteria. Green is green; the doer's prose does no
 count. If it reports `// UNDECIDED:` gaps or hands back a decomposition, the
 contract wasn't decided enough → back to Step 3.
 
+**Record the verdict (judge truth the meters can't see).** The cost hook logs
+tokens automatically, but whether a dispatch was green/red, which retry round it
+was, and (on red) the root cause are known only to you, here. Log them so the
+metric is whole — one line per dispatch, right after you judge it:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" annotate latest \
+  '{"verdict":"green","round":1,"slice":"<what>"}'
+```
+
+`latest` resolves to the newest un-judged doer dispatch — no need to hunt the
+agent_id. On red, set `"verdict":"red"` and a `cause` (the four from Step 6:
+`test_wrong|under_decided|wrong_rung|worker_miss`). Each retry is its own dispatch,
+so annotate each one — that is what makes **tries-per-green** real in the summary.
+
 ## Step 6 — Diagnose the cause, then retry with feedback, bounded
 
 Red is a **symptom, not a cause.** Before re-dispatching, name which cause it is —
@@ -157,18 +205,25 @@ escalate.** Never grind the same dispatch a third time.
 The bet is **correctness-per-dollar**, so an unrecorded dispatch is a hole in the
 metric. You usually do **nothing** here:
 
-**Automatic (default).** The plugin ships a `SubagentStop` hook
-(`hooks/hooks.json` → `scripts/meter-subagent.mjs`) that fires on every subagent
-finish. It reads the subagent's own transcript — which records per-message
-`usage` with the full input/output/cache split — and appends one accurately
-costed line to `./.warboss-horde/ledger.jsonl` in the working directory. No
-discipline required; retries, stalls, and escalated rounds are all captured
-because each is its own dispatch. This is the authoritative path: it uses real
-per-class pricing (`pricing` in `tiers.json`), so the USD is precise, not blended.
-(Set `WARBOSS_METER_DOER_ONLY=1` to log only `doer` dispatches; default meters
-every subagent.)
+**Automatic (default) — both bands.** The plugin ships two metering hooks
+(`hooks/hooks.json`), so **both** halves of correctness-per-dollar are captured
+with no discipline:
 
-Read the running total any time:
+- `SubagentStop` → `scripts/meter-subagent.mjs` meters each **doer** (the "do"
+  band) from its own transcript — accurate per-class USD, with the rung `tier`
+  stamped on each row. Retries/stalls/escalated rounds are all captured because
+  each is its own dispatch.
+- `Stop` → `scripts/meter-orchestrator.mjs` meters **you, the WARBOSS** (the
+  "decide" band) from the parent transcript, once per turn, under a stable
+  per-session id. This is the expensive half the old setup missed.
+
+Both append to `./.warboss-horde/ledger.jsonl` and use real `pricing` from
+`tiers.json`. (Set `WARBOSS_METER_DOER_ONLY=1` to restrict the subagent meter to
+`doer` dispatches.)
+
+Read the board any time — it now shows the tier split (with a LOW-share warning
+when the cheap rung is under-used), the **decide:do** spend ratio, and — once you
+annotate verdicts (Step 5) — **tries-per-green** and a red-cause histogram:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" summary
@@ -185,9 +240,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" add '{"task":"<slug>","slice":"<
 
 `model` and `tokens` are required; the rest is optional context. Both paths write
 the same ledger, so `summary` totals them together. Reconcile against the
-Anthropic console for the billed figure. Note: neither path captures the
-WARBOSS's own (orchestrator) tokens — only dispatched workers. Use `/cost` for
-the whole-session figure.
+Anthropic console for the billed figure. The `Stop` meter now captures the
+WARBOSS's own (orchestrator) tokens automatically, so `summary` reports both
+bands; `/cost` remains the ground-truth whole-session figure to reconcile against.
 
 ## The one invariant
 

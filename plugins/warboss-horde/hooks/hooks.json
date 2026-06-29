@@ -1,5 +1,5 @@
 {
-  "$comment": "Automatic worker metering. On every subagent finish, parse its transcript and append a costed line to .warboss-horde/ledger.jsonl. The command reads the hook JSON (transcript_path, cwd, agent_type, session_id) on stdin. No matcher = fires for every subagent; set WARBOSS_METER_DOER_ONLY=1 to restrict to doer dispatches. The script exits 0 on any error so a metering failure never breaks the turn.",
+  "$comment": "Automatic cost metering, both bands of the correctness-per-dollar metric. SubagentStop meters each DOER (the cheap 'do' band) from its own transcript. Stop meters the WARBOSS ORCHESTRATOR (the expensive 'decide' band) from the parent transcript once per turn; it appends a cumulative snapshot under a stable per-session agent_id, and `ledger.mjs summary` keeps the last snapshot. Both append to .warboss-horde/ledger.jsonl and read hook JSON (transcript_path, cwd, agent_type, session_id) on stdin. No matcher = fires for every event; WARBOSS_METER_DOER_ONLY=1 restricts the subagent meter to doer dispatches. Both scripts exit 0 on any error so a metering failure never breaks the turn.",
   "hooks": {
     "SubagentStop": [
       {
@@ -7,6 +7,16 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/meter-subagent.mjs\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/meter-orchestrator.mjs\""
           }
         ]
       }
