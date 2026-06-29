@@ -224,8 +224,21 @@ split up:
 
 The WARBOSS will author the entropy out of your task, pick a rung from the
 ladder, dispatch the `doer` at that model, and judge the result against a verify
-command (your tests / typecheck). It only escalates back to you for forks it
-can't decide from the code or spec.
+command (your tests / typecheck). On a red it **diagnoses the cause** before
+retrying — test-wrong, under-decided contract, wrong rung, or a genuine worker
+miss — so a failure is fixed at its real source instead of blindly re-run. It
+only escalates back to you for forks it can't decide from the code or spec.
+
+Every dispatch is **metered automatically** — two hooks log each worker and the
+WARBOSS itself to a crash-safe `.warboss-horde/ledger.jsonl`, so
+correctness-per-dollar is measured from the first run, not reconstructed after.
+`ledger.mjs summary` prints the board (tier split, decide:do ratio,
+tries-per-green); `dashboard.mjs` aggregates every ledger under the cwd into a
+self-contained HTML dashboard you can open in a browser:
+
+```text
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dashboard.mjs" --out board.html
+```
 
 **3. (Optional) Tune the ladder.** The ladder lives in `tiers.json` inside the
 installed plugin. Each entry is a rung, ordered cheapest → most capable; **N
@@ -298,7 +311,7 @@ including our own build loop's — lands in a cost ledger.
 
 | Where | What |
 | --- | --- |
-| [plugins/warboss-horde/](plugins/warboss-horde/) | The installable plugin: the `/delegate` doctrine, the `doer` subagent, and `tiers.json`. |
+| [plugins/warboss-horde/](plugins/warboss-horde/) | The installable plugin: the `/delegate` doctrine, the `doer` subagent, `tiers.json`, the auto-metering hooks, and the cost `ledger.mjs` + HTML `dashboard.mjs`. |
 | [specs/](specs/) | Durable source of truth per harness feature, paired with tests. |
 | [reports/](reports/) | Where new live-run verdicts land. The lab-phase record (E1a–E4, gate calibrations) is archived in [archive/reports/](archive/reports/). |
 | [archive/](archive/) | The development record: [duh_plan.md](archive/duh_plan.md) (thesis/experiment design), [HANDOFF.md](archive/HANDOFF.md) (the rank relay), and the completed experiment verdicts. |

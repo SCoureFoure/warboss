@@ -229,6 +229,16 @@ annotate verdicts (Step 5) — **tries-per-green** and a red-cause histogram:
 node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" summary
 ```
 
+**Want a visual, shareable view?** `dashboard.mjs` discovers **every**
+`.warboss-horde/ledger.jsonl` under the cwd (this run plus each
+delegated-project), aggregates them, and emits a self-contained HTML file —
+inline SVG charts (cumulative spend over time, tier-split donut, verdict board,
+per-task and per-project tables), no deps, opens straight in a browser:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dashboard.mjs" --out board.html
+```
+
 **Manual (fallback only).** If the hook can't run — metering disabled, an older
 client with no `transcript_path`, or a cost incurred outside a subagent — record
 it by hand. This path has only an aggregate token count, so its `est_usd` is a
