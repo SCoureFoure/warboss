@@ -190,7 +190,14 @@ reflexive retry only fixes one of the four, and grinds the wrong fix on the rest
   wrong → **this** is the only bucket you retry.
 
 For a genuine miss, re-dispatch the **same rung** with the exact failure output.
-Bound it: **two rounds.** Even within the genuine-miss bucket, stop early on:
+Bound it: **two rounds.** Before round 2, consult the ledger's empirical retry
+economics — it compares a retry at this rung against one expected green at the
+rung above, from your own annotated history (advice is withheld until a rung
+has ≥3 greens):
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" advise
+``` Even within the genuine-miss bucket, stop early on:
 
 - **Stall** — two rounds produce materially the same code. The miss wasn't genuine;
   re-diagnose — it's really one of the other three causes above.

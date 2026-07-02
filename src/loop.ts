@@ -69,8 +69,8 @@ export async function runLoop(opts: LoopOptions): Promise<LoopResult> {
   let totalCostUsd = 0;
   let totalWallMs = 0;
   let currentPrompt = opts.prompt;
-  let prevCodeForStall: string | undefined = undefined;
-  let prevHadCode = false;
+  let seenCodes: Set<string> = new Set();
+  let prevOutcomeSig: string | undefined = undefined;
 
   for (let i = 1; i <= budget; i++) {
     let text: string | undefined;
@@ -126,8 +126,8 @@ export async function runLoop(opts: LoopOptions): Promise<LoopResult> {
       attempts.push(record);
       totalCostUsd += costUsd;
       totalWallMs += wallMs;
-      prevHadCode = false;
-      prevCodeForStall = undefined;
+      seenCodes = new Set();
+      prevOutcomeSig = undefined;
 
       if (i < budget) {
         currentPrompt = buildRetryPrompt(opts.prompt, record);
@@ -135,41 +135,7 @@ export async function runLoop(opts: LoopOptions): Promise<LoopResult> {
       continue;
     }
 
-    // Stall detection: both current and previous produced code and are equal after trim
-    if (prevHadCode && code.trim() === prevCodeForStall) {
-      const judged = judge(opts.contract, code, {
-        expectedHash: opts.contract.hash,
-        granularity,
-      });
-      const record: AttemptRecord = {
-        index: i,
-        code,
-        generationFailed: false,
-        pass: judged.pass,
-        score: judged.score,
-        vector: judged.vector,
-        feedback: judged.feedback,
-        costUsd,
-        wallMs,
-      };
-      attempts.push(record);
-      totalCostUsd += costUsd;
-      totalWallMs += wallMs;
-      return {
-        status: "stalled",
-        green: false,
-        attempts,
-        attemptsUsed: i,
-        finalCode,
-        costUsd: totalCostUsd,
-        wallMs: totalWallMs,
-      };
-    }
-
-    if (code !== undefined) {
-      prevCodeForStall = code.trim();
-      prevHadCode = true;
-    }
+    const trimmedCode = code.trim();
 
     const judged = judge(opts.contract, code, {
       expectedHash: opts.contract.hash,
@@ -202,6 +168,43 @@ export async function runLoop(opts: LoopOptions): Promise<LoopResult> {
         wallMs: totalWallMs,
       };
     }
+
+    // Trigger A: repeat/oscillation — current code already produced (any prior attempt since last generation failure)
+    if (seenCodes.has(trimmedCode)) {
+      return {
+        status: "stalled",
+        green: false,
+        attempts,
+        attemptsUsed: i,
+        finalCode,
+        costUsd: totalCostUsd,
+        wallMs: totalWallMs,
+      };
+    }
+
+    const sig = JSON.stringify(
+      judged.results.map((r) => ({
+        pass: r.pass,
+        actual: r.actual === undefined ? null : r.actual,
+        error: r.error === undefined ? null : r.error,
+      })),
+    );
+
+    // Trigger B: behavioral stall — same outcomes on every contract example as the previous attempt
+    if (sig === prevOutcomeSig) {
+      return {
+        status: "stalled",
+        green: false,
+        attempts,
+        attemptsUsed: i,
+        finalCode,
+        costUsd: totalCostUsd,
+        wallMs: totalWallMs,
+      };
+    }
+
+    seenCodes.add(trimmedCode);
+    prevOutcomeSig = sig;
 
     if (i < budget) {
       currentPrompt = buildRetryPrompt(opts.prompt, record);

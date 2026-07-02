@@ -1,6 +1,6 @@
 # Spec — readiness-gate (grunt-readiness admission check)
 
-> Status: active · **rev 2** (2026-06-12: instrument statuses settled by three live runs — `gruntJudge` FAIL as gate (READY anti-correlates with anchors, `archive/reports/gate-calibration-verdict.md`), `deriveCheck` FAIL as gate (decidedRate saturates 0.000, precision broken, `archive/reports/derive-calibration-verdict.md`), `admit`-in-anger miss (E2 contract passed with 0 questions over 2 real ambiguities, `archive/reports/e2-verdict.md`) — **introspective instruments are unwired from admission decisions; behavioral divergence is the only gate signal.** New instrument: **`intentProbe`** — contract-free K-grunt divergence over the PROSE intent, run BEFORE freezing, because the E2 measurement proved the freeze itself destroys divergence: every per-case rate was 0/30 or 30/30, so post-freeze probing cannot see a fiat resolution) · Feature: readiness-gate · Added: 2026-06-10 · Maps to: PLAN "The grunt is a doer, not a planner" lever 1 + pinned idea (2026-06-09, grunt-tier readiness judge — falsified as gate, instrument retained)
+> Status: active · **rev 3** (2026-07-02, all additions OPT-IN — no-option calls remain byte-identical to rev 2, preserving the E1a-anchored calibration: (1) contamination audit reworked — needles shorter than `MIN_NEEDLE_LEN = 4` chars are skipped (a primitive like `1` substring-matches almost any prompt: pure false positive) and the full arg tuple `JSON.stringify(probe.input)` is always a needle (brackets/commas keep short-arg probes checkable); (2) `clustering: "outcome"` — survivors clustered by actual outcome values (`outcomeKey`, shared with `intentProbe`) instead of boolean pass/fail vectors, fixing two rev-2 blind spots: two impls failing a probe DIFFERENTLY counted as agreeing, and ALL survivors failing a probe identically produced modalShare 1.0 → ready (convergent-but-wrong sailed through); outcome mode adds a `modalWrong` check of the modal cluster against each probe's expected value, and `ready` requires it empty; (3) optional `wilson` ready rule — one-sided Wilson lower bounds via exported `wilsonLower(successes, n, z=1.645)` replace raw point estimates, removing the hidden unanimity cliff where `modalShare ≥ 0.9` with ≤9 survivors mathematically required 100% agreement and 4/4 counted as strongly as 9/9; thresholds still need a calibrate-gate re-run before any default flips to Wilson; (4) `temperature?` on both probes, forwarded to every generation — K-generation diversity previously rode silently on the API default) · **rev 2** (2026-06-12: instrument statuses settled by three live runs — `gruntJudge` FAIL as gate (READY anti-correlates with anchors, `archive/reports/gate-calibration-verdict.md`), `deriveCheck` FAIL as gate (decidedRate saturates 0.000, precision broken, `archive/reports/derive-calibration-verdict.md`), `admit`-in-anger miss (E2 contract passed with 0 questions over 2 real ambiguities, `archive/reports/e2-verdict.md`) — **introspective instruments are unwired from admission decisions; behavioral divergence is the only gate signal.** New instrument: **`intentProbe`** — contract-free K-grunt divergence over the PROSE intent, run BEFORE freezing, because the E2 measurement proved the freeze itself destroys divergence: every per-case rate was 0/30 or 30/30, so post-freeze probing cannot see a fiat resolution) · Feature: readiness-gate · Added: 2026-06-10 · Maps to: PLAN "The grunt is a doer, not a planner" lever 1 + pinned idea (2026-06-09, grunt-tier readiness judge — falsified as gate, instrument retained)
 > Source of truth for the admission check: no task is dispatched to a grunt
 > until its contract's residual interpretation latitude is proven low.
 > Rev-2 instrument roster:
@@ -197,9 +197,32 @@ src/gate.ts:
 - **No probes provided (`probes.length === 0`) → throw** a descriptive error.
   Convergence over zero probes is meaningless; the caller must supply a probe
   battery (auto-generation of probes is Phase 4 / decomposition territory).
-- **Contamination audit:** before dispatch, assert no probe input's JSON
-  appears as a substring of the prompt (reuse `auditNoContamination` shape:
-  inputs only, same rationale as e1a-harness rev 1 amendment).
+- **Contamination audit (rev 3):** before dispatch, build needles per probe —
+  ALWAYS the full arg tuple `JSON.stringify(probe.input)`, plus each individual
+  arg's JSON — and throw if any needle of length ≥ `MIN_NEEDLE_LEN` (4) appears
+  as a substring of the prompt. Shorter needles are skipped entirely: a
+  primitive literal like `1` matches nearly any prompt, making short-needle
+  checks pure false positive (the tuple form keeps short-arg probes checkable —
+  `[1,2,3]` is distinctive where `1` is not). Known accepted residual:
+  formatting-variant leaks (whitespace, quote style) are not caught.
+- **Outcome clustering (rev 3, opt-in `clustering: "outcome"`):** survivor
+  selection unchanged; survivors are scored by running each probe input through
+  `runImpl` and clustering the `outcomeKey` arrays (`value:<json>` / `throw`,
+  the exact `intentProbe` key scheme, now a shared helper). `disagreements`
+  carry outcome distributions; the modal (largest, ties → lexicographically
+  smallest key) cluster is checked against each probe's expected key
+  (`"throw"` for throws-probes, else `value:<JSON.stringify(expected)>`) into
+  `modalWrong`, and `ready` additionally requires `modalWrong` empty. Default
+  `"vector"` mode is byte-identical to rev 2.
+- **Wilson ready rule (rev 3, opt-in `wilson: {z?, minSurvivorLB, minAgreementLB}`):**
+  `ready = wilsonLower(survivors, k, z) ≥ minSurvivorLB && wilsonLower(largestCluster, survivors, z) ≥ minAgreementLB`
+  (z default 1.645; `wilsonLower(_, 0) = 0`). Reference points at default z:
+  4/8 → ≈0.2486, 4/4 → ≈0.5965, 8/8 → ≈0.678. When `wilson` is absent the
+  rev-2 point rule stands unchanged. Default thresholds may flip to Wilson only
+  after a calibrate-gate re-run pins values — same no-silent-tuning rule as rev 2.
+- **Temperature (rev 3):** both probes accept `temperature?`, forwarded to
+  every generation via the Agent layer; unset → absent from the API call.
+  Probe validity depends on sampling diversity — pin explicitly in live runs.
 
 ### Intent probe (rev 2 — the pre-freeze instrument)
 
@@ -325,9 +348,31 @@ src/gate.ts:
     fails all transient retries counts `generated`-excluded, cost 0 for that
     slot, run completes (mirrors AC3's exhausted-retry shape).
 
+17. **AC17 — short-needle skip (rev 3).** A probe with `input: [1]` and a prompt
+    containing `1` → NO contamination throw (needle length < 4); a probe with
+    `input: [1, 2, 3]` and a prompt containing `[1,2,3]` → throws before any
+    model call (tuple needle); `input: ["1.5h"]` with the quoted JSON in the
+    prompt → still throws.
+18. **AC18 — wilsonLower math (rev 3).** `wilsonLower(4,8) ≈ 0.2486` (1e-3),
+    `wilsonLower(0,0) === 0`, `wilsonLower(9,9) > wilsonLower(4,4)` (more
+    evidence → higher bound).
+19. **AC19 — outcome mode sees what vectors mask (rev 3).** k=4, all pass the
+    contract, two return 7 and two return 9 on a probe expecting 5: default
+    clustering → no disagreement on that probe, `modalShare: 1` (the rev-2
+    blindness, pinned as documentation); `clustering: "outcome"` → that probe
+    splits `{"value:7": 2, "value:9": 2}`, `modalShare: 0.5`, `ready: false`.
+20. **AC20 — convergent-but-wrong flagged (rev 3).** All four survivors return
+    7 on a probe expecting 5 → outcome mode: `modalShare: 1` but `modalWrong`
+    names the probe (`modalKey: "value:7"`, `expectedKey: "value:5"`) and
+    `ready: false`; vector mode: `ready: true` (documented contrast).
+21. **AC21 — wilson rule + temperature (rev 3).** 8/8 one-cluster with
+    `{minSurvivorLB: 0.5, minAgreementLB: 0.6}` → ready; 4/8 with the same →
+    not ready. `temperature: 1.0` → every captured generation body carries it;
+    unset → no temperature key.
+
 ## Verifies-with
 
-- Tests: `test/gate.test.ts` — AC1–AC16, offline, fake `MessagesClient`.
+- Tests: `test/gate.test.ts` — AC1–AC21, offline, fake `MessagesClient`.
 - Integration: gruntJudge calibration protocol — RAN, FAIL as gate
   (`archive/reports/gate-calibration-verdict.md`, `archive/reports/derive-calibration-verdict.md`).
   `intentProbe`'s first live run is E3 (Leader-gated,

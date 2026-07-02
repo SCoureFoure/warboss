@@ -8,8 +8,10 @@ import { TIERS } from "../src/models.ts";
 import { Contract } from "../src/contract.ts";
 import {
   decompose,
+  decomposeRecursive,
   admit,
   DecompositionParseError,
+  RequirementCapExceeded,
   type DraftSet,
 } from "../src/warboss.ts";
 
@@ -30,6 +32,31 @@ function scriptedClient(
       },
     },
   };
+}
+
+// Like scriptedClient, but also captures each call's user-content text (in
+// call order) — used by the recursive-decomposition tests to capture-assert
+// a specific call's prompt (e.g. that a child's decompose prompt carries the
+// seam text).
+function capturingScriptedClient(
+  responses: string[],
+): { client: MessagesClient; prompts: string[] } {
+  const prompts: string[] = [];
+  const client: MessagesClient = {
+    messages: {
+      create: async (body) => {
+        const msgs = body.messages;
+        const content = msgs[0]?.content;
+        prompts.push(typeof content === "string" ? content : "");
+        const n = prompts.length - 1;
+        return {
+          content: [{ type: "text", text: responses[n] ?? "" }],
+          usage: { input_tokens: 10, output_tokens: 5 },
+        } as unknown as Anthropic.Message;
+      },
+    },
+  };
+  return { client, prompts };
 }
 
 // rev 4: all fixtures carry resolutions: [] (AC12 makes the field mandatory)
@@ -314,7 +341,18 @@ test("AC5 — audit/amend round: gap filled → auditGaps empty; gap not filled 
   ]);
   // rev 4: audit gap now carries intentDecides: true to be amendable
   const gapResponse = '```json\n[{"id":"dur-parse","gap":"What happens when input is 0s?","intentDecides":true}]\n```';
-  const amendedFenced = "```json\n" + durParseWithExtra + "\n```";
+  // rev 5: amend output is the new object shape {requirements, pinned} — mechanical mapping
+  const amendedObj = JSON.stringify({
+    requirements: JSON.parse(durParseWithExtra),
+    pinned: [
+      {
+        id: "dur-parse",
+        gap: "What happens when input is 0s?",
+        examples: ["pinned-gap"],
+      },
+    ],
+  });
+  const amendedFenced = "```json\n" + amendedObj + "\n```";
 
   // Variant A: amend fills the gap (no re-audit needed; auditGaps stays empty based on one-round rule)
   const clientA = scriptedClient([
@@ -1282,5 +1320,297 @@ test("AC17 — escalations ordering + cost (rev 4): fiat first, then intent-unde
   assert.ok(
     Math.abs(draft.costUsd - ledgerTotal) < 1e-9,
     `DraftSet.costUsd ${draft.costUsd} should equal ledger sum ${ledgerTotal}`,
+  );
+});
+
+// rev 5: mechanical amend-verification mapping (replaces the example-count proxy)
+const AMEND_GAP_TEXT = "What happens when input is 0s?";
+const AMEND_ORIG_DRAFT_JSON = JSON.stringify([
+  {
+    id: "dur-parse",
+    requirement: "Parse a duration string.",
+    entry: "parseDuration",
+    signature: "(s: string) => number",
+    examples: [
+      { name: "basic", input: ["1h"], expected: 3600 },
+      { name: "invalid", input: ["-1h"], expected: "<throws>", throws: true },
+    ],
+    resolutions: [],
+  },
+]);
+const AMEND_GAP_RESPONSE =
+  "```json\n" +
+  JSON.stringify([{ id: "dur-parse", gap: AMEND_GAP_TEXT, intentDecides: true }]) +
+  "\n```";
+
+test("amend: unrelated example without mapping gives no credit", async () => {
+  const amendedRequirements = JSON.parse(AMEND_ORIG_DRAFT_JSON);
+  amendedRequirements[0].examples.push({ name: "unrelated", input: ["2h"], expected: 7200 });
+  const amendedObj = JSON.stringify({ requirements: amendedRequirements, pinned: [] });
+
+  const client = scriptedClient([
+    { text: "```json\n" + AMEND_ORIG_DRAFT_JSON + "\n```" },
+    { text: AMEND_GAP_RESPONSE },
+    { text: "```json\n" + amendedObj + "\n```" },
+  ]);
+  const { agent } = makeAgent(client);
+  const draft = await decompose({ agent, intent: "test" });
+
+  assert.deepEqual(draft.auditGaps, [`dur-parse: ${AMEND_GAP_TEXT}`]);
+});
+
+test("amend: mapping naming a non-existent example gives no credit", async () => {
+  const amendedRequirements = JSON.parse(AMEND_ORIG_DRAFT_JSON);
+  amendedRequirements[0].examples.push({ name: "zero", input: ["0s"], expected: 0 });
+  const amendedObj = JSON.stringify({
+    requirements: amendedRequirements,
+    pinned: [{ id: "dur-parse", gap: AMEND_GAP_TEXT, examples: ["ghost-example"] }],
+  });
+
+  const client = scriptedClient([
+    { text: "```json\n" + AMEND_ORIG_DRAFT_JSON + "\n```" },
+    { text: AMEND_GAP_RESPONSE },
+    { text: "```json\n" + amendedObj + "\n```" },
+  ]);
+  const { agent } = makeAgent(client);
+  const draft = await decompose({ agent, intent: "test" });
+
+  assert.deepEqual(draft.auditGaps, [`dur-parse: ${AMEND_GAP_TEXT}`]);
+});
+
+test("amend: mapping naming a pre-existing example gives no credit", async () => {
+  const amendedRequirements = JSON.parse(AMEND_ORIG_DRAFT_JSON);
+  amendedRequirements[0].examples.push({ name: "zero", input: ["0s"], expected: 0 });
+  const amendedObj = JSON.stringify({
+    requirements: amendedRequirements,
+    pinned: [{ id: "dur-parse", gap: AMEND_GAP_TEXT, examples: ["basic"] }],
+  });
+
+  const client = scriptedClient([
+    { text: "```json\n" + AMEND_ORIG_DRAFT_JSON + "\n```" },
+    { text: AMEND_GAP_RESPONSE },
+    { text: "```json\n" + amendedObj + "\n```" },
+  ]);
+  const { agent } = makeAgent(client);
+  const draft = await decompose({ agent, intent: "test" });
+
+  assert.deepEqual(draft.auditGaps, [`dur-parse: ${AMEND_GAP_TEXT}`]);
+});
+
+test("amend: old array-shape output carries all gaps (fail-closed back-compat)", async () => {
+  const amendedArray = JSON.parse(AMEND_ORIG_DRAFT_JSON);
+  amendedArray[0].examples.push({ name: "zero", input: ["0s"], expected: 0 });
+  const amendedFenced = "```json\n" + JSON.stringify(amendedArray) + "\n```";
+
+  const client = scriptedClient([
+    { text: "```json\n" + AMEND_ORIG_DRAFT_JSON + "\n```" },
+    { text: AMEND_GAP_RESPONSE },
+    { text: amendedFenced },
+  ]);
+  const { agent } = makeAgent(client);
+  const draft = await decompose({ agent, intent: "test" });
+
+  assert.deepEqual(draft.auditGaps, [`dur-parse: ${AMEND_GAP_TEXT}`]);
+  const contract = draft.contracts[0];
+  assert.ok(contract !== undefined);
+  assert.ok(
+    contract.examples.some((ex) => ex.name === "zero"),
+    "amended example present despite no credit (old array shape is used, just not mapped)",
+  );
+});
+
+test("amend: correct mapping clears the gap", async () => {
+  const amendedRequirements = JSON.parse(AMEND_ORIG_DRAFT_JSON);
+  amendedRequirements[0].examples.push({ name: "zero", input: ["0s"], expected: 0 });
+  const amendedObj = JSON.stringify({
+    requirements: amendedRequirements,
+    pinned: [{ id: "dur-parse", gap: AMEND_GAP_TEXT, examples: ["zero"] }],
+  });
+
+  const client = scriptedClient([
+    { text: "```json\n" + AMEND_ORIG_DRAFT_JSON + "\n```" },
+    { text: AMEND_GAP_RESPONSE },
+    { text: "```json\n" + amendedObj + "\n```" },
+  ]);
+  const { agent } = makeAgent(client);
+  const draft = await decompose({ agent, intent: "test" });
+
+  assert.deepEqual(draft.auditGaps, []);
+  const contract = draft.contracts[0];
+  assert.ok(contract !== undefined);
+  assert.ok(contract.examples.some((ex) => ex.name === "zero"), "amended example present");
+});
+
+// recursive decomposition (decomposeRecursive) — fixtures
+
+function oneReqJson(id: string, entry: string): string {
+  return JSON.stringify([
+    {
+      id,
+      requirement: `Requirement for ${id}.`,
+      entry,
+      signature: "(x: number) => number",
+      examples: [
+        { name: "basic", input: [1], expected: 1 },
+        { name: "bad", input: [-1], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    },
+  ]);
+}
+
+function threeReqJson(): string {
+  return JSON.stringify(
+    ["req-a", "req-b", "req-c"].map((id, i) => ({
+      id,
+      requirement: `Requirement for ${id}.`,
+      entry: `fn${["A", "B", "C"][i]}`,
+      signature: "(x: number) => number",
+      examples: [
+        { name: "basic", input: [1], expected: 1 },
+        { name: "bad", input: [-1], expected: "<throws>", throws: true },
+      ],
+      resolutions: [],
+    })),
+  );
+}
+
+test("recursive: under cap delegates to plain decompose", async () => {
+  const client = scriptedClient([
+    { text: VALID_2REQ_FENCED },
+    { text: EMPTY_GAPS_FENCED },
+  ]);
+  const { agent, ledger } = makeAgent(client);
+
+  const draft = await decomposeRecursive({ agent, intent: "Parse and format durations" });
+
+  assert.equal(draft.contracts.length, 2);
+  const partitionEntries = ledger.all().filter((e) => e.kind === "warboss.partition");
+  assert.equal(partitionEntries.length, 0, "no partition call when under cap");
+});
+
+test("recursive: cap exceeded → partition → merged children", async () => {
+  const partitionResponse =
+    "```json\n" +
+    JSON.stringify([
+      { id: "part-a", intent: "Sub-intent A", seam: "shared: (s: string) => number" },
+      { id: "part-b", intent: "Sub-intent B", seam: "" },
+    ]) +
+    "\n```";
+
+  const responses = [
+    "```json\n" + threeReqJson() + "\n```", // 1: decompose (over cap, throws)
+    partitionResponse, // 2: partition
+    "```json\n" + oneReqJson("child-a-req", "fnChildA") + "\n```", // 3: child A decompose
+    EMPTY_GAPS_FENCED, // 4: child A audit
+    "```json\n" + oneReqJson("child-b-req", "fnChildB") + "\n```", // 5: child B decompose
+    EMPTY_GAPS_FENCED, // 6: child B audit
+  ];
+  const { client, prompts } = capturingScriptedClient(responses);
+  const { agent, ledger } = makeAgent(client);
+
+  const draft = await decomposeRecursive({ agent, intent: "big intent", maxRequirements: 2 });
+
+  assert.equal(draft.requirements.length, 2);
+  assert.equal(draft.contracts.length, 2);
+
+  const ledgerTotal = ledger.totals().costUsd;
+  assert.ok(
+    Math.abs(draft.costUsd - ledgerTotal) < 1e-9,
+    `costUsd ${draft.costUsd} should equal ledger sum (incl. the failed first decompose) ${ledgerTotal}`,
+  );
+
+  const partitionEntries = ledger.all().filter((e) => e.kind === "warboss.partition");
+  assert.equal(partitionEntries.length, 1, "exactly one partition call");
+
+  // Call index 2 (0-based) is child-A's decompose call
+  assert.ok(
+    prompts[2]?.includes("shared: (s: string) => number"),
+    `child-A decompose prompt should contain the seam text: ${prompts[2]?.slice(0, 300)}`,
+  );
+});
+
+test("recursive: maxDepth 0 rethrows cap error", async () => {
+  const client = scriptedClient([{ text: "```json\n" + threeReqJson() + "\n```" }]);
+  const { agent } = makeAgent(client);
+
+  await assert.rejects(
+    () => decomposeRecursive({ agent, intent: "big intent", maxRequirements: 2, maxDepth: 0 }),
+    (err: unknown) => {
+      assert.ok(err instanceof RequirementCapExceeded, "should be RequirementCapExceeded");
+      assert.ok((err as RequirementCapExceeded).costUsd > 0, "costUsd should be stamped > 0");
+      return true;
+    },
+  );
+});
+
+test("recursive: partition double parse-failure", async () => {
+  const client = scriptedClient([
+    { text: "```json\n" + threeReqJson() + "\n```" },
+    { text: "prose without fence" },
+    { text: "still no fence" },
+  ]);
+  const { agent } = makeAgent(client);
+
+  await assert.rejects(
+    () => decomposeRecursive({ agent, intent: "big intent", maxRequirements: 2 }),
+    (err: unknown) => {
+      assert.ok(err instanceof DecompositionParseError, "should be DecompositionParseError");
+      return true;
+    },
+  );
+});
+
+test("recursive: duplicate ids across children throw", async () => {
+  const partitionResponse =
+    "```json\n" +
+    JSON.stringify([
+      { id: "part-a", intent: "Sub-intent A", seam: "" },
+      { id: "part-b", intent: "Sub-intent B", seam: "" },
+    ]) +
+    "\n```";
+
+  const responses = [
+    "```json\n" + threeReqJson() + "\n```",
+    partitionResponse,
+    "```json\n" + oneReqJson("dup-req", "fnA") + "\n```",
+    EMPTY_GAPS_FENCED,
+    "```json\n" + oneReqJson("dup-req", "fnB") + "\n```",
+    EMPTY_GAPS_FENCED,
+  ];
+  const client = scriptedClient(responses.map((text) => ({ text })));
+  const { agent } = makeAgent(client);
+
+  await assert.rejects(
+    () => decomposeRecursive({ agent, intent: "big intent", maxRequirements: 2 }),
+    (err: Error) => {
+      assert.ok(
+        err.message.includes("duplicate requirement id"),
+        `should mention duplicate requirement id: ${err.message}`,
+      );
+      return true;
+    },
+  );
+});
+
+test("recursive: 1-element partition fails up", async () => {
+  const partitionResponse =
+    "```json\n" + JSON.stringify([{ id: "part-a", intent: "Sub-intent A", seam: "" }]) + "\n```";
+
+  const client = scriptedClient([
+    { text: "```json\n" + threeReqJson() + "\n```" },
+    { text: partitionResponse },
+  ]);
+  const { agent } = makeAgent(client);
+
+  await assert.rejects(
+    () => decomposeRecursive({ agent, intent: "big intent", maxRequirements: 2 }),
+    (err: Error) => {
+      assert.ok(
+        err.message.includes("Partition failed"),
+        `should mention Partition failed: ${err.message}`,
+      );
+      return true;
+    },
   );
 });

@@ -63,6 +63,8 @@ export interface GenerateOptions {
   maxTokens?: number;
   /** Opt-in per call; only set for tiers that support it. */
   thinking?: ThinkingConfig;
+  /** Sampling temperature forwarded verbatim; omitted from the API call when unset. */
+  temperature?: number;
   /** Label for the ledger entry, e.g. "grunt.generate". */
   kind?: string;
   /** Tags for ledger slicing (arm, task, attempt, …). */
@@ -108,6 +110,7 @@ export class Agent {
       ...(opts.thinking
         ? { thinking: opts.thinking as unknown as Anthropic.ThinkingConfigParam }
         : {}),
+      ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
       messages: [{ role: "user", content: opts.prompt }],
     });
     const wallMs = performance.now() - started;

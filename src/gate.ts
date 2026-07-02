@@ -64,6 +64,12 @@ export interface ProbeOptions {
   maxTokens?: number;
   kind?: string;
   tags?: Record<string, string | number>;
+  /** Cluster survivors by boolean probe-vector (default, rev-2 pinned behavior) or by actual outcome values. */
+  clustering?: "vector" | "outcome";
+  /** When set, the ready rule uses Wilson lower bounds instead of raw point estimates. */
+  wilson?: { z?: number; minSurvivorLB: number; minAgreementLB: number };
+  /** Sampling temperature forwarded to every generation call (Agent.generate now accepts it). */
+  temperature?: number;
 }
 
 export interface ProbeVerdict {
@@ -78,6 +84,8 @@ export interface ProbeVerdict {
     name?: string;
     split: Record<string, number>;
   }[];
+  /** Outcome mode only: probes where the modal cluster disagrees with the probe's expected value. */
+  modalWrong?: readonly { probeIndex: number; name?: string; modalKey: string; expectedKey: string }[];
   costUsd: number;
 }
 
@@ -96,6 +104,8 @@ export interface IntentProbeOptions {
   /** Ledger kind, default "gate.intent". */
   kind?: string;
   tags?: Record<string, string | number>;
+  /** Sampling temperature forwarded to every generation call (Agent.generate now accepts it). */
+  temperature?: number;
 }
 
 export interface IntentProbeVerdict {
@@ -132,6 +142,18 @@ const PROBE_DEFAULT_SYSTEM =
 
 const MAX_API_ATTEMPTS = 3;
 const PROBE_CONCURRENCY = 4;
+const MIN_NEEDLE_LEN = 4;
+
+/**
+ * Outcome key for a sandbox run: "throw" on failure, else "value:<json>" on
+ * success — "value:undefined" when the value JSON-stringifies to undefined.
+ * Shared by intentProbe and convergenceProbe's outcome-clustering mode.
+ */
+function outcomeKey(run: { ok: boolean; value?: unknown }): string {
+  if (!run.ok) return "throw";
+  const jsonVal = JSON.stringify(run.value);
+  return "value:" + (jsonVal === undefined ? "undefined" : jsonVal);
+}
 
 // ── gruntJudge ───────────────────────────────────────────────────────────────
 
@@ -277,6 +299,7 @@ export async function convergenceProbe(
   const system = opts.system ?? PROBE_DEFAULT_SYSTEM;
   const maxTokens = opts.maxTokens ?? 2048;
   const kind = opts.kind ?? "gate.probe";
+  const clustering = opts.clustering ?? "vector";
 
   // Guard: empty probes before any model call.
   if (opts.probes.length === 0) {
@@ -285,15 +308,20 @@ export async function convergenceProbe(
     );
   }
 
-  // Contamination audit: for each probe's inputs, ensure no JSON.stringify(input)
-  // appears as substring of opts.prompt. Same pattern as auditNoContamination.
+  // Contamination audit: a needle shorter than MIN_NEEDLE_LEN characters is
+  // skipped — primitive literals like "1" substring-match almost any prompt,
+  // so short needles are pure false positive. The full arg tuple is also
+  // checked (brackets/commas make it distinctive even when args are short).
   for (let pi = 0; pi < opts.probes.length; pi++) {
     const probe = opts.probes[pi]!;
+    const needles: string[] = [JSON.stringify(probe.input)];
     for (const inp of probe.input) {
-      const needle = JSON.stringify(inp);
-      if (opts.prompt.includes(needle)) {
+      needles.push(JSON.stringify(inp));
+    }
+    for (const needle of needles) {
+      if (needle.length >= MIN_NEEDLE_LEN && opts.prompt.includes(needle)) {
         throw new Error(
-          `convergenceProbe: contamination — probe[${pi}]${probe.name !== undefined ? ` ("${probe.name}")` : ""} input ${needle} appears in opts.prompt`,
+          `convergenceProbe: contamination — probe[${pi}]${probe.name !== undefined ? ` ("${probe.name}")` : ""} needle ${needle} appears in opts.prompt`,
         );
       }
     }
@@ -302,7 +330,7 @@ export async function convergenceProbe(
   // Dispatch k independent generations with concurrency 4.
   const genTasks: Array<() => Promise<{ code: string | undefined; costUsd: number }>> =
     Array.from({ length: k }, () => () =>
-      dispatchGeneration(opts.agent, opts.prompt, system, maxTokens, kind, opts.tags),
+      dispatchGeneration(opts.agent, opts.prompt, system, maxTokens, kind, opts.tags, opts.temperature),
     );
 
   const genResults = await runWithConcurrency(genTasks, PROBE_CONCURRENCY);
@@ -313,10 +341,12 @@ export async function convergenceProbe(
     totalCostUsd += r.costUsd;
   }
 
-  // Judge each impl against the contract to find survivors.
-  // ContractHashMismatch propagates (not caught).
+  // Judge each impl against the contract to find survivors — UNCHANGED across
+  // clustering modes (outcome mode scores survivors differently but selects
+  // the same set). ContractHashMismatch propagates (not caught).
   type SurvivorEntry = { code: string; probeVector: boolean[] };
   const survivors: SurvivorEntry[] = [];
+  const outcomeSurvivorCodes: string[] = []; // populated only in outcome mode
 
   for (const gen of genResults) {
     if (gen.code === undefined) continue; // no code → non-survivor
@@ -326,6 +356,11 @@ export async function convergenceProbe(
       expectedHash: opts.contract.hash,
     });
     if (!contractResult.pass) continue; // failed contract → non-survivor
+
+    if (clustering === "outcome") {
+      outcomeSurvivorCodes.push(gen.code);
+      continue;
+    }
 
     // Survivor: judge against probes to get probe vector.
     const probeResult = judge(opts.contract, gen.code, {
@@ -337,6 +372,10 @@ export async function convergenceProbe(
       code: gen.code,
       probeVector: probeResult.vector as boolean[],
     });
+  }
+
+  if (clustering === "outcome") {
+    return buildOutcomeVerdict(opts, outcomeSurvivorCodes, k, totalCostUsd);
   }
 
   const survivorCount = survivors.length;
@@ -387,7 +426,10 @@ export async function convergenceProbe(
     }
   }
 
-  const ready = survivorRate >= 0.5 && modalShare >= 0.9;
+  const ready = opts.wilson
+    ? wilsonLower(survivorCount, k, opts.wilson.z ?? 1.645) >= opts.wilson.minSurvivorLB &&
+      wilsonLower(largestCluster, survivorCount, opts.wilson.z ?? 1.645) >= opts.wilson.minAgreementLB
+    : survivorRate >= 0.5 && modalShare >= 0.9;
 
   return {
     ready,
@@ -426,7 +468,7 @@ export async function intentProbe(
   // Dispatch k independent generations using the SHARED helpers (no duplication).
   const genTasks: Array<() => Promise<{ code: string | undefined; costUsd: number }>> =
     Array.from({ length: k }, () => () =>
-      dispatchGeneration(opts.agent, opts.prompt, system, maxTokens, kind, opts.tags),
+      dispatchGeneration(opts.agent, opts.prompt, system, maxTokens, kind, opts.tags, opts.temperature),
     );
 
   const genResults = await runWithConcurrency(genTasks, PROBE_CONCURRENCY);
@@ -480,25 +522,16 @@ export async function intentProbe(
     let hasNonThrow = false;
 
     // Record outcome for input[0] first (already run).
-    if (firstRun.ok) {
-      const jsonVal = JSON.stringify(firstRun.value);
-      outcomes.push("value:" + (jsonVal === undefined ? "undefined" : jsonVal));
-      hasNonThrow = true;
-    } else {
-      outcomes.push("throw");
-    }
+    outcomes.push(outcomeKey(firstRun));
+    if (firstRun.ok) hasNonThrow = true;
 
     // Run remaining inputs (index 1 onward).
     for (let ii = 1; ii < opts.inputs.length; ii++) {
       const input = opts.inputs[ii]!;
       const run = runImpl(gen.code, opts.entry, input);
+      outcomes.push(outcomeKey(run));
       if (run.ok) {
-        const jsonVal = JSON.stringify(run.value);
-        const key = "value:" + (jsonVal === undefined ? "undefined" : jsonVal);
-        outcomes.push(key);
         hasNonThrow = true;
-      } else {
-        outcomes.push("throw");
       }
     }
 
@@ -564,6 +597,7 @@ async function dispatchGeneration(
   maxTokens: number,
   kind: string,
   tags: Record<string, string | number> | undefined,
+  temperature: number | undefined,
 ): Promise<{ code: string | undefined; costUsd: number }> {
   for (let attempt = 0; attempt < MAX_API_ATTEMPTS; attempt++) {
     try {
@@ -573,6 +607,7 @@ async function dispatchGeneration(
         maxTokens,
         kind,
         ...(tags ? { tags } : {}),
+        ...(temperature !== undefined ? { temperature } : {}),
       });
       return { code: result.code, costUsd: result.costUsd };
     } catch {
@@ -608,4 +643,139 @@ async function runWithConcurrency<T>(
   );
   await Promise.all(workers);
   return results;
+}
+
+/** One-sided Wilson score lower bound on a binomial proportion. Returns 0 when n === 0. */
+export function wilsonLower(successes: number, n: number, z = 1.645): number {
+  if (n === 0) return 0;
+  const p = successes / n;
+  const z2 = z * z;
+  return (p + z2 / (2 * n) - z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / (1 + z2 / n);
+}
+
+/**
+ * convergenceProbe's outcome-clustering scorer (opts.clustering === "outcome").
+ * Survivor selection already happened (unchanged); this scores the survivor
+ * set by running each probe input directly and clustering on outcome keys
+ * instead of pass/fail probe vectors — and flags the modal cluster when it
+ * disagrees with the probe's expected value (the convergent-wrong fix).
+ */
+function buildOutcomeVerdict(
+  opts: ProbeOptions,
+  survivorCodes: readonly string[],
+  k: number,
+  totalCostUsd: number,
+): ProbeVerdict {
+  const survivorCount = survivorCodes.length;
+  const survivorRate = survivorCount / k;
+
+  // One outcome-key array per survivor, one key per probe (in probe order).
+  const survivorOutcomeArrays: string[][] = survivorCodes.map((code) => {
+    const keys: string[] = [];
+    for (const probe of opts.probes) {
+      const run = runImpl(code, opts.contract.entry, probe.input);
+      keys.push(outcomeKey(run));
+    }
+    return keys;
+  });
+
+  // Cluster survivors by JSON.stringify(outcomeKeyArray).
+  const clusterMap = new Map<string, { count: number; array: string[] }>();
+  for (const arr of survivorOutcomeArrays) {
+    const key = JSON.stringify(arr);
+    const existing = clusterMap.get(key);
+    if (existing) existing.count++;
+    else clusterMap.set(key, { count: 1, array: arr });
+  }
+
+  // Largest cluster; ties broken by lexicographically smallest cluster key.
+  let largestCluster = 0;
+  let modalArray: string[] | undefined;
+  for (const key of Array.from(clusterMap.keys()).sort()) {
+    const entry = clusterMap.get(key)!;
+    if (entry.count > largestCluster) {
+      largestCluster = entry.count;
+      modalArray = entry.array;
+    }
+  }
+
+  const modalShare = survivorCount === 0 ? 0 : largestCluster / survivorCount;
+
+  // Disagreements: probe indices where survivors produced ≥2 distinct outcome keys.
+  const disagreements: Array<{
+    probeIndex: number;
+    name?: string;
+    split: Record<string, number>;
+  }> = [];
+
+  for (let pi = 0; pi < opts.probes.length; pi++) {
+    const probe = opts.probes[pi]!;
+    if (survivorCount === 0) break;
+
+    const dist: Record<string, number> = {};
+    for (const arr of survivorOutcomeArrays) {
+      const key = arr[pi]!;
+      dist[key] = (dist[key] ?? 0) + 1;
+    }
+
+    if (Object.keys(dist).length >= 2) {
+      const entry: {
+        probeIndex: number;
+        name?: string;
+        split: Record<string, number>;
+      } = { probeIndex: pi, split: dist };
+      if (probe.name !== undefined) entry.name = probe.name;
+      disagreements.push(entry);
+    }
+  }
+
+  // Modal-vs-expected check: for each probe, compare the modal cluster's key
+  // against the probe's expected outcome.
+  const modalWrong: Array<{
+    probeIndex: number;
+    name?: string;
+    modalKey: string;
+    expectedKey: string;
+  }> = [];
+
+  if (modalArray !== undefined) {
+    for (let pi = 0; pi < opts.probes.length; pi++) {
+      const probe = opts.probes[pi]!;
+      const expectedJson = JSON.stringify(probe.expected);
+      const expectedKey =
+        probe.throws === true
+          ? "throw"
+          : "value:" + (expectedJson === undefined ? "undefined" : expectedJson);
+      const modalKey = modalArray[pi]!;
+      if (modalKey !== expectedKey) {
+        const entry: {
+          probeIndex: number;
+          name?: string;
+          modalKey: string;
+          expectedKey: string;
+        } = { probeIndex: pi, modalKey, expectedKey };
+        if (probe.name !== undefined) entry.name = probe.name;
+        modalWrong.push(entry);
+      }
+    }
+  }
+
+  const wilson = opts.wilson;
+  const thresholdsOk = wilson
+    ? wilsonLower(survivorCount, k, wilson.z ?? 1.645) >= wilson.minSurvivorLB &&
+      wilsonLower(largestCluster, survivorCount, wilson.z ?? 1.645) >= wilson.minAgreementLB
+    : survivorRate >= 0.5 && modalShare >= 0.9;
+
+  const ready = thresholdsOk && modalWrong.length === 0;
+
+  return {
+    ready,
+    k,
+    survivors: survivorCount,
+    survivorRate,
+    modalShare,
+    disagreements,
+    modalWrong,
+    costUsd: totalCostUsd,
+  };
 }

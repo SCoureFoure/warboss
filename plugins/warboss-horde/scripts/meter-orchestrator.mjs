@@ -104,6 +104,11 @@ function sumByModel(file) {
     const msg = rec.message || rec;
     if (!msg || msg.role !== 'assistant' || !msg.usage) continue;
     const model = msg.model || 'unknown';
+    // Claude Code injects placeholder assistant messages (interrupts, compact
+    // summaries) carrying a sentinel model like "<synthetic>" and all-zero usage.
+    // They are not real model calls — metering them writes a phantom, price-less
+    // ledger row that poisons the board with a partial/n-a dispatch. Skip them.
+    if (model.startsWith('<')) continue;
     const acc = byModel.get(model) || { input: 0, output: 0, cache_read: 0, cache_creation: 0 };
     acc.input += msg.usage.input_tokens || 0;
     acc.output += msg.usage.output_tokens || 0;

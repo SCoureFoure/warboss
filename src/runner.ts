@@ -32,6 +32,8 @@ export interface CaseResult {
   readonly actual?: unknown;
   readonly pass: boolean;
   readonly error?: string;
+  /** Set only when a throws-case threw but the message failed `throwsMatch`. */
+  readonly throwsMatch?: string;
 }
 
 export interface JudgeResult {
@@ -88,9 +90,20 @@ export function judge(
       ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
     });
     if (c.throws) {
-      // Case passes iff the impl threw (any error, including timeout/missing-entry).
-      const pass = !run.ok;
-      return { ...labelOf(c), pass, ...(run.ok ? { actual: run.value } : {}) };
+      // Case passes iff the impl threw (any error, including timeout/missing-entry),
+      // and, when throwsMatch is set, the error message matches it.
+      if (!run.ok) {
+        if (c.throwsMatch !== undefined) {
+          const pass = new RegExp(c.throwsMatch).test(run.error ?? "");
+          return {
+            ...labelOf(c),
+            pass,
+            ...(pass ? {} : { error: run.error, throwsMatch: c.throwsMatch }),
+          };
+        }
+        return { ...labelOf(c), pass: true };
+      }
+      return { ...labelOf(c), pass: false, actual: run.value };
     }
     if (!run.ok) {
       return { ...labelOf(c), pass: false, error: run.error };
@@ -143,6 +156,9 @@ function buildFeedback(
       return `- input ${inp} failed`;
     }
     // full
+    if (r.throwsMatch !== undefined) {
+      return `- input ${inp}: errored (${r.error}) but message did not match /${r.throwsMatch}/`;
+    }
     if (r.error !== undefined) {
       return `- input ${inp}: errored (${r.error}); expected ${fmt(r.expected)}`;
     }
@@ -184,8 +200,20 @@ export async function judgeAsync(
     battery.map(async (c) => {
       const run = await runner(code, contract.entry, c.input, opts.procOpts);
       if (c.throws) {
-        const pass = !run.ok;
-        return { ...labelOf(c), pass, ...(run.ok ? { actual: run.value } : {}) };
+        // Case passes iff the impl threw (any error, including timeout/missing-entry),
+        // and, when throwsMatch is set, the error message matches it.
+        if (!run.ok) {
+          if (c.throwsMatch !== undefined) {
+            const pass = new RegExp(c.throwsMatch).test(run.error ?? "");
+            return {
+              ...labelOf(c),
+              pass,
+              ...(pass ? {} : { error: run.error, throwsMatch: c.throwsMatch }),
+            };
+          }
+          return { ...labelOf(c), pass: true };
+        }
+        return { ...labelOf(c), pass: false, actual: run.value };
       }
       if (!run.ok) {
         return { ...labelOf(c), pass: false, error: run.error };

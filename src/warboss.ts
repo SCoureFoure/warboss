@@ -13,6 +13,17 @@ export class DecompositionParseError extends Error {
   }
 }
 
+export class RequirementCapExceeded extends Error {
+  public costUsd = 0; // stamped by decompose() with the cost spent before the throw
+  constructor(
+    public readonly count: number,
+    public readonly cap: number,
+  ) {
+    super(`Validation failed: ${count} requirements exceeds maxRequirements (${cap})`);
+    this.name = "RequirementCapExceeded";
+  }
+}
+
 // rev 4: fiat-flagging type
 export interface Resolution {
   point: string;    // the behavior the intent leaves open, one sentence
@@ -208,9 +219,7 @@ function validateDrafts(parsedDrafts: ParsedDraft[], maxRequirements: number): R
     throw new Error("Validation failed: requirements array is empty");
   }
   if (parsedDrafts.length > maxRequirements) {
-    throw new Error(
-      `Validation failed: ${parsedDrafts.length} requirements exceeds maxRequirements (${maxRequirements})`,
-    );
+    throw new RequirementCapExceeded(parsedDrafts.length, maxRequirements);
   }
 
   const idSet = new Set<string>();
@@ -316,7 +325,7 @@ async function callAmend(
 ): Promise<{ text: string; costUsd: number }> {
   // AC14, capture-asserted: only amendable (intentDecides: true) gaps are passed here
   const userPrompt =
-    `Here are the requirement drafts:\n${JSON.stringify(drafts)}\n\nHere are the audit gaps:\n${JSON.stringify(gaps)}\n\nAdd examples to the requirements that pin each gap. Output the full amended RequirementDraft[] array in the same JSON schema.`;
+    `Here are the requirement drafts:\n${JSON.stringify(drafts)}\n\nHere are the audit gaps:\n${JSON.stringify(gaps)}\n\nAdd examples to the requirements that pin each gap. Every example you add MUST have a name new to that requirement. Output ONLY one fenced json block: {"requirements": <the full amended RequirementDraft[] array in the same schema>, "pinned": [{"id": "<requirement id>", "gap": "<the gap sentence verbatim>", "examples": ["<name of each new example that pins it>"]}]}`;
   const result = await agent.generate({
     prompt: userPrompt,
     system: DECOMPOSE_SYSTEM,
@@ -331,6 +340,30 @@ interface RawGapEntry {
   id: string;
   gap: string;
   intentDecides: boolean;
+}
+
+// rev 5: mechanical amend-verification mapping (replaces the example-count proxy)
+interface PinnedEntry {
+  id: string;
+  gap: string;
+  examples: string[];
+}
+
+// Drops malformed entries (not an object, or missing string id/gap or a
+// non-empty string[] examples). Missing/non-array input → empty list.
+function shapeCheckPinned(pinned: unknown): PinnedEntry[] {
+  if (!Array.isArray(pinned)) return [];
+  const out: PinnedEntry[] = [];
+  for (const item of pinned) {
+    if (typeof item !== "object" || item === null) continue;
+    const p = item as Record<string, unknown>;
+    if (typeof p["id"] !== "string") continue;
+    if (typeof p["gap"] !== "string") continue;
+    if (!Array.isArray(p["examples"]) || p["examples"].length === 0) continue;
+    if (!(p["examples"] as unknown[]).every((e) => typeof e === "string")) continue;
+    out.push({ id: p["id"], gap: p["gap"], examples: p["examples"] as string[] });
+  }
+  return out;
 }
 
 function parseAuditGaps(text: string): Array<RawGapEntry> | null {
@@ -364,153 +397,386 @@ export async function decompose(opts: DecomposeOptions): Promise<DraftSet> {
   const maxRequirements = opts.maxRequirements ?? 8;
   let totalCost = 0;
 
-  // rev 4: requirement-count cap line injected into the user prompt (exact line from spec)
-  const capLine = `At most ${maxRequirements} requirement(s). If the intent needs more, it must be decomposed further UP the chain — do not exceed the cap.`;
+  try {
+    // rev 4: requirement-count cap line injected into the user prompt (exact line from spec)
+    const capLine = `At most ${maxRequirements} requirement(s). If the intent needs more, it must be decomposed further UP the chain — do not exceed the cap.`;
 
-  let userPrompt = opts.intent;
-  if (opts.context) {
-    userPrompt += "\n\n" + opts.context;
-  }
-  userPrompt += "\n\n" + capLine;
-  userPrompt += "\n\n" + SCHEMA_TEXT;
-
-  // Stage 1 — Call 1: decompose
-  const call1 = await callDecompose(opts.agent, userPrompt, opts.tags);
-  totalCost += call1.costUsd;
-
-  // Stage 2 — Parse with one re-ask
-  const parse1 = parseWithReask(call1.text);
-  let parsedDrafts: ParsedDraft[];
-
-  if (parse1.error !== undefined) {
-    const reaskPrompt =
-      `${userPrompt}\n\nPrevious output (truncated):\n${call1.text.slice(0, 2000)}\n\nError: ${parse1.error}\n\nPlease output ONLY one fenced json block.`;
-    const call2 = await callDecompose(opts.agent, reaskPrompt, opts.tags);
-    totalCost += call2.costUsd;
-
-    const parse2 = parseWithReask(call2.text);
-    if (parse2.error !== undefined) {
-      throw new DecompositionParseError(
-        `Failed to parse decomposition after re-ask: ${parse2.error}`,
-        call1.text,
-        call2.text,
-      );
+    let userPrompt = opts.intent;
+    if (opts.context) {
+      userPrompt += "\n\n" + opts.context;
     }
-    parsedDrafts = parse2.drafts;
-  } else {
-    parsedDrafts = parse1.drafts;
-  }
+    userPrompt += "\n\n" + capLine;
+    userPrompt += "\n\n" + SCHEMA_TEXT;
 
-  // Stage 3 — Mechanical validation (includes resolutions shape check, rev 4)
-  let drafts: RequirementDraft[] = validateDrafts(parsedDrafts, maxRequirements);
+    // Stage 1 — Call 1: decompose
+    const call1 = await callDecompose(opts.agent, userPrompt, opts.tags);
+    totalCost += call1.costUsd;
 
-  let auditGaps: readonly string[] = [];
-  let escalations: readonly string[] = [];
+    // Stage 2 — Parse with one re-ask
+    const parse1 = parseWithReask(call1.text);
+    let parsedDrafts: ParsedDraft[];
 
-  // Stage 4 — Call 2: self-audit
-  const auditCall1 = await callAudit(opts.agent, drafts, opts.intent, opts.tags);
-  totalCost += auditCall1.costUsd;
+    if (parse1.error !== undefined) {
+      const reaskPrompt =
+        `${userPrompt}\n\nPrevious output (truncated):\n${call1.text.slice(0, 2000)}\n\nError: ${parse1.error}\n\nPlease output ONLY one fenced json block.`;
+      const call2 = await callDecompose(opts.agent, reaskPrompt, opts.tags);
+      totalCost += call2.costUsd;
 
-  let gaps = parseAuditGaps(auditCall1.text);
-  if (gaps === null) {
-    const reaskAuditPrompt =
-      `${JSON.stringify(drafts)}\n\nOriginal intent:\n${opts.intent}\n\nPrevious output (truncated):\n${auditCall1.text.slice(0, 2000)}\n\nPlease output ONLY one fenced json block of gaps.`;
-    const auditCall2 = await opts.agent.generate({
-      prompt: reaskAuditPrompt,
-      system: AUDIT_SYSTEM,
-      maxTokens: 8192,
-      kind: "warboss.audit",
-      ...(opts.tags !== undefined ? { tags: opts.tags } : {}),
-    });
-    totalCost += auditCall2.costUsd;
-    gaps = parseAuditGaps(auditCall2.text);
+      const parse2 = parseWithReask(call2.text);
+      if (parse2.error !== undefined) {
+        throw new DecompositionParseError(
+          `Failed to parse decomposition after re-ask: ${parse2.error}`,
+          call1.text,
+          call2.text,
+        );
+      }
+      parsedDrafts = parse2.drafts;
+    } else {
+      parsedDrafts = parse1.drafts;
+    }
+
+    // Stage 3 — Mechanical validation (includes resolutions shape check, rev 4)
+    let drafts: RequirementDraft[] = validateDrafts(parsedDrafts, maxRequirements);
+
+    let auditGaps: readonly string[] = [];
+    let escalations: readonly string[] = [];
+
+    // Stage 4 — Call 2: self-audit
+    const auditCall1 = await callAudit(opts.agent, drafts, opts.intent, opts.tags);
+    totalCost += auditCall1.costUsd;
+
+    let gaps = parseAuditGaps(auditCall1.text);
     if (gaps === null) {
-      // Audit double parse-failure (rev 3, pinned): do NOT throw, do NOT
-      // treat as "no gaps" — surface the sentinel as the sole auditGaps
-      // entry; gaps unknown → stage 5 (amend) is skipped; contracts are
-      // still frozen from the validated drafts.
-      gaps = [];
-      auditGaps = [AUDIT_UNAVAILABLE_SENTINEL];
+      const reaskAuditPrompt =
+        `${JSON.stringify(drafts)}\n\nOriginal intent:\n${opts.intent}\n\nPrevious output (truncated):\n${auditCall1.text.slice(0, 2000)}\n\nPlease output ONLY one fenced json block of gaps.`;
+      const auditCall2 = await opts.agent.generate({
+        prompt: reaskAuditPrompt,
+        system: AUDIT_SYSTEM,
+        maxTokens: 8192,
+        kind: "warboss.audit",
+        ...(opts.tags !== undefined ? { tags: opts.tags } : {}),
+      });
+      totalCost += auditCall2.costUsd;
+      gaps = parseAuditGaps(auditCall2.text);
+      if (gaps === null) {
+        // Audit double parse-failure (rev 3, pinned): do NOT throw, do NOT
+        // treat as "no gaps" — surface the sentinel as the sole auditGaps
+        // entry; gaps unknown → stage 5 (amend) is skipped; contracts are
+        // still frozen from the validated drafts.
+        gaps = [];
+        auditGaps = [AUDIT_UNAVAILABLE_SENTINEL];
+      }
     }
-  }
 
-  // Stage 5 — Call 3: amend (only if amendable gaps != [])
-  // rev 4: Gap routing — partition by intentDecides
-  if (gaps.length > 0) {
-    const amendableGaps = gaps.filter((g) => g.intentDecides === true);
-    const undecidedGaps = gaps.filter((g) => g.intentDecides === false);
+    // Stage 5 — Call 3: amend (only if amendable gaps != [])
+    // rev 4: Gap routing — partition by intentDecides
+    if (gaps.length > 0) {
+      const amendableGaps = gaps.filter((g) => g.intentDecides === true);
+      const undecidedGaps = gaps.filter((g) => g.intentDecides === false);
 
-    // intent-undecided gaps → escalations (NEVER amended)
-    const undecidedEscalations = undecidedGaps.map(
-      (g) => `${g.id}: intent-undecided — ${g.gap}`,
+      // intent-undecided gaps → escalations (NEVER amended)
+      const undecidedEscalations = undecidedGaps.map(
+        (g) => `${g.id}: intent-undecided — ${g.gap}`,
+      );
+
+      let remainingAuditGaps: string[] = [];
+
+      if (amendableGaps.length > 0) {
+        // Record pre-amend example NAMES per id (named examples only) — a gap is only
+        // addressed by a genuinely new name, never by an unrelated example count bump.
+        const preAmendNames = new Map<string, Set<string>>(
+          drafts.map((d) => [
+            d.id,
+            new Set(d.examples.map((ex) => ex.name).filter((n): n is string => n !== undefined)),
+          ]),
+        );
+
+        // Amend-prompt purity (AC14, capture-asserted): only amendable gaps passed
+        const amendCall = await callAmend(opts.agent, drafts, amendableGaps, opts.tags);
+        totalCost += amendCall.costUsd;
+
+        const jsonStr = extractFencedJson(amendCall.text);
+        let amendedItems: ParsedDraft[] | undefined;
+        let pinned: PinnedEntry[] = [];
+        let amendFailed = jsonStr === null;
+
+        if (!amendFailed) {
+          try {
+            const parsedAmend: unknown = JSON.parse(jsonStr as string);
+            if (Array.isArray(parsedAmend)) {
+              // Old shape (bare RequirementDraft[]) — no pinned mapping possible,
+              // fail-closed back-compat: every amendable gap gets no credit.
+              amendedItems = shapeCheckDrafts(parsedAmend);
+              pinned = [];
+            } else if (
+              typeof parsedAmend === "object" &&
+              parsedAmend !== null &&
+              Array.isArray((parsedAmend as Record<string, unknown>)["requirements"])
+            ) {
+              const obj = parsedAmend as Record<string, unknown>;
+              amendedItems = shapeCheckDrafts(obj["requirements"]);
+              pinned = shapeCheckPinned(obj["pinned"]);
+            } else {
+              amendFailed = true;
+            }
+          } catch {
+            amendFailed = true;
+          }
+        }
+
+        if (amendFailed || amendedItems === undefined) {
+          // Amend unparseable/malformed — carry all amendable gaps forward, keep original drafts
+          remainingAuditGaps = amendableGaps.map((g) => `${g.id}: ${g.gap}`);
+        } else {
+          // Mechanical validation throw still propagates (pinned by the error-example-mandate test)
+          drafts = validateDrafts(amendedItems, maxRequirements);
+
+          const unaddressed = amendableGaps.filter((gap) => {
+            const p = pinned.find((pe) => pe.id === gap.id && pe.gap === gap.gap);
+            if (!p) return true;
+            const req = drafts.find((d) => d.id === gap.id);
+            if (!req) return true;
+            const preNames = preAmendNames.get(gap.id) ?? new Set<string>();
+            const addressed = p.examples.some(
+              (name) => req.examples.some((ex) => ex.name === name) && !preNames.has(name),
+            );
+            return !addressed;
+          });
+          remainingAuditGaps = unaddressed.map((g) => `${g.id}: ${g.gap}`);
+        }
+      }
+
+      auditGaps = remainingAuditGaps;
+      // undecidedEscalations collected here; fiat escalations added below after freeze
+      escalations = undecidedEscalations;
+    }
+
+    // Stage 6 — Freeze
+    // resolutions is draft metadata — NOT part of Contract.freeze canonical form
+    const contracts = drafts.map((draft) =>
+      Contract.freeze({
+        requirement: draft.requirement,
+        entry: draft.entry,
+        version: "1",
+        examples: draft.examples,
+      }),
     );
 
-    let remainingAuditGaps: string[] = [];
+    // rev 4: Escalations — fiat resolutions → escalations (fiat first, requirement order, then array order)
+    // Then intent-undecided entries (already in escalations from above)
+    const fiatEscalations: string[] = [];
+    for (const draft of drafts) {
+      for (const res of draft.resolutions) {
+        if (res.basis === "fiat") {
+          fiatEscalations.push(`${draft.id}: fiat — ${res.point} → ${res.chosen}`);
+        }
+      }
+    }
 
-    if (amendableGaps.length > 0) {
-      // Record pre-amend example counts per id to detect whether amend addressed each gap
-      const preAmendCounts = new Map<string, number>(
-        drafts.map((d) => [d.id, d.examples.length]),
+    // Ordering: fiat entries first (requirement order, then array order within requirement),
+    // then intent-undecided entries in audit-output order
+    escalations = [...fiatEscalations, ...escalations];
+
+    return {
+      requirements: drafts,
+      contracts,
+      auditGaps,
+      escalations,
+      costUsd: totalCost,
+    };
+  } catch (e) {
+    if (e instanceof RequirementCapExceeded) e.costUsd = totalCost;
+    throw e;
+  }
+}
+
+// rev 6: exact strings from spec — partition prompt for recursive decomposition
+const PARTITION_SYSTEM =
+  "You are a warboss splitting an intent that is too large for one decomposition. Split it into self-contained sub-intents. Each sub-intent must be implementable without reading the others; every shared seam — function signatures, data shapes, formats the sub-intents must agree on — must be stated verbatim in the seam field of every sub-intent it touches. Output ONLY one fenced json block matching the requested schema. No prose outside the fence.";
+
+const PARTITION_SCHEMA_TEXT = `Output a JSON array of sub-intents. Schema for each item:
+{
+  "id": "kebab-case-unique-id",
+  "intent": "Self-contained prose intent",
+  "seam": "Shared signatures/shapes this sub-intent must honor (empty string if none)"
+}`;
+
+export interface DecomposeRecursiveOptions extends DecomposeOptions {
+  /** Recursion depth budget. 0 = plain decompose (cap error propagates). Default 2. */
+  maxDepth?: number;
+}
+
+interface SubIntent {
+  id: string;
+  intent: string;
+  seam: string;
+}
+
+function shapeCheckSubIntents(parsed: unknown): SubIntent[] {
+  if (!Array.isArray(parsed)) {
+    throw new Error("Expected a JSON array of sub-intents");
+  }
+  const idSet = new Set<string>();
+  return parsed.map((item: unknown, idx: number) => {
+    if (typeof item !== "object" || item === null) {
+      throw new Error(`Item at index ${idx} is not an object`);
+    }
+    const raw = item as Record<string, unknown>;
+    if (typeof raw["id"] !== "string" || !/^[a-z][a-z0-9-]*$/.test(raw["id"])) {
+      throw new Error(
+        `Item ${idx}: 'id' must be a kebab-case string (must match /^[a-z][a-z0-9-]*$/)`,
       );
+    }
+    const id = raw["id"] as string;
+    if (idSet.has(id)) {
+      throw new Error(`Item ${idx}: duplicate sub-intent id '${id}'`);
+    }
+    idSet.add(id);
+    if (typeof raw["intent"] !== "string" || raw["intent"].length === 0) {
+      throw new Error(`Item ${idx}: 'intent' must be a non-empty string`);
+    }
+    if (typeof raw["seam"] !== "string") {
+      throw new Error(`Item ${idx}: 'seam' must be a string`);
+    }
+    return { id, intent: raw["intent"] as string, seam: raw["seam"] as string };
+  });
+}
 
-      // Amend-prompt purity (AC14, capture-asserted): only amendable gaps passed
-      const amendCall = await callAmend(opts.agent, drafts, amendableGaps, opts.tags);
-      totalCost += amendCall.costUsd;
+function parsePartitionWithReask(
+  text: string,
+): { subIntents: SubIntent[]; error?: undefined } | { subIntents?: undefined; error: string } {
+  const jsonStr = extractFencedJson(text);
+  if (jsonStr === null) {
+    return { error: "No fenced JSON block found in response" };
+  }
+  try {
+    const parsed = JSON.parse(jsonStr);
+    const subIntents = shapeCheckSubIntents(parsed);
+    return { subIntents };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
 
-      const amendedParse = parseWithReask(amendCall.text);
-      if (amendedParse.error === undefined) {
-        drafts = validateDrafts(amendedParse.drafts, maxRequirements);
-        // A gap is considered unaddressed if the requirement's example count did not increase
-        const stillUnpinned = amendableGaps.filter((gap) => {
-          const req = drafts.find((d) => d.id === gap.id);
-          if (!req) return true;
-          return req.examples.length <= (preAmendCounts.get(gap.id) ?? 0);
-        });
-        remainingAuditGaps = stillUnpinned.map((g) => `${g.id}: ${g.gap}`);
-      } else {
-        // Amend parse failed — carry all amendable gaps forward, keep original drafts
-        remainingAuditGaps = amendableGaps.map((g) => `${g.id}: ${g.gap}`);
+// Both non-empty → joined with a blank line; only one non-empty → that one;
+// both empty/absent → undefined (conditional spread omits `context` entirely).
+function joinContext(context: string | undefined, seam: string): string | undefined {
+  if (context && seam) return context + "\n\n" + seam;
+  if (context) return context;
+  if (seam) return seam;
+  return undefined;
+}
+
+/**
+ * Wraps decompose() with recursive partitioning: when the intent overflows
+ * maxRequirements, split it into self-contained sub-intents and decompose
+ * each one (recursively), merging the results. Cap errors below zero
+ * remaining depth propagate unchanged.
+ */
+export async function decomposeRecursive(opts: DecomposeRecursiveOptions): Promise<DraftSet> {
+  const { maxDepth, ...decomposeOpts } = opts;
+
+  try {
+    return await decompose(decomposeOpts);
+  } catch (e) {
+    if (!(e instanceof RequirementCapExceeded)) throw e;
+
+    const depth = maxDepth ?? 2;
+    if (depth <= 0) throw e;
+
+    let totalCost = e.costUsd;
+    const maxRequirements = opts.maxRequirements ?? 8;
+
+    let userPrompt = opts.intent;
+    if (opts.context) {
+      userPrompt += "\n\n" + opts.context;
+    }
+    userPrompt += "\n\n" + `Split into at most ${maxRequirements} sub-intent(s).`;
+    userPrompt += "\n\n" + PARTITION_SCHEMA_TEXT;
+
+    const call1 = await opts.agent.generate({
+      prompt: userPrompt,
+      system: PARTITION_SYSTEM,
+      maxTokens: 8192,
+      kind: "warboss.partition",
+      ...(opts.tags !== undefined ? { tags: opts.tags } : {}),
+    });
+    totalCost += call1.costUsd;
+
+    const parse1 = parsePartitionWithReask(call1.text);
+    let subIntents: SubIntent[];
+
+    if (parse1.error !== undefined) {
+      const reaskPrompt =
+        `${userPrompt}\n\nPrevious output (truncated):\n${call1.text.slice(0, 2000)}\n\nError: ${parse1.error}\n\nPlease output ONLY one fenced json block.`;
+      const call2 = await opts.agent.generate({
+        prompt: reaskPrompt,
+        system: PARTITION_SYSTEM,
+        maxTokens: 8192,
+        kind: "warboss.partition",
+        ...(opts.tags !== undefined ? { tags: opts.tags } : {}),
+      });
+      totalCost += call2.costUsd;
+
+      const parse2 = parsePartitionWithReask(call2.text);
+      if (parse2.error !== undefined) {
+        throw new DecompositionParseError(
+          `Failed to parse partition after re-ask: ${parse2.error}`,
+          call1.text,
+          call2.text,
+        );
       }
+      subIntents = parse2.subIntents;
+    } else {
+      subIntents = parse1.subIntents;
     }
 
-    auditGaps = remainingAuditGaps;
-    // undecidedEscalations collected here; fiat escalations added below after freeze
-    escalations = undecidedEscalations;
-  }
-
-  // Stage 6 — Freeze
-  // resolutions is draft metadata — NOT part of Contract.freeze canonical form
-  const contracts = drafts.map((draft) =>
-    Contract.freeze({
-      requirement: draft.requirement,
-      entry: draft.entry,
-      version: "1",
-      examples: draft.examples,
-    }),
-  );
-
-  // rev 4: Escalations — fiat resolutions → escalations (fiat first, requirement order, then array order)
-  // Then intent-undecided entries (already in escalations from above)
-  const fiatEscalations: string[] = [];
-  for (const draft of drafts) {
-    for (const res of draft.resolutions) {
-      if (res.basis === "fiat") {
-        fiatEscalations.push(`${draft.id}: fiat — ${res.point} → ${res.chosen}`);
-      }
+    if (subIntents.length < 2 || subIntents.length > maxRequirements) {
+      throw new Error(
+        `Partition failed: expected 2..${maxRequirements} sub-intents, got ${subIntents.length}`,
+      );
     }
+
+    let requirements: RequirementDraft[] = [];
+    let contracts: Contract[] = [];
+    let auditGaps: string[] = [];
+    let escalations: string[] = [];
+    const seenIds = new Set<string>();
+
+    for (const sub of subIntents) {
+      const childContext = joinContext(opts.context, sub.seam);
+
+      const child = await decomposeRecursive({
+        ...opts,
+        intent: sub.intent,
+        ...(childContext !== undefined ? { context: childContext } : {}),
+        maxDepth: depth - 1,
+      });
+
+      for (const req of child.requirements) {
+        if (seenIds.has(req.id)) {
+          throw new Error(
+            `Validation failed: duplicate requirement id '${req.id}' across sub-intents`,
+          );
+        }
+        seenIds.add(req.id);
+      }
+
+      requirements = requirements.concat(child.requirements);
+      contracts = contracts.concat(child.contracts);
+      auditGaps = auditGaps.concat(child.auditGaps);
+      escalations = escalations.concat(child.escalations);
+      totalCost += child.costUsd;
+    }
+
+    return {
+      requirements,
+      contracts,
+      auditGaps,
+      escalations,
+      costUsd: totalCost,
+    };
   }
-
-  // Ordering: fiat entries first (requirement order, then array order within requirement),
-  // then intent-undecided entries in audit-output order
-  escalations = [...fiatEscalations, ...escalations];
-
-  return {
-    requirements: drafts,
-    contracts,
-    auditGaps,
-    escalations,
-    costUsd: totalCost,
-  };
 }
 
 function buildAdmitPrompt(contract: Contract): string {

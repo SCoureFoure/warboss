@@ -456,3 +456,90 @@ test("AC12 failed generation breaks stall pair: [code X, empty, code X, empty, e
   assert.equal(result.attempts[3]!.generationFailed, true, "attempt 4 is empty");
   assert.equal(result.attempts[4]!.generationFailed, true, "attempt 5 is empty");
 });
+
+// ── AC13 ─────────────────────────────────────────────────────────────────────
+
+test("AC13 oscillation stall: A→B→A with distinct behaviors → stalled at attempt 3", async () => {
+  const { agent } = makeAgent(
+    scriptedClient([fence(WRONG_ADD), fence(WRONG_ADD_B), fence(WRONG_ADD)]),
+  );
+
+  const result = await runLoop({
+    agent,
+    contract: ADD_CONTRACT,
+    prompt: "implement add",
+    budget: 5,
+  });
+
+  assert.equal(result.status, "stalled");
+  assert.equal(result.attemptsUsed, 3);
+  assert.equal(result.attempts.length, 3);
+  assert.equal(result.green, false);
+});
+
+// ── AC14 ─────────────────────────────────────────────────────────────────────
+
+const WRONG_ADD_ALT = `function add(a, b) { const zero = 0; return zero; }`;
+
+test("AC14 behavioral stall: textually different, behaviorally identical wrong impls → stalled at attempt 2", async () => {
+  const { agent } = makeAgent(
+    scriptedClient([fence(WRONG_ADD), fence(WRONG_ADD_ALT)]),
+  );
+
+  const result = await runLoop({
+    agent,
+    contract: ADD_CONTRACT,
+    prompt: "implement add",
+    budget: 5,
+  });
+
+  assert.equal(result.status, "stalled");
+  assert.equal(result.attemptsUsed, 2);
+  assert.equal(result.attempts.length, 2);
+  assert.equal(result.green, false);
+});
+
+// ── AC15 ─────────────────────────────────────────────────────────────────────
+
+test("AC15 generation failure clears rev-3 trackers: [code X, empty, code X, empty, empty] → exhausted, never stalled", async () => {
+  const { agent } = makeAgent(
+    scriptedClient([
+      fence(WRONG_ADD),
+      "",
+      fence(WRONG_ADD),
+      "",
+      "",
+    ]),
+  );
+
+  const result = await runLoop({
+    agent,
+    contract: ADD_CONTRACT,
+    prompt: "implement add",
+    budget: 5,
+  });
+
+  assert.equal(result.status, "exhausted", "status is exhausted, not stalled");
+  assert.equal(result.attemptsUsed, 5, "all 5 attempts used");
+  assert.equal(result.attempts.length, 5, "5 attempts recorded");
+});
+
+// ── AC16 ─────────────────────────────────────────────────────────────────────
+
+test("AC16 green on repeated-tracker-safe sequence: wrong A, wrong B, correct C → status=green at attempt 3", async () => {
+  const { agent } = makeAgent(
+    scriptedClient([fence(WRONG_ADD), fence(WRONG_ADD_B), fence(CORRECT_ADD)]),
+  );
+
+  const result = await runLoop({
+    agent,
+    contract: ADD_CONTRACT,
+    prompt: "implement add",
+    budget: 5,
+  });
+
+  assert.equal(result.status, "green");
+  assert.equal(result.green, true);
+  assert.equal(result.attemptsUsed, 3);
+  assert.equal(result.attempts.length, 3);
+});

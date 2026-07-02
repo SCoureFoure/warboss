@@ -1,6 +1,6 @@
 # Spec — loop-core (retry-in-place: the core loop)
 
-> Status: active · **rev 2** (2026-06-10: AC12 stall-pair break + AC6 wording — H-6 review findings) · Feature: loop-core · Added: 2026-06-10 · Maps to: PLAN Phase 2b (core loop), "Loop mechanics" section
+> Status: active · **rev 3** (2026-07-02: stall detection upgraded from exact consecutive string equality to two mechanical triggers — code-repeat over the unbroken run (catches A→B→A oscillation) and behavioral-signature repeat (catches textually different code with identical outcomes on every contract example, where the next retry prompt would be byte-identical to one that already failed). Both trackers reset on a `generationFailed` attempt, preserving rev 2's AC12 pair-break rule) · rev 2 (2026-06-10: AC12 stall-pair break + AC6 wording — H-6 review findings) · Feature: loop-core · Added: 2026-06-10 · Maps to: PLAN Phase 2b (core loop), "Loop mechanics" section
 > Source of truth for the product's heart: `grunt generates → membrane judges
 > (pass/fail + feedback) → retry-in-place until green`. E1b later orchestrates
 > arms OVER this module; the loop itself is durable product infrastructure, not
@@ -89,13 +89,25 @@ src/loop.ts:
   green? stop `"green"` : build retry prompt, next attempt.
 - **Budget:** counts ATTEMPTS (generations), not retries. Budget 5 = at most 5
   `Agent.generate` calls. Exhausted without green → status `"exhausted"`.
-- **Stall detection** (PLAN: "identical implementation produced twice in a row
-  = stuck"): if attempt N's extracted code, after `.trim()`, is string-equal
-  to attempt N−1's extracted code, the loop records attempt N (judged as
-  normal) and stops with status `"stalled"`. The check applies only between
-  two consecutive attempts that BOTH produced code (`generationFailed`
-  attempts never participate). Escalation on stall (tier bump, tournament) is
-  the CALLER's policy — out of scope here, signaled by the status.
+- **Stall detection (rev 3 — two mechanical triggers).** The loop keeps two
+  trackers over the current *unbroken run* of code-producing attempts; BOTH are
+  cleared whenever an attempt is `generationFailed` (preserving rev 2's pinned
+  pair-break rule, AC12):
+  - **Trigger A — code repeat:** `seenCodes: Set<string>` of trimmed code. A
+    current attempt whose trimmed code is already in the set → judged, recorded,
+    status `"stalled"`. Subsumes rev 2's consecutive-equality rule and catches
+    A→B→A oscillation (the retry prompt carries only the last attempt, so an
+    oscillating model would loop forever unobserved).
+  - **Trigger B — behavioral repeat:** after judging, the attempt's outcome
+    signature `JSON.stringify(results.map(r => ({pass, actual ?? null, error ?? null})))`
+    is compared to the PREVIOUS code-producing attempt's. Equal → recorded,
+    status `"stalled"`: identical outcomes mean the next retry feedback would be
+    byte-identical to one that already failed, so grinding is provably futile —
+    a variable rename no longer defeats the check.
+  Order per attempt: judge first (the stalled attempt's record carries its real
+  judge results), green wins before any stall trigger, then A, then B.
+  Escalation on stall (tier bump, tournament) remains the CALLER's policy —
+  out of scope here, signaled by the status.
 - **Retry prompt template** (exact; built from the ORIGINAL prompt + the LAST
   attempt only — constant-size context per Fractal Views; history never
   accumulates):
@@ -194,9 +206,24 @@ src/loop.ts:
     NOT a stall pair even though they are consecutive _code-producing_
     attempts — the failed generation between them resets the pair.
 
+13. **AC13 — oscillation stall** *(rev 3)*. Script wrong impl A → different
+    wrong impl B → A again (all code-producing, distinct behaviors) → exactly
+    3 attempts, `status: "stalled"`, `green: false` (Trigger A across the run,
+    not just consecutive).
+14. **AC14 — behavioral stall** *(rev 3)*. Script two textually DIFFERENT wrong
+    impls with identical judge outcomes on every contract example → 2 attempts,
+    `status: "stalled"` (Trigger B; a rename/comment no longer defeats stall).
+15. **AC15 — generation failure clears rev-3 trackers** *(rev 3)*. Script
+    `[code X, empty, code X, empty, empty]`, budget 5 → all 5 attempts,
+    `status: "exhausted"`, never `"stalled"` (AC12's pair-break holds against
+    BOTH new trackers).
+16. **AC16 — no false stall on distinct sequences** *(rev 3)*. Script wrong A →
+    wrong B → correct C (all distinct code and behavior) → `status: "green"`
+    at attempt 3 (the trackers never misfire on genuine progress).
+
 ## Verifies-with
 
-- Tests: `test/loop.test.ts` — AC1–AC12, offline, fake `MessagesClient`
+- Tests: `test/loop.test.ts` — AC1–AC16, offline, fake `MessagesClient`
   (reuse the capture pattern from `test/e1a.test.ts`).
 - Integration: E1b (when funded) drives this module live; until then a manual
   smoke `runLoop` against duration-parse with a live key is optional, not CI.

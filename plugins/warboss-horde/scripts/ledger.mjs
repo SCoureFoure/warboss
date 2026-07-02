@@ -10,6 +10,7 @@
 //   node ledger.mjs add '<json>'              append one dispatch record (see fields below)
 //   node ledger.mjs annotate <agent_id> '<json>'  attach a judge verdict to a dispatch
 //   node ledger.mjs summary                   per-model + per-tier board from the ledger
+//   node ledger.mjs advise                    per-tier economics + retry-vs-lift routing advice
 //
 // Options (any subcommand):
 //   --file <path>      ledger file (default: $WARBOSS_LEDGER, else ./.warboss-horde/ledger.jsonl)
@@ -233,7 +234,10 @@ function loadVerdicts(file) {
   return byId;
 }
 
-function cmdSummary(args) {
+// Read the ledger, drop synthetic/placeholder rows, and dedup hook rows by
+// (agent_id, model). Shared by `summary` and `advise`. Dies (exit 1) on a
+// missing or empty ledger, same as `summary` always has.
+function loadRows(args) {
   const file = ledgerPath(args);
   let text;
   try {
@@ -242,7 +246,14 @@ function cmdSummary(args) {
     die(`no ledger at ${file}`);
   }
 
-  const allRows = text.split('\n').filter((l) => l.trim().length > 0).map((l) => JSON.parse(l));
+  const allRows = text
+    .split('\n')
+    .filter((l) => l.trim().length > 0)
+    .map((l) => JSON.parse(l))
+    // Drop synthetic/placeholder-model rows (model like "<synthetic>"): older
+    // meters logged Claude Code's injected zero-usage messages as phantom,
+    // price-less dispatches that flagged the whole board "partial". Not real calls.
+    .filter((r) => !(r && typeof r.model === 'string' && r.model.startsWith('<')));
   if (allRows.length === 0) die(`ledger empty at ${file}`);
 
   // Dedup hook rows by (agent_id, model): a SubagentStop hook may fire more than
@@ -262,6 +273,12 @@ function cmdSummary(args) {
     }
     rows.push(r);
   }
+  return rows;
+}
+
+function cmdSummary(args) {
+  const file = ledgerPath(args);
+  const rows = loadRows(args);
 
   const ladder = loadLadder(args);
   const isOrchestrator = (r) => r.agent_type === 'warboss-orchestrator';
@@ -289,13 +306,47 @@ function cmdSummary(args) {
 
   process.stdout.write(`warboss-horde ledger — ${file}\n`);
   process.stdout.write(`${rows.length} dispatches\n\n`);
-  process.stdout.write(`${pad('model', 12)}${padl('dispatches', 12)}${padl('tokens', 12)}${padl('est_usd', 12)}\n`);
+  process.stdout.write(`${pad('model', 26)}${padl('dispatches', 12)}${padl('tokens', 14)}${padl('shadow_usd', 14)}\n`);
   for (const [model, m] of byModel) {
     const usd = m.usdKnown ? `$${m.usd.toFixed(4)}` : 'partial';
-    process.stdout.write(`${pad(model, 12)}${padl(m.dispatches, 12)}${padl(m.tokens, 12)}${padl(usd, 12)}\n`);
+    process.stdout.write(`${pad(model, 26)}${padl(m.dispatches, 12)}${padl(m.tokens, 14)}${padl(usd, 14)}\n`);
   }
   const gUsd = usdKnown ? `$${totUsd.toFixed(4)}` : `~$${totUsd.toFixed(4)} (partial)`;
-  process.stdout.write(`${pad('TOTAL', 12)}${padl(rows.length, 12)}${padl(totTok, 12)}${padl(gUsd, 12)}\n`);
+  process.stdout.write(`${pad('TOTAL', 26)}${padl(rows.length, 12)}${padl(totTok, 14)}${padl(gUsd, 14)}\n`);
+  process.stdout.write(
+    'shadow_usd = API-equivalent price (a value-weighted yardstick, opportunity cost).\n' +
+    '  NOT cash on a Max/Pro subscription — there the real cost is TOKENS vs quota (below).\n' +
+    '  It only becomes money you pay if the call hits the pay-as-you-go API.\n'
+  );
+
+  // --- Tokens by tier (the REAL cost on a subscription: quota, not cash) -------
+  // On Max/Pro the terminal never bills per token — shadow_usd is notional. The
+  // scarce resource is tokens against plan quota + rate limits, and the scarcest
+  // slice is the top (opus/HIGH) tier. So report tokens by tier straight, and call
+  // out how much scarce-tier work the horde pushed DOWN to cheaper tiers.
+  const tierTokens = new Map();
+  for (const r of rows) {
+    const t = tierOf(r);
+    tierTokens.set(t, (tierTokens.get(t) || 0) + (r.tokens || 0));
+  }
+  {
+    const order = ['LOW', 'MID', 'HIGH'];
+    const tiers = [...tierTokens.keys()].sort((a, b) => {
+      const ia = order.indexOf(a), ib = order.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    process.stdout.write('\ntokens by tier (subscription cost — quota vs plan limits, not $)\n');
+    process.stdout.write(`${pad('tier', 12)}${padl('tokens', 14)}${padl('tok%', 8)}\n`);
+    for (const t of tiers) {
+      const tok = tierTokens.get(t);
+      const pct = totTok > 0 ? `${((100 * tok) / totTok).toFixed(0)}%` : '—';
+      process.stdout.write(`${pad(t, 12)}${padl(tok, 14)}${padl(pct, 8)}\n`);
+    }
+    const high = tierTokens.get('HIGH') || 0;
+    process.stdout.write(
+      `HIGH (scarce-tier) tokens: ${high} — ${totTok > 0 ? ((100 * high) / totTok).toFixed(0) : 0}% of all tokens.\n`
+    );
+  }
 
   // --- Tier split (the thesis check: is the cheapest rung doing the work?) -----
   // The 'do' band = dispatched workers; the 'decide' band = the orchestrator.
@@ -312,7 +363,7 @@ function cmdSummary(args) {
   }
   if (doerRows.length > 0) {
     process.stdout.write('\ntier split (doer dispatches — the "do" band)\n');
-    process.stdout.write(`${pad('tier', 12)}${padl('dispatches', 12)}${padl('disp%', 8)}${padl('est_usd', 12)}\n`);
+    process.stdout.write(`${pad('tier', 12)}${padl('dispatches', 12)}${padl('disp%', 8)}${padl('shadow_usd', 12)}\n`);
     // Order LOW, MID, HIGH, then anything else, then untiered.
     const order = ['LOW', 'MID', 'HIGH'];
     const tiers = [...byTier.keys()].sort((a, b) => {
@@ -329,6 +380,12 @@ function cmdSummary(args) {
     const lowShare = low ? (100 * low.dispatches) / doerRows.length : 0;
     process.stdout.write(`LOW-share: ${lowShare.toFixed(0)}% of doer dispatches`);
     process.stdout.write(lowShare < 25 ? '  ⚠ ladder under-exploited — author entropy further down\n' : '\n');
+    // The actual subscription win: do-band work ran on cheap tiers, so those
+    // tokens never touched the scarce top tier. Framed as tokens, not dollars.
+    const doTok = doerRows.reduce((s, r) => s + (r.tokens || 0), 0);
+    process.stdout.write(
+      `offload: ${doTok} do-band tokens ran below the top tier — scarce-tier (opus) quota the horde did NOT spend.\n`
+    );
   }
 
   // --- Decide : Do ratio (both bands of correctness-per-dollar) ---------------
@@ -344,7 +401,7 @@ function cmdSummary(args) {
       if (v === null) doKnown = false; else doUsd += v;
     }
   }
-  process.stdout.write('\ndecide : do spend\n');
+  process.stdout.write('\ndecide : do spend (shadow_usd — value-weighted, not subscription cash)\n');
   process.stdout.write(`  decide (orchestrator): ${dollars(decideUsd, decideKnown)}\n`);
   process.stdout.write(`  do     (workers)     : ${dollars(doUsd, doKnown)}\n`);
   if (!sawOrchestrator) {
@@ -381,9 +438,124 @@ function cmdSummary(args) {
   }
 }
 
+// Minimum green verdicts a tier needs before its economics are trusted enough
+// to drive a retry-vs-lift call.
+const MIN_GREENS = 3;
+
+function cmdAdvise(args) {
+  const file = ledgerPath(args);
+  const rows = loadRows(args);
+  const ladder = loadLadder(args);
+  const tierOf = (r) => r.tier || tierForModel(ladder, r.model) || 'untiered';
+
+  const doerRows = rows.filter((r) => r.agent_type !== 'warboss-orchestrator');
+  if (doerRows.length === 0) die('no doer rows in ledger — nothing to advise on');
+
+  const verdicts = loadVerdicts(verdictsPath(args));
+
+  const pad = (s, n) => String(s).padEnd(n);
+  const padl = (s, n) => String(s).padStart(n);
+
+  // --- Per-tier economics: dispatches, tokens, verdict counts, spend ----------
+  const byTier = new Map();
+  for (const r of doerRows) {
+    const t = tierOf(r);
+    const m = byTier.get(t) || {
+      dispatches: 0,
+      tokens: 0,
+      annotated: 0,
+      greens: 0,
+      reds: 0,
+      usd: 0,
+      usdKnown: true,
+    };
+    m.dispatches += 1;
+    m.tokens += r.tokens || 0;
+    if (typeof r.est_usd === 'number') m.usd += r.est_usd;
+    else m.usdKnown = false;
+    const v = verdicts.get(r.agent_id);
+    if (v && v.verdict) {
+      m.annotated += 1;
+      if (v.verdict === 'green') m.greens += 1;
+      else m.reds += 1;
+    }
+    byTier.set(t, m);
+  }
+
+  // Derived, per tier — only when the denominator is non-zero.
+  const derived = new Map();
+  for (const [t, m] of byTier) {
+    const triesPerGreen = m.greens > 0 ? m.annotated / m.greens : null;
+    const usdPerDispatch = m.dispatches > 0 ? m.usd / m.dispatches : null;
+    const usdPerGreen = triesPerGreen !== null && usdPerDispatch !== null ? usdPerDispatch * triesPerGreen : null;
+    derived.set(t, { triesPerGreen, usdPerDispatch, usdPerGreen });
+  }
+
+  // Order LOW, MID, HIGH, then anything else — same sort as summary.
+  const order = ['LOW', 'MID', 'HIGH'];
+  const byOrder = (a, b) => {
+    const ia = order.indexOf(a), ib = order.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  };
+  const tiers = [...byTier.keys()].sort(byOrder);
+
+  const dollars = (v, known) => (known ? `$${v.toFixed(4)}` : `$${v.toFixed(4)} (partial)`);
+
+  process.stdout.write(`warboss-horde advise — ${file}\n\n`);
+  process.stdout.write('tier economics (doer dispatches, joined with verdicts)\n');
+  process.stdout.write(
+    `${pad('tier', 12)}${padl('disp', 6)}${padl('annot', 7)}${padl('green', 7)}${padl('red', 5)}` +
+    `${padl('tries/green', 13)}${padl('$/disp', 9)}${padl('$/green', 9)}\n`
+  );
+  for (const t of tiers) {
+    const m = byTier.get(t);
+    const d = derived.get(t);
+    const tries = d.triesPerGreen === null ? '—' : d.triesPerGreen.toFixed(2);
+    const perDisp = d.usdPerDispatch === null ? '—' : dollars(d.usdPerDispatch, m.usdKnown);
+    const perGreen = d.usdPerGreen === null ? '—' : dollars(d.usdPerGreen, m.usdKnown);
+    process.stdout.write(
+      `${pad(t, 12)}${padl(m.dispatches, 6)}${padl(m.annotated, 7)}${padl(m.greens, 7)}${padl(m.reds, 5)}` +
+      `${padl(tries, 13)}${padl(perDisp, 9)}${padl(perGreen, 9)}\n`
+    );
+  }
+
+  // --- Advice: retry-vs-lift for each adjacent ladder-tier pair with dispatches
+  const ladderTiers = ladder.map((r) => r && r.tier).filter(Boolean);
+  process.stdout.write('\nadvice (retry at this tier vs lift to the next)\n');
+  for (let i = 0; i < ladderTiers.length - 1; i++) {
+    const t1 = ladderTiers[i];
+    const t2 = ladderTiers[i + 1];
+    if (!byTier.has(t1) || !byTier.has(t2)) continue; // pair not fully dispatched among doers
+    const m1 = byTier.get(t1);
+    const m2 = byTier.get(t2);
+    if (m1.greens < MIN_GREENS || m2.greens < MIN_GREENS) {
+      // UNDECIDED: exact wording when BOTH adjacent tiers lack MIN_GREENS greens —
+      // the spec's template has a single "<T or T+1>" slot; here every tier that
+      // falls short is listed, joined with '; '.
+      const short = [];
+      if (m1.greens < MIN_GREENS) short.push(`${t1}: ${m1.greens} green(s) — need ${MIN_GREENS}`);
+      if (m2.greens < MIN_GREENS) short.push(`${t2}: ${m2.greens} green(s) — need ${MIN_GREENS}`);
+      process.stdout.write(`  ${t1}→${t2}: insufficient data (${short.join('; ')}) — advice withheld\n`);
+      continue;
+    }
+    const d1 = derived.get(t1);
+    const d2 = derived.get(t2);
+    const retryCost = d1.usdPerDispatch;
+    const liftCost = d2.usdPerGreen;
+    const x = retryCost.toFixed(4);
+    const y = liftCost.toFixed(4);
+    if (retryCost < liftCost) {
+      process.stdout.write(`  ${t1}→${t2}: retry at ${t1} ($${x}/try) < one green at ${t2} ($${y}) → RETRY at ${t1} first\n`);
+    } else {
+      process.stdout.write(`  ${t1}→${t2}: retry at ${t1} ($${x}/try) >= one green at ${t2} ($${y}) → LIFT to ${t2}\n`);
+    }
+  }
+}
+
 const args = parseArgs(process.argv.slice(2));
 const cmd = args._[0];
 if (cmd === 'add') cmdAdd(args);
 else if (cmd === 'annotate') cmdAnnotate(args);
 else if (cmd === 'summary') cmdSummary(args);
-else die('usage: node ledger.mjs <add|annotate|summary> [--file <path>] [--verdicts <path>] [--tiers <path>]');
+else if (cmd === 'advise') cmdAdvise(args);
+else die('usage: node ledger.mjs <add|annotate|summary|advise> [--file <path>] [--verdicts <path>] [--tiers <path>]');

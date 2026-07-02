@@ -1,6 +1,6 @@
 # Spec — Membrane core (contract, sandbox, runner, ledger, agent)
 
-> Status: active · Feature: membrane-core · Added: 2026-06-09 · Maps to: PLAN Phase 1 + agent layer
+> Status: active · **rev 2** (2026-07-02: (1) `ContractCase.throwsMatch` — optional error-message regex, closing AC16's known accepted limitation that ANY throw passes a `throws` case, including a broken impl's accidental TypeError; hash back-compat is load-bearing: examples without the field keep byte-identical canonical form, so no existing frozen hash moves; (2) `GenerateOptions.temperature` — explicit per-call sampling temperature; the convergence/intent probes' validity rides on sampling diversity, which until now silently depended on the API default) · Feature: membrane-core · Added: 2026-06-09 · Maps to: PLAN Phase 1 + agent layer
 > Source of truth for the Phase-1 primitives every experiment depends on: the
 > hash-frozen contract, the vm execution sandbox, the judging runner, the cost
 > ledger, and the single-call agent layer.
@@ -48,6 +48,22 @@ orchestration on top of them.
   moment each call completes so a long run that dies mid-way still leaves a
   parseable, account-reconcilable record. `costOf` and `costUsd` are unchanged
   (the breakdown's `totalCost` equals them).
+
+- **`throwsMatch` (rev 2).** `ContractCase` gains optional `throwsMatch?: string`
+  — a regex SOURCE tested against the error message. Valid only alongside
+  `throws: true`; `Contract.freeze` rejects (descriptive throw) a `throwsMatch`
+  without `throws: true` or one whose source does not compile. Canonical hash
+  key order per example: `input, expected, throws, throwsMatch`, each of the
+  last two included only when present — an example without `throwsMatch` hashes
+  byte-identically to rev 1 (pinned by a hand-computed sha256 test). Judging
+  (both `judge` and `judgeAsync`): threw + no matcher → pass (rev-1 behavior);
+  threw + matcher → pass iff `new RegExp(throwsMatch).test(error ?? "")`;
+  mismatch renders at `full` granularity as
+  `- input <inp>: errored (<error>) but message did not match /<pattern>/`.
+- **`temperature` (rev 2).** `GenerateOptions.temperature?: number`, forwarded
+  verbatim to `messages.create` via conditional spread; absent from the API
+  call when unset. No default, no clamping — callers that need diversity
+  guarantees (the gate probes) pin it explicitly.
 
 ## Acceptance criteria (Given / When / Then)
 1. **AC1 — cost math.** Given a model price and a usage record, `costOf` returns
@@ -116,10 +132,25 @@ orchestration on top of them.
     the parent directory exists and returns a sink that appends exactly one
     `JSON.parse`-able line per entry to `path` (append-only; N records → N lines).
 
+21. **AC21 — throwsMatch** *(rev 2)*. (a) Two contracts identical except one
+    example carries `throwsMatch` → different hashes; (b) a contract input with
+    no `throwsMatch` anywhere hashes to the value computed from the rev-1
+    canonical string (hand-computed sha256 — old hashes never move);
+    (c) `freeze` rejects `throwsMatch` without `throws: true` and rejects an
+    invalid regex source; (d) a case with `throwsMatch: "^Invalid duration"`
+    passes when the impl throws `Invalid duration: …` and fails when it throws
+    `x is not a function`, with the pinned mismatch feedback line at `full`
+    granularity and the count-only line at `passfail`; (e) a `throws` case with
+    NO matcher still passes on any throw (rev-1 pin); (f) same pass/mismatch
+    behavior through `judgeAsync` with an injected fake runner.
+22. **AC22 — temperature plumbing** *(rev 2)*. `generate({ temperature: 1.0 })`
+    → captured request body has `temperature === 1.0`; a call without the
+    option → the body carries no `temperature` key.
+
 ## Verifies-with
 - Tests: `test/cost.test.ts` (AC1–2, AC17–18), `test/contract.test.ts`
-  (AC3–4, AC16 hash), `test/sandbox.test.ts` (AC5–7), `test/runner.test.ts`
-  (AC8–12, AC16 judging), `test/agent.test.ts` (AC13–15, AC19),
+  (AC3–4, AC16 hash, AC21 a–c), `test/sandbox.test.ts` (AC5–7), `test/runner.test.ts`
+  (AC8–12, AC16 judging, AC21 d–f), `test/agent.test.ts` (AC13–15, AC19, AC22),
   `test/ledger-sink.test.ts` (AC20).
 - Integration: `npm run smoke` exercises freeze → judge → (live grunt) → meter.
 - Falsifies / experiment link: n/a (foundational; E1a/E1b are the falsifiers).

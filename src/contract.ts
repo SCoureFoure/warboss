@@ -26,6 +26,8 @@ export interface ContractCase {
   readonly expected: unknown;
   /** When true, the case passes iff the impl throws (any error). */
   readonly throws?: true;
+  /** Optional regex source tested against the error message. Only valid with throws. */
+  readonly throwsMatch?: string;
 }
 
 export interface ContractInput {
@@ -51,6 +53,23 @@ export class Contract {
   readonly hash: string;
 
   private constructor(input: ContractInput) {
+    input.examples.forEach((c, i) => {
+      if (c.throwsMatch === undefined) return;
+      const label = c.name ?? i;
+      if (c.throws !== true) {
+        throw new Error(
+          `Contract.freeze: example ${label} has throwsMatch without throws: true`,
+        );
+      }
+      try {
+        new RegExp(c.throwsMatch);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `Contract.freeze: example ${label} has invalid throwsMatch regex: ${message}`,
+        );
+      }
+    });
     this.requirement = input.requirement;
     this.entry = input.entry;
     this.examples = input.examples;
@@ -78,6 +97,7 @@ export class Contract {
         input: c.input,
         expected: c.expected,
         ...(c.throws ? { throws: true as const } : {}),
+        ...(c.throwsMatch !== undefined ? { throwsMatch: c.throwsMatch } : {}),
       })),
     });
     return createHash("sha256").update(canonical).digest("hex");

@@ -73,8 +73,10 @@ Three rules ride on this and must never be broken:
   `ModelSpec` price. `jsonlFileSink` appends one crash-safe JSON line per call,
   keyed by request-id to reconcile against the Anthropic console.
 - **`loop.ts`** — `runLoop`: generate → judge → feed `feedback` back → retry,
-  bounded by `budget`. Detects stall (identical code twice) and exhaustion. This
-  is the agentic loop; it lives ABOVE the agent, not inside it.
+  bounded by `budget`. Detects stall (rev 3: code repeated anywhere in the
+  unbroken run — catches A→B→A oscillation — or two consecutive attempts with
+  identical per-case outcomes; both trackers reset on a failed generation) and
+  exhaustion. This is the agentic loop; it lives ABOVE the agent, not inside it.
 - **`gate.ts`** — admission instruments. **`convergenceProbe` is the ONLY real
   admission gate**: run K independent cheap generations against a frozen
   contract; if survivors don't agree on held-out probe cases, it's not decided
@@ -87,7 +89,10 @@ Three rules ride on this and must never be broken:
   `resolutions[]` array flagging each chosen-but-undecided behavior as
   `intent|fiat`; `fiat` choices and intent-undecided audit gaps become
   **escalations** (Leader-facing kick-back questions). Error-behavior example
-  (`throws`) is mandatory per requirement.
+  (`throws`) is mandatory per requirement; `throwsMatch` optionally pins the
+  error message. `decomposeRecursive` (rev 6) handles over-cap intents:
+  partition into seam-carrying sub-intents, recurse depth-capped, merge
+  fail-closed on duplicate ids / exhausted depth.
 - **`kickback.ts`** — production kick-back wiring: `renderDecisionBlock`,
   `buildAnswerQueue`, `loadOwnerAnswers`. Pure/offline. Turns escalations into an
   owner-answer queue, validates the hand-filled queue, folds decisions back into

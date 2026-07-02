@@ -82,3 +82,21 @@ test("AC15 system defaults to GRUNT_DOGMA; thinking forwarded only when set", as
   await a2.generate({ prompt: "p", thinking: { type: "adaptive" } });
   assert.deepEqual(body2?.thinking, { type: "adaptive" });
 });
+
+test("temperature forwarded when set", async () => {
+  const ledger = new Ledger();
+
+  let body: Anthropic.MessageCreateParamsNonStreaming | undefined;
+  const agent = new Agent(TIERS.LOW, ledger, { client: fakeClient("ok", (b) => (body = b)) });
+  await agent.generate({ prompt: "p", temperature: 1.0 });
+  assert.equal(body?.temperature, 1.0);
+});
+
+test("temperature absent when unset", async () => {
+  const ledger = new Ledger();
+
+  let body: Anthropic.MessageCreateParamsNonStreaming | undefined;
+  const agent = new Agent(TIERS.LOW, ledger, { client: fakeClient("ok", (b) => (body = b)) });
+  await agent.generate({ prompt: "p" });
+  assert.equal(body?.temperature, undefined);
+});

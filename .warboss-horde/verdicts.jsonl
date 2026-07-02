@@ -1,0 +1,8 @@
+{"ts":"2026-07-02T13:40:01.834Z","agent_id":"agent-af4072ce66592b576","verdict":"green","round":1,"slice":"S1 gate contamination min-needle"}
+{"ts":"2026-07-02T13:40:01.897Z","agent_id":"agent-ac291ab2354c92bef","verdict":"green","round":1,"slice":"S2 throwsMatch contract+runner"}
+{"ts":"2026-07-02T13:40:01.953Z","agent_id":"agent-ab37518c91ff152f4","verdict":"green","round":1,"slice":"S3 loop stall rev3"}
+{"ts":"2026-07-02T13:40:02.019Z","agent_id":"agent-a822c919f985d6e82","verdict":"green","round":1,"slice":"S4 agent temperature"}
+{"ts":"2026-07-02T13:58:29.975Z","agent_id":"agent-a9a0d206a8d147777","verdict":"green","round":1,"slice":"S6 gate outcome-clustering + wilson"}
+{"ts":"2026-07-02T13:58:30.035Z","agent_id":"agent-a4269999a2c6908fb","verdict":"green","round":1,"slice":"S7 warboss amend named-mapping"}
+{"ts":"2026-07-02T14:09:03.281Z","agent_id":"agent-a4e1cef60c746bf6a","verdict":"green","round":1,"slice":"fix9 ledger advise subcommand"}
+{"ts":"2026-07-02T14:22:23.505Z","agent_id":"agent-a44282c27b39f4d30","verdict":"green","round":1,"slice":"fix8 decomposeRecursive partition wrapper"}

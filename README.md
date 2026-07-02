@@ -233,7 +233,10 @@ Every dispatch is **metered automatically** — two hooks log each worker and th
 WARBOSS itself to a crash-safe `.warboss-horde/ledger.jsonl`, so
 correctness-per-dollar is measured from the first run, not reconstructed after.
 `ledger.mjs summary` prints the board (tier split, decide:do ratio,
-tries-per-green); `dashboard.mjs` aggregates every ledger under the cwd into a
+tries-per-green); `ledger.mjs advise` turns your annotated history into routing
+advice — per-tier $/green and a retry-vs-lift verdict per adjacent rung pair
+(withheld until a rung has ≥3 greens, so it never advises from noise);
+`dashboard.mjs` aggregates every ledger under the cwd into a
 self-contained HTML dashboard you can open in a browser:
 
 ```text
@@ -271,7 +274,7 @@ cd warboss
 npm install
 
 npm run typecheck      # strict tsc --noEmit — run before declaring done
-npm test               # full offline suite (node:test, ~294 tests) — no key needed
+npm test               # full offline suite (node:test, ~331 tests) — no key needed
 ```
 
 Everything above runs **offline with no API key.** To exercise the full stack or
@@ -289,11 +292,23 @@ purpose: `npm run e1a | e1b | e2 | e3 | e4`, plus `npm run decompose` and
 
 ## Where it stands
 
-The machine's organs are built and covered by **294 offline tests**: membrane
+The machine's organs are built and covered by **331 offline tests**: membrane
 core, the retry loop, the readiness/convergence gate, a process-isolated sandbox,
 the warboss decomposition pipeline, and the full kick-back loop (escalation →
 owner answers → re-author). The falsification ladder E1→E2→E3→E4 has **run live
 and closed** in the thesis's favor on the first task (`duration-parse`).
+
+A 2026-07-02 hardening pass (run through the horde itself — 8/8 dispatches
+green, tries-per-green 1.00) closed several instrument holes: contracts can pin
+the error *message* (`throwsMatch`), not just "it threw"; the loop's stall
+detector catches oscillation and behaviorally-identical retries, not just
+verbatim repeats; the convergence probe gains opt-in outcome clustering (a
+convergent-but-**wrong** population no longer reads as ready) and Wilson-bound
+thresholds — defaults byte-preserve the calibrated rev-2 behavior; amend credit
+is per-gap and mechanical (an unrelated added example no longer clears a gap);
+and `decomposeRecursive` finally gives the "decompose further UP the chain"
+rule a code path (partition into seam-carrying sub-intents, recurse, merge,
+fail-closed on depth exhaustion).
 
 Current frontier (Leg 8): the kick-back loop's **production wiring** is built and
 green offline; what remains are three small, owner-gated live runs — re-confirming

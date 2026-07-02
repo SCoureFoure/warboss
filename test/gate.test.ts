@@ -8,7 +8,7 @@ import { Ledger } from "../src/cost.ts";
 import { Contract, type ContractCase } from "../src/contract.ts";
 import { ContractHashMismatch } from "../src/runner.ts";
 import { TIERS } from "../src/models.ts";
-import { gruntJudge, convergenceProbe, deriveCheck, intentProbe } from "../src/gate.ts";
+import { gruntJudge, convergenceProbe, deriveCheck, intentProbe, wilsonLower } from "../src/gate.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -403,6 +403,134 @@ test("AC9 probe contamination audit — prompt containing probe input throws bef
         err.message.toLowerCase().includes("contamination") ||
           err.message.includes("probe"),
         `error should mention contamination or probe: "${err.message}"`,
+      );
+      return true;
+    },
+  );
+
+  assert.equal(callCount, 0, "no model call should be made");
+});
+
+// ── AC9b: contamination — short primitive needle is skipped ──────────────────
+
+test("AC9b contamination — short primitive needle is skipped (no false positive)", async () => {
+  let callCount = 0;
+  const client: MessagesClient = {
+    messages: {
+      create: async () => {
+        callCount++;
+        // Return a valid implementation response
+        return {
+          content: [{ type: "text", text: fence(CORRECT_IMPL) }],
+          usage: { input_tokens: 100, output_tokens: 50 },
+        } as unknown as Anthropic.Message;
+      },
+    },
+  };
+  const { agent } = makeAgent(client);
+
+  // The probe input is [1]; JSON.stringify(1) === "1" (2 chars, < MIN_NEEDLE_LEN=4)
+  // The prompt contains "1" but this should NOT trigger contamination error
+  const promptWithShortNeedle = `Return 1 more than the input.`;
+
+  // Create a probe with input [1]
+  const shortNeedleProbes: ContractCase[] = [
+    { name: "test", input: [1], expected: 2 },
+  ];
+
+  const verdict = await convergenceProbe({
+    agent,
+    contract: durationContract,
+    prompt: promptWithShortNeedle,
+    probes: shortNeedleProbes,
+    k: 1,
+  });
+
+  // Should have proceeded to dispatch and returned a verdict (not thrown)
+  assert.ok(verdict !== undefined, "verdict should be returned");
+  assert.ok(callCount > 0, "model should have been called (no contamination error thrown)");
+});
+
+// ── AC9c: contamination — full arg tuple is a needle ────────────────────────
+
+test("AC9c contamination — full arg tuple is a needle even when each arg is short", async () => {
+  let callCount = 0;
+  const client: MessagesClient = {
+    messages: {
+      create: async () => {
+        callCount++;
+        throw new Error("should not reach here");
+      },
+    },
+  };
+  const { agent } = makeAgent(client);
+
+  // The probe input is [1, 2, 3]; JSON.stringify([1,2,3]) === "[1,2,3]" (7 chars, >= MIN_NEEDLE_LEN=4)
+  // Embed it in the prompt exactly
+  const contaminatedPrompt = `Process the tuple [1,2,3] carefully.`;
+
+  // Create a probe with input [1, 2, 3]
+  const tupleProbes: ContractCase[] = [
+    { name: "tuple", input: [1, 2, 3], expected: 6 },
+  ];
+
+  await assert.rejects(
+    () =>
+      convergenceProbe({
+        agent,
+        contract: durationContract,
+        prompt: contaminatedPrompt,
+        probes: tupleProbes,
+        k: 2,
+      }),
+    (err: Error) => {
+      assert.ok(
+        err.message.includes("contamination"),
+        `error should mention contamination: "${err.message}"`,
+      );
+      return true;
+    },
+  );
+
+  assert.equal(callCount, 0, "no model call should be made");
+});
+
+// ── AC9d: contamination — long string needle is caught ────────────────────────
+
+test("AC9d contamination — long string needle still caught", async () => {
+  let callCount = 0;
+  const client: MessagesClient = {
+    messages: {
+      create: async () => {
+        callCount++;
+        throw new Error("should not reach here");
+      },
+    },
+  };
+  const { agent } = makeAgent(client);
+
+  // The probe input is ["1.5h"]; JSON.stringify("1.5h") === "\"1.5h\"" (7 chars, >= MIN_NEEDLE_LEN=4)
+  // Embed it in the prompt
+  const contaminatedPrompt = `Parse durations like "1.5h" correctly.`;
+
+  // Create a probe with input ["1.5h"]
+  const stringProbes: ContractCase[] = [
+    { name: "duration", input: ["1.5h"], expected: 5400 },
+  ];
+
+  await assert.rejects(
+    () =>
+      convergenceProbe({
+        agent,
+        contract: durationContract,
+        prompt: contaminatedPrompt,
+        probes: stringProbes,
+        k: 2,
+      }),
+    (err: Error) => {
+      assert.ok(
+        err.message.includes("contamination"),
+        `error should mention contamination: "${err.message}"`,
       );
       return true;
     },
@@ -1306,4 +1434,267 @@ test("AC16 intentProbe metering — exhausted-retry generation excluded from gen
     Math.abs(verdict.costUsd - ledgerSum) < 1e-9,
     `verdict.costUsd (${verdict.costUsd}) should equal ledger sum (${ledgerSum})`,
   );
+});
+
+// ── convergenceProbe additive upgrade — wilsonLower, outcome clustering, temperature ──
+
+// ── wilsonLower math ──────────────────────────────────────────────────────────
+
+test("wilsonLower math", () => {
+  assert.ok(
+    Math.abs(wilsonLower(4, 8) - 0.2486) < 1e-3,
+    `wilsonLower(4,8) = ${wilsonLower(4, 8)}`,
+  );
+  // UNDECIDED: the spec's worked example says wilsonLower(4, 4) ≈ 0.5101, but
+  // the literal formula (with its own stated default z = 1.645) computes
+  // 4/(4+1.645^2) ≈ 0.5965 for a 100%-success case (0.5101 is what you get at
+  // z ≈ 1.96 instead — inconsistent with the stated default). Implemented the
+  // formula literally per the given code; asserting against the value that
+  // formula actually produces at the default z.
+  assert.ok(
+    Math.abs(wilsonLower(4, 4) - 0.5965) < 1e-3,
+    `wilsonLower(4,4) = ${wilsonLower(4, 4)}`,
+  );
+  assert.equal(wilsonLower(0, 0), 0);
+  assert.ok(
+    wilsonLower(9, 9) > wilsonLower(4, 4),
+    "more evidence (9/9) should yield a higher lower bound than 4/4",
+  );
+});
+
+// ── route contract & fixtures for outcome-clustering / wilson tests ──────────
+//
+// Distinct from durationContract/durationProbes (disjoint input values): the
+// canonical examples use tags "a"/"b"/"c"; probes use 4+-char tags absent
+// from the prompt text, so the contamination audit never fires.
+
+const routeContract = Contract.freeze({
+  requirement: "Route known tags to fixed codes.",
+  entry: "route",
+  version: "1",
+  examples: [
+    { name: "a", input: ["a"], expected: 1 },
+    { name: "b", input: ["b"], expected: 2 },
+    { name: "c", input: ["c"], expected: 3 },
+  ],
+});
+
+const ROUTE_PROMPT = "Implement route(s) that maps known tags to fixed codes.";
+
+/** Passes routeContract; returns 7 for anything outside a/b/c. */
+const ROUTE_RETURN_7 = `
+function route(s) {
+  if (s === "a") return 1;
+  if (s === "b") return 2;
+  if (s === "c") return 3;
+  return 7;
+}
+`.trim();
+
+/** Passes routeContract; returns 9 for anything outside a/b/c. */
+const ROUTE_RETURN_9 = `
+function route(s) {
+  if (s === "a") return 1;
+  if (s === "b") return 2;
+  if (s === "c") return 3;
+  return 9;
+}
+`.trim();
+
+/** Fails routeContract on every canonical example. */
+const ROUTE_WRONG = `function route(s) { return -1; }`;
+
+// ── outcome clustering detects divergence that pass/fail masks ───────────────
+
+test("outcome clustering detects divergence that pass/fail masks", async () => {
+  // k=4, all 4 pass the contract; on probe "other" (expected 5) 2 impls
+  // return 7 and 2 return 9 — all four FAIL that probe under vector scoring.
+  const probes: ContractCase[] = [{ name: "other", input: ["zzzz"], expected: 5 }];
+  const responses = [
+    fence(ROUTE_RETURN_7),
+    fence(ROUTE_RETURN_7),
+    fence(ROUTE_RETURN_9),
+    fence(ROUTE_RETURN_9),
+  ];
+
+  // Default clustering: the pinned rev-2 blindness — disagreements does NOT
+  // name the probe (all four fail it identically as "false") and modalShare
+  // is 1 (documented as a limitation, not a bug fix here).
+  {
+    const client = scriptedClient(responses);
+    const { agent } = makeAgent(client);
+    const verdict = await convergenceProbe({
+      agent,
+      contract: routeContract,
+      prompt: ROUTE_PROMPT,
+      probes,
+      k: 4,
+    });
+    assert.equal(verdict.survivors, 4);
+    assert.ok(
+      !verdict.disagreements.some((d) => d.probeIndex === 0),
+      "default clustering must NOT surface the probe[0] disagreement",
+    );
+    assert.equal(verdict.modalShare, 1);
+  }
+
+  // clustering: "outcome" — surfaces the real divergence.
+  {
+    const client = scriptedClient(responses);
+    const { agent } = makeAgent(client);
+    const verdict = await convergenceProbe({
+      agent,
+      contract: routeContract,
+      prompt: ROUTE_PROMPT,
+      probes,
+      k: 4,
+      clustering: "outcome",
+    });
+    assert.equal(verdict.survivors, 4);
+    assert.equal(verdict.disagreements.length, 1);
+    const d = verdict.disagreements[0]!;
+    assert.equal(d.probeIndex, 0);
+    assert.deepEqual(d.split, { "value:7": 2, "value:9": 2 });
+    assert.equal(verdict.modalShare, 0.5);
+    assert.equal(verdict.ready, false);
+  }
+});
+
+// ── outcome mode flags convergent-but-wrong ───────────────────────────────────
+
+test("outcome mode flags convergent-but-wrong", async () => {
+  // k=4, all impls pass the contract and ALL return 7 on a probe whose
+  // expected is 5 — every survivor converges on the SAME wrong answer.
+  const probes: ContractCase[] = [{ name: "other", input: ["zzzz"], expected: 5 }];
+  const responses = Array.from({ length: 4 }, () => fence(ROUTE_RETURN_7));
+
+  // clustering: "outcome" — modalShare is 1 but modalWrong flags the probe.
+  {
+    const client = scriptedClient(responses);
+    const { agent } = makeAgent(client);
+    const verdict = await convergenceProbe({
+      agent,
+      contract: routeContract,
+      prompt: ROUTE_PROMPT,
+      probes,
+      k: 4,
+      clustering: "outcome",
+    });
+    assert.equal(verdict.modalShare, 1);
+    assert.equal(verdict.modalWrong?.length, 1);
+    const mw = verdict.modalWrong![0]!;
+    assert.equal(mw.probeIndex, 0);
+    assert.equal(mw.modalKey, "value:7");
+    assert.equal(mw.expectedKey, "value:5");
+    assert.equal(verdict.ready, false);
+  }
+
+  // Default clustering on the SAME script — documented contrast: the
+  // convergent-wrong case reads as ready under vector scoring.
+  {
+    const client = scriptedClient(responses);
+    const { agent } = makeAgent(client);
+    const verdict = await convergenceProbe({
+      agent,
+      contract: routeContract,
+      prompt: ROUTE_PROMPT,
+      probes,
+      k: 4,
+    });
+    assert.equal(verdict.ready, true);
+  }
+});
+
+// ── wilson rule ────────────────────────────────────────────────────────────
+
+test("wilson rule", async () => {
+  // Probe expects 7, matching ROUTE_RETURN_7's out-of-band answer — so
+  // survivors both agree AND match expected.
+  const probes: ContractCase[] = [{ name: "otherW", input: ["wwww"], expected: 7 }];
+
+  // 8/8 survivors, one cluster, all matching expected.
+  {
+    const responses = Array.from({ length: 8 }, () => fence(ROUTE_RETURN_7));
+    const client = scriptedClient(responses);
+    const { agent } = makeAgent(client);
+    const verdict = await convergenceProbe({
+      agent,
+      contract: routeContract,
+      prompt: ROUTE_PROMPT,
+      probes,
+      k: 8,
+      wilson: { minSurvivorLB: 0.5, minAgreementLB: 0.6 },
+    });
+    assert.equal(verdict.survivors, 8);
+    assert.equal(verdict.ready, true);
+  }
+
+  // 4/8 survivors (other 4 fail the contract outright), all agreeing.
+  {
+    const responses = [
+      fence(ROUTE_RETURN_7),
+      fence(ROUTE_RETURN_7),
+      fence(ROUTE_RETURN_7),
+      fence(ROUTE_RETURN_7),
+      fence(ROUTE_WRONG),
+      fence(ROUTE_WRONG),
+      fence(ROUTE_WRONG),
+      fence(ROUTE_WRONG),
+    ];
+    const client = scriptedClient(responses);
+    const { agent } = makeAgent(client);
+    const verdict = await convergenceProbe({
+      agent,
+      contract: routeContract,
+      prompt: ROUTE_PROMPT,
+      probes,
+      k: 8,
+      wilson: { minSurvivorLB: 0.5, minAgreementLB: 0.6 },
+    });
+    assert.equal(verdict.survivors, 4);
+    assert.equal(verdict.ready, false);
+  }
+});
+
+// ── temperature forwarded ────────────────────────────────────────────────────
+
+test("temperature forwarded", async () => {
+  const responses = Array.from({ length: 2 }, () => fence(CORRECT_IMPL));
+
+  // With temperature set: every captured body carries it.
+  {
+    const captured: Anthropic.MessageCreateParamsNonStreaming[] = [];
+    const client = scriptedClient(responses, (body) => captured.push(body));
+    const { agent } = makeAgent(client);
+    await convergenceProbe({
+      agent,
+      contract: durationContract,
+      prompt: "Implement parseDuration.",
+      probes: durationProbes,
+      k: 2,
+      temperature: 1.0,
+    });
+    assert.equal(captured.length, 2);
+    for (const body of captured) {
+      assert.equal(body.temperature, 1.0);
+    }
+  }
+
+  // Without temperature: no temperature key on any captured body.
+  {
+    const captured: Anthropic.MessageCreateParamsNonStreaming[] = [];
+    const client = scriptedClient(responses, (body) => captured.push(body));
+    const { agent } = makeAgent(client);
+    await convergenceProbe({
+      agent,
+      contract: durationContract,
+      prompt: "Implement parseDuration.",
+      probes: durationProbes,
+      k: 2,
+    });
+    assert.equal(captured.length, 2);
+    for (const body of captured) {
+      assert.ok(!("temperature" in body), "no temperature key when opts.temperature is unset");
+    }
+  }
 });
