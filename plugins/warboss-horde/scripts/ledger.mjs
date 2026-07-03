@@ -175,6 +175,7 @@ function latestUnjudgedAgentId(args) {
     }
     if (!r || !r.agent_id) continue;
     if (r.agent_type === 'warboss-orchestrator') continue; // judge doers, not the orchestrator
+    if (String(r.agent_type || '').toLowerCase().includes('runner')) continue; // runner rows carry no verdict — 'latest' means the doer being judged
     if (judged.has(r.agent_id)) continue;
     if (!best || String(r.ts || '') >= String(best.ts || '')) best = r;
   }
@@ -282,6 +283,7 @@ function cmdSummary(args) {
 
   const ladder = loadLadder(args);
   const isOrchestrator = (r) => r.agent_type === 'warboss-orchestrator';
+  const isRunner = (r) => String(r.agent_type || '').toLowerCase().includes('runner');
   const tierOf = (r) => r.tier || tierForModel(ladder, r.model) || 'untiered';
 
   const byModel = new Map();
@@ -351,7 +353,10 @@ function cmdSummary(args) {
   // --- Tier split (the thesis check: is the cheapest rung doing the work?) -----
   // The 'do' band = dispatched workers; the 'decide' band = the orchestrator.
   // The thesis is about the do band, so LOW-share is computed over doer rows only.
-  const doerRows = rows.filter((r) => !isOrchestrator(r));
+  // Runner rows (mechanical check execution) are do-band spend but not thesis
+  // dispatches — they'd inflate LOW-share without any authored contract behind
+  // them, so they get their own line below instead.
+  const doerRows = rows.filter((r) => !isOrchestrator(r) && !isRunner(r));
   const byTier = new Map();
   for (const r of doerRows) {
     const t = tierOf(r);
@@ -385,6 +390,21 @@ function cmdSummary(args) {
     const doTok = doerRows.reduce((s, r) => s + (r.tokens || 0), 0);
     process.stdout.write(
       `offload: ${doTok} do-band tokens ran below the top tier — scarce-tier (opus) quota the horde did NOT spend.\n`
+    );
+  }
+
+  // --- Runner band (mechanical checks run outside the orchestrator's context) --
+  const runnerRows = rows.filter(isRunner);
+  if (runnerRows.length > 0) {
+    let rTok = 0, rUsd = 0, rKnown = true;
+    for (const r of runnerRows) {
+      rTok += r.tokens || 0;
+      if (typeof r.est_usd === 'number') rUsd += r.est_usd;
+      else rKnown = false;
+    }
+    process.stdout.write(
+      `\nrunner band (verify/ops execution): ${runnerRows.length} dispatches, ${rTok} tokens, ${dollars(rUsd, rKnown)}\n` +
+      '  each of these is a check that did NOT replay the orchestrator transcript.\n'
     );
   }
 
@@ -448,7 +468,9 @@ function cmdAdvise(args) {
   const ladder = loadLadder(args);
   const tierOf = (r) => r.tier || tierForModel(ladder, r.model) || 'untiered';
 
-  const doerRows = rows.filter((r) => r.agent_type !== 'warboss-orchestrator');
+  const doerRows = rows.filter(
+    (r) => r.agent_type !== 'warboss-orchestrator' && !String(r.agent_type || '').toLowerCase().includes('runner')
+  );
   if (doerRows.length === 0) die('no doer rows in ledger — nothing to advise on');
 
   const verdicts = loadVerdicts(verdictsPath(args));

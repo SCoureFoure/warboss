@@ -42,5 +42,7 @@ End with a terse report:
 - any criterion you could NOT satisfy and why (a faithful "couldn't do X because
   Y" beats silent green).
 
+The final report is **at most 10 lines** — this cap exists because the report lands in the parent transcript and is re-read on every later orchestrator call. If the detail will not fit (a long UNDECIDED list, a decomposition, caveats), write the detail to `.warboss-horde/reports/<slice>.md` and put that path in the report instead of inlining it. The cap applies to the final message only — files you write may be as detailed as needed.
+
 No essays. The rank above judges your code by running the contract, not by reading
 your prose.

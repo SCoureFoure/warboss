@@ -46,6 +46,11 @@ config has been edited to pin rungs to specific models, honor it verbatim.
 Default ladder (use only if config is unreadable): LOW=`haiku` (dispatch),
 MID=`sonnet` (dispatch), HIGH=`opus` (orchestrator / you).
 
+Besides the entropy rungs there is one **mechanism rung**: the `runner` subagent
+(pinned cheap, Bash-capable). It is not on the ladder because execution carries
+no residual entropy — it exists so that *running a decided command* never
+happens in your fat context. See Step 5 and the ops rule below.
+
 ## Step 0.5 — Is there a membrane? (classify each slice's verify_kind)
 
 The whole loop rests on an **interpretation-free pass/fail check** — the membrane.
@@ -120,9 +125,10 @@ further or escalate.
 **Default down, and justify every step up.** The cheapest dispatched rung is the
 default; a slice only moves UP a rung when you can name *why* the rung below would
 misread it. When you tier a slice above the cheapest rung, record that reason on
-its eventual verdict as `cause` (Step 5) using the same vocabulary as a red:
-`under_decided` (you haven't authored the fork out yet — fix that first),
-`subtle_invariant`/`wrong_rung` (genuinely needs more capability). If most slices
+its eventual verdict (Step 5) as `tier_reason`: `under_decided` (you haven't
+authored the fork out yet — fix that first) or `subtle_invariant` (genuinely
+needs more capability). (`cause` is reserved for red verdicts and its four
+values — don't overload it.) If most slices
 land MID with no nameable reason, that is **authoring debt, not entropy** — the
 `summary` board will show it as a low LOW-share. Drive the entropy down instead of
 defaulting up.
@@ -142,22 +148,54 @@ contract**:
 Hand the `doer` the *contract*, not your reasoning. Do **not** give it the verify
 command or its output — that output is the membrane it must satisfy blind.
 
+**Write each contract to its own file** — `.warboss-horde/slices/<slice>.md`, one
+file per slice, the full contract in the file. That way the contract text
+**enters your transcript once**: when you write the file — not again on every
+dispatch, and not again on every retry.
+
 ## Step 4 — Dispatch at the chosen model
 
 Dispatch with the Agent tool: subagent = `doer`, and set the **per-call `model`
 override to the rung's `model` from config.** Give it only the contract. One
 slice per dispatch; keep slices independent so they run in parallel.
 
+**The dispatch prompt is a pointer, not the contract.** Give the doer the file
+path, for example: `Read the contract at .warboss-horde/slices/<slice>.md and implement it.`
+**Hand the doer the path, not the text.** Retries reuse the same file: a
+round-2 prompt is the same contract path plus the failure file path from the
+runner — consistent with Step 6, which already says failure output travels by
+path.
+
 This is the whole point of the config: the rung you picked in Step 2 selects the
 model here. No per-tier agent files — same `doer`, different model.
 
-## Step 5 — Judge mechanically (you own the membrane)
+## Step 5 — Judge mechanically (you own the membrane; the runner runs it)
 
-The `doer` has no Bash and cannot verify itself, by design. **You** run the
-verify command — the project's test / typecheck, a single test file, or a focused
-check that proves exactly the criteria. Green is green; the doer's prose does not
-count. If it reports `// UNDECIDED:` gaps or hands back a decomposition, the
-contract wasn't decided enough → back to Step 3.
+The `doer` has no Bash and cannot verify itself, by design. **You** own the
+membrane — you chose the verify command when you authored the contract — but you
+do not *run* it in your own context. Every API call you make replays your entire
+transcript; a one-line test run in your context costs orders of magnitude more
+than the same run in a fresh cheap one. So:
+
+**Dispatch the `runner` subagent** with exactly: the frozen verify command, the
+output file path (`.warboss-horde/out/<slice>-r<round>.txt`), and — for watches —
+the success condition and timeout. The runner executes verbatim, dumps full
+output to the file, and returns a fixed verdict block (exit code, failing test
+names, ≤5-line tail). Judge from that block:
+
+- **green** (exit 0) → the slice passed. Done.
+- **red** → do NOT pull the full output into your context. The failing names +
+  tail are usually enough to name the cause (Step 6). If you truly need the full
+  trace, read the output file *selectively* — or hand its path to the doer, whose
+  fresh context reads it for free.
+
+Green is green; the doer's prose does not count, and neither does the runner's —
+only the exit code. If the doer reported `// UNDECIDED:` gaps or handed back a
+decomposition, the contract wasn't decided enough → back to Step 3, no runner
+dispatch needed.
+
+Run the check yourself only when dispatch is impossible (runner unavailable) or
+the check is interactive by nature — and say so in the ledger annotation.
 
 **Record the verdict (judge truth the meters can't see).** The cost hook logs
 tokens automatically, but whether a dispatch was green/red, which retry round it
@@ -189,8 +227,11 @@ reflexive retry only fixes one of the four, and grinds the wrong fix on the rest
 - **Genuine worker miss** — contract sound, criteria right, rung right, code just
   wrong → **this** is the only bucket you retry.
 
-For a genuine miss, re-dispatch the **same rung** with the exact failure output.
-Bound it: **two rounds.** Before round 2, consult the ledger's empirical retry
+For a genuine miss, re-dispatch the **same rung** with the failing test names and
+the **path to the runner's output file** — not the output pasted into the prompt.
+The doer has Read; its fresh context reads the trace for free, while every token
+you paste into a dispatch also lands in your own transcript and is replayed on
+every call after. Bound it: **two rounds.** Before round 2, consult the ledger's empirical retry
 economics — it compares a retry at this rung against one expected green at the
 rung above, from your own annotated history (advice is withheld until a rung
 has ≥3 greens):
@@ -260,6 +301,39 @@ the same ledger, so `summary` totals them together. Reconcile against the
 Anthropic console for the billed figure. The `Stop` meter now captures the
 WARBOSS's own (orchestrator) tokens automatically, so `summary` reports both
 bands; `/cost` remains the ground-truth whole-session figure to reconcile against.
+
+## The ops rule (delegation does not end when the build ends)
+
+The doctrine's blind spot, measured: in a real session only the build phase was
+delegated — the follow-up phases (deploy babysitting, screenshot capture, ledger
+patching, script running) ran 84% of all tokens on the top rung, by omission.
+The rule that closes the hole:
+
+**Mechanical command execution goes to the `runner` — always, no matter how
+trivial.** A `git status`, a deploy poll, a screenshot capture, a script run: in
+your context each costs a full transcript replay; in the runner's it costs a few
+thousand tokens. "It's just one quick command" is exactly how 84% happens. Your
+calls should be proportional to *decisions*, not *actions*.
+
+Ops work that requires deciding (what to patch, whether output looks right)
+splits like any task: you decide, then a `runner` executes the decided commands
+or a `doer` makes the decided edits.
+
+## Context hygiene (the multiplier on every future call)
+
+Your transcript is re-read on every API call you make — cost ≈ calls × context
+size. Both factors are yours to control:
+
+- **Files are the interface; your transcript is an index.** Large outputs live
+  in `.warboss-horde/out/`; contracts can live in `.warboss-horde/slices/` and be
+  dispatched by path. Never pull a file into your context that a fresh cheap
+  context could read instead.
+- **Fewer, fatter calls.** Batch independent tool calls in one round. One script
+  beats N one-liners — N commands is N replays. Polling belongs in a bounded
+  runner watch, never in repeated calls of your own.
+- **Shed at phase boundaries.** When a phase ends, append decisions and verdicts
+  to a state file (e.g. `.warboss-horde/STATE.md`), then compact — state on disk
+  survives; transcript weight does not have to.
 
 ## The one invariant
 

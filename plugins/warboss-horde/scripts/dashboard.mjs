@@ -112,6 +112,21 @@ function parseLedger(file) {
   return rows;
 }
 
+// Raw parse — no dedup, no fallback. Used only for the orchestrator "replay
+// burn" chart, where (unlike everywhere else) the cumulative-snapshot sequence
+// per (agent_id, model) IS the series and must not be collapsed to last-row.
+function parseLedgerRaw(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  return text.split('\n').filter((l) => l.trim()).map((l) => {
+    try { return JSON.parse(l); } catch { return null; }
+  }).filter(Boolean);
+}
+
 // Last verdict per agent_id (later annotate wins).
 function loadVerdicts(file) {
   const byId = new Map();
@@ -164,10 +179,19 @@ function aggregate(projects, ladder) {
   const verdict = { annotated: 0, green: 0, red: 0, causes: new Map() };
   const series = [];           // {ts, usd, decide:bool} sorted later
   const perProject = [];
+  const orchBySession = new Map(); // `${agent_id}::${model}` -> [{ts, cache_read}] (NOT deduped)
 
   for (const p of projects) {
     const rows = parseLedger(p.ledgerFile);
     const verdicts = loadVerdicts(p.verdictsFile);
+
+    for (const r of parseLedgerRaw(p.ledgerFile)) {
+      if (!isOrchestrator(r) || !r || !r.agent_id) continue;
+      const key = `${r.agent_id}::${r.model}`;
+      const arr = orchBySession.get(key) || [];
+      arr.push({ ts: r.ts, cache_read: typeof r.cache_read === 'number' ? r.cache_read : 0 });
+      orchBySession.set(key, arr);
+    }
     let pUsd = 0, pTok = 0, pDisp = 0, pGreen = 0, pRed = 0, pUsdKnown = true;
 
     for (const r of rows) {
@@ -225,7 +249,13 @@ function aggregate(projects, ladder) {
   }
 
   series.sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
-  return { totals, byModel, byTier, byTask, verdict, series, perProject };
+
+  // One point-array per orchestrator session, sorted ascending by ts. Not
+  // filtered by length here — burnChart/burnLegend decide what to skip.
+  const orchestratorSessions = [...orchBySession.values()]
+    .map((pts) => pts.slice().sort((a, b) => String(a.ts).localeCompare(String(b.ts))));
+
+  return { totals, byModel, byTier, byTask, verdict, series, perProject, orchestratorSessions };
 }
 
 // --- rendering --------------------------------------------------------------
@@ -297,6 +327,49 @@ function costChart(series, { w = 720, h = 200, pad = 28 } = {}) {
   </svg>`;
 }
 
+// Replay burn — one polyline per orchestrator session, cumulative `cache_read`
+// (the Stop-meter snapshot, NOT deduped — see aggregate()'s orchBySession
+// note) against snapshot index (turn number within the session).
+function burnChart(sessions, { w = 720, h = 200, pad = 28 } = {}) {
+  const series = sessions.filter((pts) => pts.length >= 2);
+  if (series.length === 0) return '<p class="muted">No orchestrator snapshots yet — run with the Stop meter wired.</p>';
+
+  const maxLen = Math.max(...series.map((pts) => pts.length));
+  const maxY = Math.max(1, ...series.map((pts) => Math.max(...pts.map((p) => p.cache_read))));
+  const x = (i) => pad + (maxLen > 1 ? (i / (maxLen - 1)) * (w - 2 * pad) : 0);
+  const y = (v) => h - pad - (v / maxY) * (h - 2 * pad);
+
+  const colors = ['#58a6ff', '#3fb950', '#d29922', '#a371f7', '#f85149'];
+  const lines = series.map((pts, si) => {
+    const points = pts.map((p, i) => `${x(i).toFixed(1)},${y(p.cache_read).toFixed(1)}`).join(' ');
+    return `<polyline points="${points}" fill="none" stroke="${colors[si % colors.length]}" stroke-width="2"/>`;
+  }).join('');
+
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
+    const yy = (h - pad - f * (h - 2 * pad)).toFixed(1);
+    return `<line x1="${pad}" y1="${yy}" x2="${w - pad}" y2="${yy}" stroke="#21262d"/><text x="4" y="${(+yy + 3).toFixed(1)}" class="ax">${num(Math.round(f * maxY))}</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" role="img">
+    ${grid}
+    ${lines}
+    <text x="${pad}" y="${h - 8}" class="ax">turn 0</text>
+    <text x="${w - pad}" y="${h - 8}" class="ax" text-anchor="end">turn ${maxLen - 1}</text>
+  </svg>`;
+}
+
+// One-line recap under burnChart: the latest session's (most recent last-ts)
+// last snapshot value and its average per-turn burn (delta between
+// consecutive snapshots; first delta = the first snapshot's value itself).
+function burnLegend(sessions) {
+  const series = sessions.filter((pts) => pts.length >= 2);
+  if (series.length === 0) return '';
+  const latest = series.reduce((a, b) => (String(a[a.length - 1].ts) >= String(b[b.length - 1].ts) ? a : b));
+  const last = latest[latest.length - 1].cache_read;
+  const deltas = latest.map((p, i) => (i === 0 ? p.cache_read : p.cache_read - latest[i - 1].cache_read));
+  const avgDelta = deltas.reduce((s, d) => s + d, 0) / deltas.length;
+  return `<div class="sub">latest session: ${num(last)} cache_read tokens · avg burn/turn ${num(Math.round(avgDelta))}</div>`;
+}
+
 // Horizontal bar list from [{label, value, sub, color}].
 function bars(items, { max } = {}) {
   const top = max || Math.max(1, ...items.map((i) => i.value));
@@ -309,7 +382,7 @@ function bars(items, { max } = {}) {
 }
 
 function render(agg, meta) {
-  const { totals, byModel, byTier, byTask, verdict, series, perProject } = agg;
+  const { totals, byModel, byTier, byTask, verdict, series, perProject, orchestratorSessions } = agg;
   const decideDo = totals.doUsd > 0 ? (totals.decideUsd / totals.doUsd).toFixed(2) + ' : 1' : 'n/a';
   const triesPerGreen = verdict.green > 0 ? (verdict.annotated / verdict.green).toFixed(2) : 'n/a';
   const lowShare = totals.doerDispatches > 0
@@ -385,6 +458,8 @@ function render(agg, meta) {
   </div>
 
   ${card('cumulative spend over time', `<div class="donut-wrap"></div>${costChart(series)}<div class="sub"><span style="color:#58a6ff">■</span> all spend &nbsp; <span style="color:#3fb950">■</span> do band (workers)</div>`)}
+
+  ${card('replay burn — orchestrator context growth', `${burnChart(orchestratorSessions)}${burnLegend(orchestratorSessions)}`)}
 
   <div class="grid">
     ${card('tier split — the "do" band', tierSegs.length

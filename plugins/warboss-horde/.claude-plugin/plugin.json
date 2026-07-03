@@ -2,8 +2,8 @@
   "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "warboss-horde",
   "displayName": "Warboss Horde",
-  "version": "0.1.2",
-  "description": "A model-aware delegation framework. The main agent acts as WARBOSS: it builds a model ladder from tiers.json (N available models -> N rungs), routes each task to the cheapest rung that can satisfy it by residual entropy, and dispatches a single generic `doer` subagent at the chosen model — so the expensive model only decides and the cheapest model does the work.",
+  "version": "0.2.1",
+  "description": "A model-aware delegation framework. The main agent acts as WARBOSS: it builds a model ladder from tiers.json (N available models -> N rungs), routes each task to the cheapest rung that can satisfy it by residual entropy, and dispatches a single generic `doer` subagent at the chosen model — so the expensive model only decides and the cheapest model does the work. A Bash-capable `runner` subagent executes verify commands and mechanical ops in a thin cheap context, so checks never replay the orchestrator's transcript.",
   "author": {
     "name": "SCoureFoure",
     "email": "scoraccioiv@gmail.com"
