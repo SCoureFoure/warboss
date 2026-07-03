@@ -9,6 +9,7 @@
   },
   "pricing": {
     "$comment": "ACCURATE per-class $/MILLION-tokens, used by BOTH automatic meters: scripts/meter-subagent.mjs (SubagentStop -> the doer/'do' band) and scripts/meter-orchestrator.mjs (Stop -> the WARBOSS/'decide' band). Each transcript carries the real input/output/cache split, so USD here is precise — not blended. Keys are matched to a transcript's model id by SUBSTRING (e.g. 'claude-sonnet-4-6' -> 'sonnet'); the same match maps a model to its ladder `tier` for the summary board. VERIFY against current Anthropic pricing before trusting the dollar figures; as of authoring, cache_read is ~0.1x input and cache_write ~1.25x input. Set a model to null to log tokens only.",
+    "fable":  { "input": 10, "output": 50, "cache_read": 1,   "cache_write": 12.5 },
     "haiku":  { "input": 1,  "output": 5,  "cache_read": 0.1, "cache_write": 1.25 },
     "sonnet": { "input": 3,  "output": 15, "cache_read": 0.3, "cache_write": 3.75 },
     "opus":   { "input": 15, "output": 75, "cache_read": 1.5, "cache_write": 18.75 }

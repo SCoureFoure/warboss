@@ -85,6 +85,10 @@ function usd(price, u) {
 }
 
 // Sum usage per model across the assistant messages of one transcript file.
+// One API response with N content blocks is written as N JSONL lines sharing
+// one message.id, each repeating the full usage — summing raw lines counts a
+// response N times (~2x inflation vs /cost). Dedupe by message id; the LAST
+// line per id carries the final streamed usage.
 function sumByModel(file) {
   const byModel = new Map();
   let text;
@@ -93,6 +97,7 @@ function sumByModel(file) {
   } catch {
     return byModel;
   }
+  const byId = new Map(); // message id -> { model, usage } (last line wins)
   for (const line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
     let rec;
@@ -109,11 +114,14 @@ function sumByModel(file) {
     // They are not real model calls — metering them writes a phantom, price-less
     // ledger row that poisons the board with a partial/n-a dispatch. Skip them.
     if (model.startsWith('<')) continue;
+    byId.set(msg.id || rec.uuid, { model, usage: msg.usage });
+  }
+  for (const { model, usage } of byId.values()) {
     const acc = byModel.get(model) || { input: 0, output: 0, cache_read: 0, cache_creation: 0 };
-    acc.input += msg.usage.input_tokens || 0;
-    acc.output += msg.usage.output_tokens || 0;
-    acc.cache_read += msg.usage.cache_read_input_tokens || 0;
-    acc.cache_creation += msg.usage.cache_creation_input_tokens || 0;
+    acc.input += usage.input_tokens || 0;
+    acc.output += usage.output_tokens || 0;
+    acc.cache_read += usage.cache_read_input_tokens || 0;
+    acc.cache_creation += usage.cache_creation_input_tokens || 0;
     byModel.set(model, acc);
   }
   return byModel;
