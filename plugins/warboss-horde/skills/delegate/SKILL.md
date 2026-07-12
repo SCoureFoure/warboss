@@ -122,6 +122,17 @@ If you cannot make a slice falsifiable — cannot write its criteria as cases a
 verify command would pass or fail — **it is not ready to dispatch.** Decompose
 further or escalate.
 
+**Convergence probe — turn "is it decided?" from a judgment into an
+observation.** When you are unsure a slice is decided enough for the cheapest
+rung, do not guess: dispatch the *same* contract to **two doers in parallel** at
+the target rung and diff their outputs on the acceptance surface. Agreement =
+the contract pins the behavior; the slice is decided. Divergence = the contract
+still leaks a fork, and the diff *localizes* it — that spot is what to author out
+(and usually a `fiat` fork you owe the Leader, see Step 3). This is cheap at the
+LOW rung (two of the cheapest calls) and is the harness's `convergenceProbe` as a
+delegation primitive. Spend it where it pays — a LOW slice you are unsure about,
+not a MID slice you are already lifting for a named reason.
+
 **Default down, and justify every step up.** The cheapest dispatched rung is the
 default; a slice only moves UP a rung when you can name *why* the rung below would
 misread it. When you tier a slice above the cheapest rung, record that reason on
@@ -144,6 +155,28 @@ contract**:
   misreading cannot pass,
 - the error / edge behavior named explicitly — don't leave "what happens on bad
   input" undecided.
+
+**Tag every fork you kill — the intent membrane.** A dense contract removes
+entropy by *deciding*; but deciding a fork the wrong way removes entropy and loses
+the Leader's intent in the same stroke. A contract can be perfectly satisfiable
+and *wrong*. The verify command proves satisfiability; only you can prove
+fidelity. So for each fork the intent left open that you resolved in the contract,
+tag the resolution:
+
+- **`intent`** — you are confident this is what the Leader meant; it is derivable
+  from the task, the spec, or the surrounding code.
+- **`fiat`** — the intent did not decide it and you chose a reading *arbitrarily*
+  to make the slice decidable. The Leader never said this.
+
+Every `fiat` tag is a **Leader question, not a silent decision** (the one
+invariant, made concrete). You may provisionally dispatch a fiat-tagged contract
+to keep moving, but you MUST surface every `fiat` fork to the user before the
+slice counts as done — a green on a fiat-decided contract means "a machine
+satisfied it," never "this was what was wanted." List the fork tags at the top of
+the contract file so the fiat count is visible; a slice heavy with fiat tags is
+under-decided *intent*, and no amount of falsifiability fixes that — escalate
+before you dispatch. (This is the harness's `resolutions[]` + escalations
+discipline, ported to delegation.)
 
 Hand the `doer` the *contract*, not your reasoning. Do **not** give it the verify
 command or its output — that output is the membrane it must satisfy blind.

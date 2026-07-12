@@ -348,6 +348,17 @@ function cmdSummary(args) {
     process.stdout.write(
       `HIGH (scarce-tier) tokens: ${high} — ${totTok > 0 ? ((100 * high) / totTok).toFixed(0) : 0}% of all tokens.\n`
     );
+    const untieredTok = tierTokens.get('untiered') || 0;
+    if (untieredTok > 0) {
+      const untieredModels = [];
+      for (const r of rows) {
+        if (tierOf(r) === 'untiered' && !untieredModels.includes(r.model)) untieredModels.push(r.model);
+      }
+      const pct = totTok > 0 ? ((100 * untieredTok) / totTok).toFixed(0) : 0;
+      process.stdout.write(
+        `⚠ untiered tokens: ${untieredTok} (${pct}%) — model(s) not on tiers.json ladder: ${untieredModels.join(', ')}. They escape thesis accounting (fail-open); add each as a rung.\n`
+      );
+    }
   }
 
   // --- Tier split (the thesis check: is the cheapest rung doing the work?) -----
@@ -409,6 +420,7 @@ function cmdSummary(args) {
   }
 
   // --- Decide : Do ratio (both bands of correctness-per-dollar) ---------------
+  const verdicts = loadVerdicts(verdictsPath(args));
   let decideUsd = 0, doUsd = 0;
   let decideKnown = true, doKnown = true;
   let sawOrchestrator = false;
@@ -429,9 +441,21 @@ function cmdSummary(args) {
   } else if (doUsd > 0) {
     process.stdout.write(`  ratio decide:do = ${(decideUsd / doUsd).toFixed(2)} : 1\n`);
   }
+  if (sawOrchestrator) {
+    const decideTok = rows.filter(isOrchestrator).reduce((s, r) => s + (r.tokens || 0), 0);
+    const greens = doerRows.filter((r) => {
+      const v = verdicts.get(r.agent_id);
+      return v && v.verdict === 'green';
+    }).length;
+    if (greens > 0) {
+      const ratio = Math.round(decideTok / greens);
+      process.stdout.write(
+        `  decide productivity: ${decideTok} decide-tokens / ${greens} green slices = ${ratio} decide-tok per green (lower = leaner authoring)\n`
+      );
+    }
+  }
 
   // --- Verdict board (judge truth, joined from verdicts.jsonl) ----------------
-  const verdicts = loadVerdicts(verdictsPath(args));
   if (verdicts.size > 0) {
     let green = 0, red = 0, annotated = 0;
     const causes = new Map();

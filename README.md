@@ -8,7 +8,7 @@
 Most agent systems try to win by making the model smarter. warboss bets the
 opposite: **once intent is encoded densely enough, the model doing the work
 barely has to be smart at all.** Intelligence moves out of the worker and into
-two places — the *contract* that pins down what "correct" means, and the *loop*
+two places — the _contract_ that pins down what "correct" means, and the _loop_
 that grinds against it until it's satisfied.
 
 If that bet holds, the expensive model is needed only to **decide** what should
@@ -50,27 +50,27 @@ A single intent travels the whole machine like this. The expensive model is only
 ever spent in the top band; everything below the membrane runs cheap.
 
 ```text
-  ┌─ DECIDE (high model, spent once) ───────────────────────────────────┐
-  │                                                                      │
-  │   intent ─▶ decompose ─▶ self-audit ─▶ admit? ─▶ FREEZE (hash-pin)   │
-  │             │            error-       │  probe                       │
-  │             │            coverage     │  agrees?                     │
-  │             ▼            mandate       ▼                              │
-  │      underdetermined?              NOT-READY ─▶ kick back to Leader      │
+  ┌─ DECIDE (high model, spent once) ────────────────────────────────────────┐
+  │                                                                          │
+  │   intent ─▶ decompose ─▶ self-audit ─▶ admit? ─▶ FREEZE (hash-pin)     │
+  │             │            error-       │  probe                           │
+  │             │            coverage     │  agrees?                         │
+  │             ▼            mandate       ▼                                 │
+  │      underdetermined?              NOT-READY ─▶ kick back to Leader     │
   │      escalate to Leader ──────────────────────────▶ (answer + re-author)│
-  └────────────────────────────────────┬─────────────────────────────────┘
+  └────────────────────────────────────┬─────────────────────────────────────┘
                                         │  frozen contract crosses the membrane
-  ┌─ DO (cheapest viable model, metered) ▼ ─────────────────────────────┐
-  │                                                                      │
-  │     ┌──────────────────────────────────────────────┐                │
-  │     │  generate ─▶ run against contract ─▶ judge     │                │
+  ┌─ DO (cheapest viable model, metered) ▼ ───────────────────────────────┐
+  │                                                                       │
+  │     ┌──────────────────────────────────────────────┐                  │
+  │     │  generate ─▶ run against contract ─▶ judge     │               │
   │     │      ▲                                  │      │  every call    │
   │     │      │     fail: feedback = the why     │      │  → cost ledger │
-  │     │      └──────────────◀───────────────────┘      │                │
-  │     └──────────────────┬───────────────────────────┘                 │
+  │     │      └──────────────◀───────────────────┘      │               │
+  │     └──────────────────┬───────────────────────────┘                  │
   │                        ▼                                              │
-  │              green · stalled · out of budget                         │
-  └──────────────────────────────────────────────────────────────────────┘
+  │              green · stalled · out of budget                          │
+  └───────────────────────────────────────────────────────────────────────┘
 ```
 
 Two facts make this honest rather than hopeful:
@@ -112,7 +112,7 @@ Three rules make this more than flavor:
    hierarchy is a **fractal**: add ranks or widen the horde as the work demands.
    (Tiers: LOW=haiku, MID=sonnet, HIGH=opus — a capability ladder, `src/models.ts`.)
 3. **Entropy is reduced at authoring time, never at implementation time.** All
-   discipline lands on the rank that *writes* — every rule stated as a
+   discipline lands on the rank that _writes_ — every rule stated as a
    mechanical input → output, every sentence falsifiable by an example, every
    second reading killed by a case that fails under it. Grunts are left as
    simple machines; you control the author's prompt, not the worker's mind. (A
@@ -124,14 +124,14 @@ Three rules make this more than flavor:
 Each idea in [`references/`](references/) contributes one organ of the machine
 (the full synthesis is in [archive/duh_plan.md](archive/duh_plan.md)):
 
-| Source | What it gives us |
-| --- | --- |
-| Agentic Hierarchy of Needs (the spine) | The membrane: the only interpretation-free signal between intent and execution. |
-| AlphaProof Nexus | The loop: a reliable system from an unreliable generator + an honest judge + retry. The judge's *why* is part of the loop. |
-| Fractal Views | Constant-size context per worker → small context → small model stays viable. |
-| Shannon / compression | Why a frozen contract works: it's the lowest-entropy encoding of intent — a solved variable removed from the problem. |
-| Intention-decay protocols | The transmission rules: dense intent, bounded context, shape the environment instead of micro-instructing. |
-| Orc lore | The topology and the names. |
+| Source                                 | What it gives us                                                                                                           |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Agentic Hierarchy of Needs (the spine) | The membrane: the only interpretation-free signal between intent and execution.                                            |
+| AlphaProof Nexus                       | The loop: a reliable system from an unreliable generator + an honest judge + retry. The judge's _why_ is part of the loop. |
+| Fractal Views                          | Constant-size context per worker → small context → small model stays viable.                                               |
+| Shannon / compression                  | Why a frozen contract works: it's the lowest-entropy encoding of intent — a solved variable removed from the problem.      |
+| Intention-decay protocols              | The transmission rules: dense intent, bounded context, shape the environment instead of micro-instructing.                 |
+| Orc lore                               | The topology and the names.                                                                                                |
 
 ## Falsify-first: the experiment ladder
 
@@ -181,7 +181,7 @@ one place machine authoring lost (happy-path ambiguity) turned out to be intent
 the human never decided, which the kick-back loop now surfaces and resolves
 before anything freezes.
 
-One thing the experiments *killed*: the idea of a cheap-model **readiness judge**
+One thing the experiments _killed_: the idea of a cheap-model **readiness judge**
 that just declares "READY / NOT-READY." It fails both ways (over-confident in one
 form, over-skeptical in another). What survived as the actual admission gate is a
 **convergence probe** — run K independent cheap generations against the contract;
@@ -192,10 +192,10 @@ to freeze. The model that does the work votes on whether the work is decided.
 
 warboss ships in two halves, and which one you want depends on what you're after:
 
-| You want to… | Install | Needs |
-| --- | --- | --- |
-| **Use the delegation doctrine in your own Claude Code** | the **`warboss-horde` plugin** | nothing but Claude Code |
-| **Run the research harness** (membrane, loop, gate, live experiments) | clone this repo | Node ≥ 22; an API key only for live runs |
+| You want to…                                                          | Install                        | Needs                                    |
+| --------------------------------------------------------------------- | ------------------------------ | ---------------------------------------- |
+| **Use the delegation doctrine in your own Claude Code**               | the **`warboss-horde` plugin** | nothing but Claude Code                  |
+| **Run the research harness** (membrane, loop, gate, live experiments) | clone this repo                | Node ≥ 22; an API key only for live runs |
 
 The plugin is the part most people install — it's the thesis packaged as a
 reusable Claude Code skill. The harness is the lab the thesis was proven in;
@@ -300,7 +300,7 @@ and closed** in the thesis's favor on the first task (`duration-parse`).
 
 A 2026-07-02 hardening pass (run through the horde itself — 8/8 dispatches
 green, tries-per-green 1.00) closed several instrument holes: contracts can pin
-the error *message* (`throwsMatch`), not just "it threw"; the loop's stall
+the error _message_ (`throwsMatch`), not just "it threw"; the loop's stall
 detector catches oscillation and behaviorally-identical retries, not just
 verbatim repeats; the convergence probe gains opt-in outcome clustering (a
 convergent-but-**wrong** population no longer reads as ready) and Wilson-bound
@@ -324,16 +324,16 @@ including our own build loop's — lands in a cost ledger.
 
 ## Repo map
 
-| Where | What |
-| --- | --- |
-| [plugins/warboss-horde/](plugins/warboss-horde/) | The installable plugin: the `/delegate` doctrine, the `doer` subagent, `tiers.json`, the auto-metering hooks, and the cost `ledger.mjs` + HTML `dashboard.mjs`. |
-| [specs/](specs/) | Durable source of truth per harness feature, paired with tests. |
-| [reports/](reports/) | Where new live-run verdicts land. The lab-phase record (E1a–E4, gate calibrations) is archived in [archive/reports/](archive/reports/). |
-| [archive/](archive/) | The development record: [duh_plan.md](archive/duh_plan.md) (thesis/experiment design), [HANDOFF.md](archive/HANDOFF.md) (the rank relay), and the completed experiment verdicts. |
-| [src/](src/) | The core layers — contract, sandbox, runner, cost ledger, agent, loop, gate, warboss, kickback. |
-| [references/](references/) | The source ideas the machine is assembled from. |
+| Where                                            | What                                                                                                                                                                             |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [plugins/warboss-horde/](plugins/warboss-horde/) | The installable plugin: the `/delegate` doctrine, the `doer` subagent, `tiers.json`, the auto-metering hooks, and the cost `ledger.mjs` + HTML `dashboard.mjs`.                  |
+| [specs/](specs/)                                 | Durable source of truth per harness feature, paired with tests.                                                                                                                  |
+| [reports/](reports/)                             | Where new live-run verdicts land. The lab-phase record (E1a–E4, gate calibrations) is archived in [archive/reports/](archive/reports/).                                          |
+| [archive/](archive/)                             | The development record: [duh_plan.md](archive/duh_plan.md) (thesis/experiment design), [HANDOFF.md](archive/HANDOFF.md) (the rank relay), and the completed experiment verdicts. |
+| [src/](src/)                                     | The core layers — contract, sandbox, runner, cost ledger, agent, loop, gate, warboss, kickback.                                                                                  |
+| [references/](references/)                       | The source ideas the machine is assembled from.                                                                                                                                  |
 
 ---
 
-*Status: lab — E1→E2→E3→E4 chain closed on task 1; multi-task replication next.
-Duh Plan supersedes this README where they disagree.*
+_Status: lab — E1→E2→E3→E4 chain closed on task 1; multi-task replication next.
+Duh Plan supersedes this README where they disagree._
