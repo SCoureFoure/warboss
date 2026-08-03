@@ -10,7 +10,7 @@
     {
       "name": "warboss-horde",
       "source": "./plugins/warboss-horde",
-      "description": "Managed agent-rank ladder (WARBOSS → WARCHIEF → GRUNT) plus a /delegate doctrine that maps available models to ranks by role and routes each task to the cheapest tier that can satisfy it.",
+      "description": "A config-driven model ladder (N models = N rungs) plus a /delegate doctrine that routes each slice to the cheapest rung that can satisfy it: one generic `doer` dispatched at the chosen model, a cheap `runner` for verify commands and ops, prework that converts unjudgeable slices into judgeable ones, and automatic per-dispatch metering.",
       "category": "orchestration",
       "keywords": ["delegation", "subagents", "orchestration", "cost", "entropy", "warboss"],
       "license": "MIT"

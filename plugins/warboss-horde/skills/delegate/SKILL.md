@@ -70,6 +70,28 @@ with no membrane cannot be safely delegated (the doer would be graded on prose, 
   judgement call). **Do not pretend-delegate.** Handle inline, or escalate the
   decision to the user. A dispatch with no membrane is an authoring defect.
 
+**`none` is never a terminal state** — it is a slice with no membrane *yet*.
+Absorbing it into your own context is decide-band spend, the most expensive band
+on the board. Three moves convert a `none` slice into a judgeable one; run the
+move, then **re-classify the slice** as `test` or `visual` and continue at Step 1:
+
+- **research** — the blocker is a fact outside the working directory (an API's
+  actual shape, a library's real behavior, what the data contains). Dispatch a
+  `doer` at the cheapest rung to gather it, writing findings **only** under
+  `.warboss-horde/out/` — no repo change, so there is nothing to grade and no
+  membrane is bypassed. You judge the fact; it feeds Step 3 authoring.
+- **prototype** — the blocker is "how should it look / behave." Have the cheapest
+  rung build a rough, throwaway artifact to react to. Its membrane is `visual`:
+  you inspect it, you do not merge it. Reacting to something concrete decides the
+  fork faster than reasoning about it in your own context.
+- **groundwork** — the blocker is work that must simply *happen* first (provision
+  access, move data, capture a trace). Decided commands go to the `runner`,
+  decided edits go to a `doer`. Nothing is being decided here — it earns its place
+  only by unblocking a decision.
+
+If none of the three applies, the `none` is a genuine judgement call: escalate to
+the user (the one invariant). What you must not do is quietly keep it.
+
 Only `test` (and `visual`, with you as judge) slices proceed. This is the honest
 boundary of the doctrine: it makes cheap workers reliable *because* a frozen check
 grades them — where no check exists, the bet doesn't apply.
@@ -103,6 +125,30 @@ The output of this step is a list of slices, each labelled with the surface it
 touches and its own verify check. Tier them in Step 2. You may conclude a task is
 a single slice — but only after trying to cut it, never as the reason to skip
 this step.
+
+**What you cannot state sharply is fog — register it, do not slice it.** Cutting
+surfaces work you can see coming but cannot yet phrase as a slice, because it
+hangs on a decision still open. The gate is **stateable, not answerable**: if you
+can write the question precisely it is a slice — even one you cannot act on yet;
+if you cannot, it is fog. **Pre-slicing fog** is how a doer ends up holding a
+contract with a fork still in it — the authoring defect this whole step exists to
+prevent, and it costs you a red you then pay to diagnose.
+
+Fog is a **working set, not a record** — so it never gets an artifact of its own.
+It rides on something that already dies, and where you put it depends on what the
+host repo has:
+
+- **The repo opens a work item per effort** and closes it when the effort lands —
+  a tracked issue, a PR description, a relay file (the warboss repo's own
+  `HANDOFF.md`). Then fog is a `## Fog` section on **that** item, inheriting its
+  lifecycle. **When a fog line graduates into a slice, delete the line** — fog
+  kept past its slice drifts out of sync and you re-read it every session.
+- **The repo has no such item** — the common case. Then fog is **not written to a
+  file at all.** Carry it in-session and **hand it back to the user when the
+  session ends**, alongside the fiat forks you owe them. The Leader carries it
+  into the next session. Do **not** invent a fog file to fix this: an append-only
+  artifact you re-read every session grows into the decide-band cost it was meant
+  to cut, whatever you name it.
 
 ## Step 2 — Tier each slice (set its rung by its residual entropy)
 
@@ -367,6 +413,10 @@ size. Both factors are yours to control:
 - **Shed at phase boundaries.** When a phase ends, append decisions and verdicts
   to a state file (e.g. `.warboss-horde/STATE.md`), then compact — state on disk
   survives; transcript weight does not have to.
+  Keep that file an **index, not a store** — a line points at the slice file or
+  ledger row holding the detail instead of restating it. Re-deriving last
+  session's plan is decide-band spend; reading a short index back is not, and a
+  state file that grows without eviction stops being cheaper than re-deriving.
 
 ## The one invariant
 

@@ -229,6 +229,26 @@ retrying — test-wrong, under-decided contract, wrong rung, or a genuine worker
 miss — so a failure is fixed at its real source instead of blindly re-run. It
 only escalates back to you for forks it can't decide from the code or spec.
 
+**Before any of that, it does the prework** — the part that decides whether the
+dispatch was ever going to land:
+
+- **Nothing unjudgeable gets dispatched, and nothing unjudgeable gets quietly
+  absorbed either.** A slice with no pass/fail check used to leave one option:
+  the WARBOSS does it itself, on the most expensive rung. Now there are three
+  moves that *give* it a check — **research** (gather a fact the decision waits
+  on, findings confined to `.warboss-horde/out/`, no repo change), **prototype**
+  (a rough artifact to react to when "how should it behave" is the real
+  question), **groundwork** (work that must simply happen first) — after which
+  the slice is re-classified and routed like any other. The rule it sits under is
+  unchanged: a dispatch with no membrane is still an authoring defect.
+- **Work that can't yet be stated precisely is registered, not sliced.** The gate
+  is *stateable, not answerable*: a question you can phrase sharply becomes a
+  slice even if you can't act on it yet; one you can't stays **fog**. Pre-slicing
+  fog is how a worker ends up holding a contract with a fork still in it — a red
+  you then pay to diagnose. Fog rides on whatever your repo already opens per
+  effort and closes when it lands, or comes back to you at session end; it never
+  gets a file of its own to grow in.
+
 Every dispatch is **metered automatically** — two hooks log each worker and the
 WARBOSS itself to a crash-safe `.warboss-horde/ledger.jsonl`, so
 correctness-per-dollar is measured from the first run, not reconstructed after.

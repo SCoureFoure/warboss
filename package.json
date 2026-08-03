@@ -9,7 +9,9 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts",
+    "test": "npm run test:harness && npm run test:horde",
+    "test:harness": "tsx --test test/*.test.ts",
+    "test:horde": "node --test \"plugins/warboss-horde/test/*.test.mjs\"",
     "smoke": "node --env-file=.env --import tsx src/smoke.ts",
     "e1a": "node --env-file=.env --import tsx src/experiment/e1a.ts",
     "e1b": "node --env-file=.env --import tsx src/experiment/e1b.ts",
