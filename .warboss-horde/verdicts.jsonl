@@ -6,3 +6,8 @@
 {"ts":"2026-07-02T13:58:30.035Z","agent_id":"agent-a4269999a2c6908fb","verdict":"green","round":1,"slice":"S7 warboss amend named-mapping"}
 {"ts":"2026-07-02T14:09:03.281Z","agent_id":"agent-a4e1cef60c746bf6a","verdict":"green","round":1,"slice":"fix9 ledger advise subcommand"}
 {"ts":"2026-07-02T14:22:23.505Z","agent_id":"agent-a44282c27b39f4d30","verdict":"green","round":1,"slice":"fix8 decomposeRecursive partition wrapper"}
+{"ts":"2026-07-03T20:35:36.119Z","agent_id":"agent-a86cf71c57cf5f81e","verdict":"green","round":1,"slice":"skill-file-protocol","tier_reason":"subtle_invariant","note":"verify run by WARBOSS - runner rung not installed yet"}
+{"ts":"2026-07-03T20:35:36.179Z","agent_id":"agent-ade469fea3e36747a","verdict":"green","round":1,"slice":"doer-report-cap","note":"verify run by WARBOSS - runner rung not installed yet"}
+{"ts":"2026-07-03T20:35:36.246Z","agent_id":"agent-a8b4432c29ca1a0f8","verdict":"green","round":1,"slice":"dashboard-replay-burn","tier_reason":"subtle_invariant","note":"verify run by WARBOSS - runner rung not installed yet"}
+{"ts":"2026-07-12T21:13:21.402Z","agent_id":"agent-a1c74b44161cd0a62","verdict":"green","round":1,"slice":"ledger-tier-accounting","tier_reason":"subtle_invariant"}
+{"ts":"2026-07-12T21:38:49.373Z","agent_id":"agent-a67f65bd5ee5b35a2","verdict":"green","round":1,"slice":"ledger-metric-fix+test","tier_reason":"subtle_invariant"}

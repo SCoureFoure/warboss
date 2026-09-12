@@ -263,7 +263,32 @@ self-contained HTML dashboard you can open in a browser:
 node "${CLAUDE_PLUGIN_ROOT}/scripts/dashboard.mjs" --out board.html
 ```
 
-**3. (Optional) Tune the ladder.** The ladder lives in `tiers.json` inside the
+**3. (Optional) Arm the ops gate.** Delegation does not end when the build ends.
+Measured on a real session, the build phase was delegated and everything after it
+was not — deploy polls, screenshot captures, script runs — so **84% of all tokens
+burned on the top rung by omission.** The doctrine already said every mechanical
+command goes to the `runner`; the problem is that a paragraph does not bind the
+agent reading it, because that agent is also the one deciding whether to obey.
+
+So the rule is a hook, not a sentence. `PreToolUse(Bash)` denies Bash from the
+main agent and names the runner instead; subagent Bash is untouched, so the
+runner keeps working. It is **opt-in per project**, so installing the plugin
+never gates an unrelated repo:
+
+```sh
+mkdir -p .warboss-horde && touch .warboss-horde/gate.on   # arm  (found from any subdirectory)
+rm .warboss-horde/gate.on                                 # disarm
+```
+
+`WARBOSS_BASH_GATE=off|warn|deny` overrides the marker — `warn` allows the
+command but still explains, which is the honest way to see how often you would
+have been stopped before you commit to being stopped. When a command genuinely
+cannot be dispatched, prefix it with `WARBOSS_INLINE=1`; Step 5 of the doctrine
+always allowed an inline check, and the prefix is how you say so out loud. The
+gate fails open on any error — it can cost you tokens by not firing, never a
+wedged session.
+
+**4. (Optional) Tune the ladder.** The ladder lives in `tiers.json` inside the
 installed plugin. Each entry is a rung, ordered cheapest → most capable; **N
 models = N rungs.** Edit a rung's `model` to pin it (alias `haiku|sonnet|opus`,
 or a full id like `claude-haiku-4-5-20251001`), or add/remove rungs to change the
@@ -275,9 +300,15 @@ work that lands there is decomposed or escalated, never dispatched.
 "ladder": [
   { "rung": 1, "tier": "LOW",  "model": "haiku",  "dispatch": true  },  // near-zero entropy → cheapest
   { "rung": 2, "tier": "MID",  "model": "sonnet", "dispatch": true  },  // decided but subtle
-  { "rung": 3, "tier": "HIGH", "model": "opus",   "dispatch": false }   // undecided → stays with you
+  { "rung": 3, "tier": "HIGH", "model": "opus",   "dispatch": false,     // undecided → stays with you
+    "match": ["opus", "fable"] }                                        // ...as whichever model you drive
 ]
 ```
+
+A rung's optional `match` lists every model id that serves its band. The top rung
+needs it: an orchestrator you drive as opus one session and fable the next is one
+rung, not two. A model on no rung is metered `untiered` and reported as such
+rather than dropped — the accounting fails open, so add each model you drive.
 
 The rule that governs it all: **tier follows a task's residual entropy, not its
 size.** Only push to the cheapest rung what a literal machine could satisfy;
@@ -330,6 +361,13 @@ and `decomposeRecursive` finally gives the "decompose further UP the chain"
 rule a code path (partition into seam-carrying sub-intents, recurse, merge,
 fail-closed on depth exhaustion).
 
+Plugin 0.4.0 moved the ops rule from prose into a `PreToolUse(Bash)` hook and
+put every orchestrator model on a rung (`match`), which corrected the board's own
+reading of this repo's history from 20% top-tier tokens to **87%** — the gap was
+`untiered` fable rows escaping the accounting. The gate's decision logic is
+covered by tests; what it has not yet had is a delegated session run end to end
+with it armed, which is the measurement that says whether it moves the ratio.
+
 Current frontier (Leg 8): the kick-back loop's **production wiring** is built and
 green offline; what remains are three small, owner-gated live runs — re-confirming
 the live escalation→re-author drain, an E4 re-run that scores the decimal-hours
@@ -346,7 +384,7 @@ including our own build loop's — lands in a cost ledger.
 
 | Where                                            | What                                                                                                                                                                             |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [plugins/warboss-horde/](plugins/warboss-horde/) | The installable plugin: the `/delegate` doctrine, the `doer` subagent, `tiers.json`, the auto-metering hooks, and the cost `ledger.mjs` + HTML `dashboard.mjs`.                  |
+| [plugins/warboss-horde/](plugins/warboss-horde/) | The installable plugin: the `/delegate` doctrine, the `doer` and `runner` subagents, `tiers.json`, the auto-metering and ops-gate hooks, and the cost `ledger.mjs` + HTML `dashboard.mjs`.                  |
 | [specs/](specs/)                                 | Durable source of truth per harness feature, paired with tests.                                                                                                                  |
 | [reports/](reports/)                             | Where new live-run verdicts land. The lab-phase record (E1a–E4, gate calibrations) is archived in [archive/reports/](archive/reports/).                                          |
 | [archive/](archive/)                             | The development record: [duh_plan.md](archive/duh_plan.md) (thesis/experiment design), [HANDOFF.md](archive/HANDOFF.md) (the rank relay), and the completed experiment verdicts. |

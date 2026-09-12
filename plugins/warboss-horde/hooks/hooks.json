@@ -1,6 +1,19 @@
 {
-  "$comment": "Automatic cost metering, both bands of the correctness-per-dollar metric. SubagentStop meters each DOER (the cheap 'do' band) from its own transcript. Stop meters the WARBOSS ORCHESTRATOR (the expensive 'decide' band) from the parent transcript once per turn; it appends a cumulative snapshot under a stable per-session agent_id, and `ledger.mjs summary` keeps the last snapshot. Stop ALSO re-runs meter-subagent as a sweep: background (async) Agent dispatches can finish without a SubagentStop fire, so each turn-end re-walks <session>/subagents/*.jsonl — the agent_id dedup makes the sweep idempotent, so rows are never double-counted. Both append to .warboss-horde/ledger.jsonl and read hook JSON (transcript_path, cwd, agent_type, session_id) on stdin. No matcher = fires for every event; WARBOSS_METER_DOER_ONLY=1 restricts the subagent meter to doer dispatches. All scripts exit 0 on any error so a metering failure never breaks the turn.",
+  "$comment": "Automatic cost metering, both bands of the correctness-per-dollar metric. SubagentStop meters each DOER (the cheap 'do' band) from its own transcript. Stop meters the WARBOSS ORCHESTRATOR (the expensive 'decide' band) from the parent transcript once per turn; it appends a cumulative snapshot under a stable per-session agent_id, and `ledger.mjs summary` keeps the last snapshot. Stop ALSO re-runs meter-subagent as a sweep: background (async) Agent dispatches can finish without a SubagentStop fire, so each turn-end re-walks <session>/subagents/*.jsonl \u2014 the agent_id dedup makes the sweep idempotent, so rows are never double-counted. Both append to .warboss-horde/ledger.jsonl and read hook JSON (transcript_path, cwd, agent_type, session_id) on stdin. No matcher = fires for every event; WARBOSS_METER_DOER_ONLY=1 restricts the subagent meter to doer dispatches. All scripts exit 0 on any error so a metering failure never breaks the turn. PreToolUse(Bash) runs scripts/../hooks/bash-gate.mjs: the ops rule made mechanical. When armed (a .warboss-horde/gate.on marker in the project, or WARBOSS_BASH_GATE=deny|warn), Bash from the MAIN agent is denied with a reason naming the runner subagent; Bash from a subagent is always allowed so the runner keeps working. Opt-in by marker so installing the plugin never gates an unrelated repo, WARBOSS_BASH_GATE=off force-disables, and a command containing WARBOSS_INLINE is always allowed.",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/bash-gate.mjs\"",
+            "timeout": 10,
+            "statusMessage": "warboss ops gate..."
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "hooks": [

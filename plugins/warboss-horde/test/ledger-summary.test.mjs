@@ -29,7 +29,7 @@ test('summary: untiered warning + greens-denominated decide productivity', () =>
     { model: 'claude-haiku-4-5-20251001', tokens: 100000, agent_id: 'd1' }, // red first try
     { model: 'claude-haiku-4-5-20251001', tokens: 90000, agent_id: 'd1b' }, // green retry
     { model: 'claude-sonnet-5', tokens: 200000, agent_id: 'd2' },
-    { model: 'claude-fable-5', tokens: 700000, agent_id: 'd3' }, // untiered
+    { model: 'some-other-model-v1', tokens: 700000, agent_id: 'd3' }, // untiered: on no rung, not even by class word
   ]);
   const V = writeTemp('verdicts-pos', [
     { agent_id: 'd1', verdict: 'red', cause: 'worker_miss' },
@@ -43,7 +43,7 @@ test('summary: untiered warning + greens-denominated decide productivity', () =>
 
     assert.match(
       out,
-      /⚠ untiered tokens: 700000 \(35%\) — model\(s\) not on tiers\.json ladder: claude-fable-5\. They escape thesis accounting \(fail-open\); add each as a rung\./
+      /⚠ untiered tokens: 700000 \(35%\) — model\(s\) not on tiers\.json ladder: some-other-model-v1\. They escape thesis accounting \(fail-open\); add each as a rung\./
     );
     assert.match(
       out,

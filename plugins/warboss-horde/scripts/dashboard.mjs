@@ -150,13 +150,19 @@ function loadLadder(args) {
 function tierForModel(ladder, model) {
   if (!Array.isArray(ladder) || !model) return null;
   const m = String(model).toLowerCase();
+  // A rung's optional `match` lists every model id that serves that entropy
+  // band. The top rung needs it: an orchestrator you drive as opus one session
+  // and fable the next is one rung, not two, and a model missing from the
+  // ladder is counted `untiered` — it escapes the thesis accounting fail-open.
+  const names = (rung) => [rung && rung.model, ...(Array.isArray(rung && rung.match) ? rung.match : [])]
+    .map((n) => String(n || '').toLowerCase())
+    .filter(Boolean);
   for (const rung of ladder) {
-    const lm = String(rung && rung.model ? rung.model : '').toLowerCase();
-    if (lm && (m.includes(lm) || lm.includes(m))) return rung.tier || null;
+    if (names(rung).some((lm) => m.includes(lm) || lm.includes(m))) return rung.tier || null;
   }
-  for (const word of ['haiku', 'sonnet', 'opus']) {
+  for (const word of ['haiku', 'sonnet', 'fable', 'opus']) {
     if (!m.includes(word)) continue;
-    const rung = ladder.find((r) => String(r && r.model ? r.model : '').toLowerCase().includes(word));
+    const rung = ladder.find((r) => names(r).some((lm) => lm.includes(word)));
     if (rung) return rung.tier || null;
   }
   return null;

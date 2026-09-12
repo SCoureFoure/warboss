@@ -25,3 +25,12 @@ coverage/
 .DS_Store
 Thumbs.db
 *.swp
+
+# Local switch for the PreToolUse ops gate — armed per machine, never committed.
+.warboss-horde/gate.on
+
+# Ledger backups written by ledger.mjs when it rewrites a ledger in place.
+*.jsonl.bak
+
+# Stray ledgers from a metering hook firing with its cwd inside the plugin.
+plugins/**/.warboss-horde/

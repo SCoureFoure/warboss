@@ -1,5 +1,5 @@
 {
-  "$comment": "The horde ladder. Ordered cheapest -> most capable. The NUMBER of rungs is the number of entries here: 3 models -> 3 rungs, 2 -> 2. The /delegate skill reads this to know which model serves which entropy band. Edit `model` to pin a rung to a specific model (alias haiku|sonnet|opus, or a full model id like claude-haiku-4-5-20251001). Add or remove a rung to change the ladder; the framework routes across whatever rungs exist. The HIGHEST rung (orchestrator: true) is the main agent / WARBOSS itself — work that lands there is decomposed or escalated, never dispatched to a subagent. Every lower rung is dispatched to the `doer` subagent with `model` set to that rung's model.",
+  "$comment": "The horde ladder. Ordered cheapest -> most capable. The NUMBER of rungs is the number of entries here: 3 models -> 3 rungs, 2 -> 2. The /delegate skill reads this to know which model serves which entropy band. Edit `model` to pin a rung to a specific model (alias haiku|sonnet|opus, or a full model id like claude-haiku-4-5-20251001). Optional `match` lists EVERY model id that serves the rung's band, so one rung can cover several models -- the top rung uses it because the orchestrator may be driven as opus or as fable, and a model on no rung is counted `untiered` and escapes the accounting fail-open. Add or remove a rung to change the ladder; the framework routes across whatever rungs exist. The HIGHEST rung (orchestrator: true) is the main agent / WARBOSS itself — work that lands there is decomposed or escalated, never dispatched to a subagent. Every lower rung is dispatched to the `doer` subagent with `model` set to that rung's model.",
   "doer": "doer",
   "runner": "runner",
   "prices": {
@@ -34,6 +34,7 @@
       "rung": 3,
       "tier": "HIGH",
       "model": "opus",
+      "match": ["opus", "fable"],
       "dispatch": false,
       "orchestrator": true,
       "band": "high residual entropy — not yet decided. Stays with the WARBOSS (main agent): decompose, resolve forks, or escalate to the user. Never dispatched."
