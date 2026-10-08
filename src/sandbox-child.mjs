@@ -15,13 +15,13 @@ const stripped = code
   .replace(/^\s*export\s+default\s+/gm, "")
   .replace(/\brequire\s*\([^)]*\)/g, "undefined");
 
-const context = { __args: args, __result: undefined, __error: undefined, console: noopConsole };
+const context = { __args: args, __result: undefined, __error: undefined, __kind: undefined, console: noopConsole };
 const script = `
   ${stripped}
   ;(async function() {
-    if (typeof ${entry} !== "function") { __error = "entry function '${entry}' is not defined"; return; }
+    if (typeof ${entry} !== "function") { __error = "entry function '${entry}' is not defined"; __kind = "no-entry"; return; }
     try { __result = await ${entry}(...__args); }
-    catch (e) { __error = e && e.message ? String(e.message) : String(e); }
+    catch (e) { __error = e && e.message ? String(e.message) : String(e); __kind = "threw"; }
   })();
 `;
 
@@ -38,14 +38,14 @@ try {
 } catch(e) {
   clearInterval(keepalive);
   const msg = e instanceof Error ? e.message : String(e);
-  process.stdout.write("##RESULT##" + JSON.stringify({ ok: false, error: msg }) + "\n");
+  process.stdout.write("##RESULT##" + JSON.stringify({ ok: false, error: msg, kind: e && e.code === "ERR_SCRIPT_EXECUTION_TIMEOUT" ? "timeout" : "infra" }) + "\n");
   process.exit(0);
 }
 clearInterval(keepalive);
 
 let result;
 if (context.__error !== undefined) {
-  result = { ok: false, error: String(context.__error) };
+  result = { ok: false, error: String(context.__error), kind: context.__kind };
 } else {
   // Serialize result — handle non-JSON-serializable values.
   // Note: JSON.stringify(function(){}) returns undefined rather than throwing,
@@ -54,12 +54,12 @@ if (context.__error !== undefined) {
     const serialized = JSON.stringify(context.__result);
     if (serialized === undefined) {
       // Non-serializable (e.g. functions, undefined at top level)
-      result = { ok: false, error: "unserializable result" };
+      result = { ok: false, error: "unserializable result", kind: "infra" };
     } else {
       result = { ok: true, value: JSON.parse(serialized) };
     }
   } catch {
-    result = { ok: false, error: "unserializable result" };
+    result = { ok: false, error: "unserializable result", kind: "infra" };
   }
 }
 process.stdout.write("##RESULT##" + JSON.stringify(result) + "\n");

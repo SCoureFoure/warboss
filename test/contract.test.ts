@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { Contract, type ContractInput } from "../src/contract.ts";
+import { Contract, type ContractCase, type ContractInput } from "../src/contract.ts";
 
 const base: ContractInput = {
   requirement: "add a and b",
@@ -87,6 +87,85 @@ test("freeze rejects throwsMatch without throws", () => {
       }),
     /has throwsMatch without throws: true/,
   );
+});
+
+const mk = (examples: ContractCase[]) =>
+  ({ requirement: "r", entry: "f", version: "1", examples }) as ContractInput;
+const nested = (): ContractCase[] => [{ input: [{ a: 1 }], expected: { b: 2 } }];
+
+test("AC23 nested mutation of a frozen contract throws TypeError", () => {
+  const c = Contract.freeze(mk(nested()));
+  assert.throws(() => {
+    (c.examples[0]!.expected as any).b = 3;
+  }, TypeError);
+  assert.throws(() => {
+    (c.examples[0]!.input[0] as any).a = 9;
+  }, TypeError);
+  assert.throws(() => {
+    (c.examples[0] as any).expected = 0;
+  }, TypeError);
+});
+
+test("AC24 caller mutation of nested example is isolated", () => {
+  const examples = nested();
+  const c = Contract.freeze(mk(examples));
+  (examples[0]!.expected as any).b = 3;
+  assert.deepEqual(c.examples[0]!.expected, { b: 2 });
+  assert.ok(c.verify(Contract.computeHash(mk(nested()))));
+});
+
+test("AC25 caller examples array is isolated", () => {
+  const examples = nested();
+  const c = Contract.freeze(mk(examples));
+  examples.push({ input: [], expected: 1 });
+  assert.equal(c.examples.length, 1);
+});
+
+test("AC26 hash distinguishes values JSON.stringify makes lossy", () => {
+  const h = (inp: unknown[]) =>
+    Contract.computeHash(mk([{ input: inp, expected: 0 }]));
+  assert.notEqual(h([NaN]), h([null]));
+  assert.notEqual(h([Infinity]), h([null]));
+  assert.notEqual(h([-0]), h([0]));
+  assert.notEqual(h([[undefined]]), h([[null]]));
+  assert.notEqual(h([{ a: undefined }]), h([{}]));
+});
+
+test("AC27 JSON-safe canonical hash is unchanged", () => {
+  const c = Contract.freeze(
+    mk([
+      { input: [1, "x", [true, null], { k: 2 }], expected: [3] },
+      { input: [], expected: undefined, throws: true, throwsMatch: "bad" },
+    ]),
+  );
+  const canonical = JSON.stringify({
+    requirement: "r",
+    entry: "f",
+    version: "1",
+    examples: [
+      { input: [1, "x", [true, null], { k: 2 }], expected: [3] },
+      { input: [], throws: true, throwsMatch: "bad" },
+    ],
+  });
+  assert.equal(c.hash, createHash("sha256").update(canonical).digest("hex"));
+});
+
+test("AC28 freeze rejects unsupported example values", () => {
+  const bad: ContractCase[] = [
+    { input: [new Date(0)], expected: 0 },
+    { input: [new Map()], expected: 0 },
+    { input: [() => 1], expected: 0 },
+    { input: [], expected: { $nonjson: "NaN" } },
+  ];
+  for (const b of bad) {
+    assert.throws(() => Contract.freeze(mk([b])), /unsupported value/);
+  }
+});
+
+test("AC29 non-finite values are accepted and preserved", () => {
+  const c = Contract.freeze(mk([{ input: [NaN], expected: Infinity }]));
+  assert.ok(Number.isNaN(c.examples[0]!.input[0]));
+  assert.equal(c.examples[0]!.expected, Infinity);
 });
 
 test("freeze rejects invalid regex source", () => {

@@ -109,12 +109,13 @@ orchestration on top of them.
     `GRUNT_DOGMA` when unset and forwards a `thinking` config to the client only
     when one is provided.
 16. **AC16 — throws-expected cases** *(amended 2026-06-10 for e1a-harness).*
-    A `ContractCase` with `throws: true` passes iff `runImpl` reports
-    `{ok: false}` (the impl threw); `expected` is ignored for such cases. The
-    case's `throws` flag participates in `computeHash` canonical form (key
-    order `input, expected, throws`, included only when present), so adding or
-    removing it changes the hash. Known accepted limitation: timeout or
-    missing-entry also passes a `throws` case.
+    A `ContractCase` with `throws: true` passes iff the sandbox reports
+    `{ok: false, kind: "threw"}` (the entry function itself threw); `expected`
+    is ignored for such cases. A timeout, crash, or missing entry
+    (`kind` is not `"threw"`, or absent) fails the case and `throwsMatch` is not
+    consulted. The case's `throws` flag participates in `computeHash` canonical
+    form (key order `input, expected, throws`, included only when present), so
+    adding or removing it changes the hash.
 17. **AC17 — cost breakdown** *(amended 2026-06-10).* `costBreakdown(model, usage)`
     returns the four cost components (`inputCost`, `outputCost`, `cacheReadCost`
     at 0.1× input rate, `cacheWriteCost` at 1.25× input rate), the
@@ -146,6 +147,55 @@ orchestration on top of them.
 22. **AC22 — temperature plumbing** *(rev 2)*. `generate({ temperature: 1.0 })`
     → captured request body has `temperature === 1.0`; a call without the
     option → the body carries no `temperature` key.
+23. **AC23 — deep freeze.** `freeze` stores a deep clone of `examples`, frozen at
+    every level; assigning into a nested `expected`/`input` object or replacing a
+    case field throws `TypeError`.
+24. **AC24 — caller mutation isolated.** Mutating the caller's original nested
+    example after `freeze` does not change `c.examples` and `c.verify` still
+    accepts the hash of the original content.
+25. **AC25 — caller array isolated.** Pushing onto the caller's `examples` array
+    after `freeze` leaves `c.examples.length` unchanged.
+26. **AC26 — lossless hash.** Contracts differing only by `NaN`/`null`,
+    `Infinity`/`null`, `-0`/`0`, nested `undefined`/`null`, or an
+    `undefined`-valued property vs an absent one hash differently.
+27. **AC27 — JSON-safe hash unchanged.** Inputs containing only JSON-safe values
+    (and a top-level `expected: undefined`, which stays absent) hash to the
+    plain `JSON.stringify` canonical form.
+28. **AC28 — unsupported values rejected.** `freeze` throws
+    `…contains unsupported value at <path>` for functions, symbols, non-plain
+    objects (`Date`, `Map`, …) and plain objects with an own `$nonjson` key.
+29. **AC29 — non-finite accepted.** `NaN`/`Infinity` in `input`/`expected` freeze
+    without throwing and are preserved on `c.examples`.
+30. **AC30 — failure kind: threw.** `runImpl` of an entry that throws
+    `Error("bad")` → `{ok:false, error:"bad", kind:"threw"}`.
+31. **AC31 — failure kind: no-entry.** `runImpl` with no entry function defined
+    → `ok:false`, `kind:"no-entry"`.
+32. **AC32 — failure kind: timeout.** `runImpl` of `while(true){}` with a short
+    `timeoutMs` → `ok:false`, `kind:"timeout"`.
+33. **AC33 — failure kind: syntax error is infra.** `runImpl` of code with a
+    syntax error → `ok:false`, `kind:"infra"`.
+34. **AC34 — failure kind: top-level throw is infra.** `runImpl` of code that
+    throws at top level, outside the entry call → `ok:false`, `kind:"infra"`.
+35. **AC35 — throws case passes on entry throw.** `judge` of a throwing entry
+    against a `throws` case → `pass:true`.
+36. **AC36 — throws case fails on timeout.** `judge` of `while(true){}` against
+    a `throws` case → `pass:false`.
+37. **AC37 — throws case fails on missing entry.** `judge` of code lacking the
+    entry against a `throws` case → `pass:false`.
+38. **AC38 — throws case fails on return.** `judge` of an entry returning a
+    value against a `throws` case → `pass:false`.
+39. **AC39 — throws case fails on infra.** `judgeAsync` with a runner returning
+    `{ok:false, kind:"infra"}` → `pass:false`.
+40. **AC40 — throws case fails on timeout kind.** `judgeAsync` with a runner
+    returning `{ok:false, kind:"timeout"}` → `pass:false`.
+41. **AC41 — throws case passes on threw kind.** `judgeAsync` with a runner
+    returning `{ok:false, kind:"threw"}` → `pass:true`.
+42. **AC42 — missing kind fails.** `judgeAsync` with a runner returning
+    `{ok:false}` without `kind` → `pass:false`.
+43. **AC43 — throwsMatch not consulted for non-threw.** A `throwsMatch` that
+    matches the error message of a `kind:"timeout"` result still fails the case.
+44. **AC44 — throwsMatch with threw.** With `throwsMatch:"bad"`, a `kind:"threw"`
+    result with error `bad` passes and with error `other` fails.
 
 ## Verifies-with
 - Tests: `test/cost.test.ts` (AC1–2, AC17–18), `test/contract.test.ts`

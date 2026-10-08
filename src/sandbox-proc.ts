@@ -51,36 +51,55 @@ export async function runImplProc(
       settled = true;
 
       if (timedOut) {
-        resolve({ ok: false, error: "timeout" });
+        resolve({ ok: false, error: "timeout", kind: "timeout" });
         return;
       }
 
       if ((code !== 0 && code !== null) || signal !== null) {
         const detail = signal ?? `exit code ${code}`;
-        resolve({ ok: false, error: `sandbox crashed: ${detail}` });
+        resolve({ ok: false, error: `sandbox crashed: ${detail}`, kind: "infra" });
         return;
       }
 
       // Parse last ##RESULT## line
       const lines = stdout.split("\n").filter(l => l.startsWith("##RESULT##"));
       const last = lines[lines.length - 1];
-      if (!last) {
-        resolve({ ok: false, error: "no result from sandbox" });
-        return;
-      }
-      try {
-        const result = JSON.parse(last.slice("##RESULT##".length)) as SandboxResult;
-        resolve(result);
-      } catch {
-        resolve({ ok: false, error: "no result from sandbox" });
-      }
+      resolve(parseChildResult(last ?? ""));
     });
 
     child.on("error", (err: Error) => {
       clearTimeout(killTimer);
       if (settled) return;
       settled = true;
-      resolve({ ok: false, error: `sandbox crashed: ${err.message}` });
+      resolve({ ok: false, error: `sandbox crashed: ${err.message}`, kind: "infra" });
     });
   });
+}
+
+const NO_RESULT: SandboxResult = { ok: false, error: "no result from sandbox", kind: "infra" };
+const FAILURE_KINDS: readonly string[] = ["threw", "timeout", "no-entry", "infra"];
+
+/** Parse and validate one `##RESULT##` line from the child. Anything malformed → infra failure. */
+export function parseChildResult(line: string): SandboxResult {
+  if (!line.startsWith("##RESULT##")) return NO_RESULT;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line.slice("##RESULT##".length));
+  } catch {
+    return NO_RESULT;
+  }
+  if (typeof parsed !== "object" || parsed === null) return NO_RESULT;
+  const r = parsed as Record<string, unknown>;
+  if (r["ok"] === true && Object.prototype.hasOwnProperty.call(r, "value")) {
+    return parsed as SandboxResult;
+  }
+  if (
+    r["ok"] === false &&
+    typeof r["error"] === "string" &&
+    typeof r["kind"] === "string" &&
+    FAILURE_KINDS.includes(r["kind"])
+  ) {
+    return parsed as SandboxResult;
+  }
+  return NO_RESULT;
 }

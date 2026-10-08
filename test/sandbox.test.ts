@@ -25,6 +25,35 @@ test("AC6 runImpl bounds an infinite loop by timeout", () => {
   assert.equal(r.ok, false);
 });
 
+test("AC30 runImpl failure kind: entry throw → threw", () => {
+  const r = runImpl('function f(){ throw new Error("bad") }', "f", []);
+  assert.deepEqual(r, { ok: false, error: "bad", kind: "threw" });
+});
+
+test("AC31 runImpl failure kind: missing entry → no-entry", () => {
+  const r = runImpl("function g(){ return 1 }", "f", []);
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.kind, "no-entry");
+});
+
+test("AC32 runImpl failure kind: infinite loop → timeout", () => {
+  const r = runImpl("function f(){ while(true){} }", "f", [], { timeoutMs: 50 });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.kind, "timeout");
+});
+
+test("AC33 runImpl failure kind: syntax error → infra", () => {
+  const r = runImpl("function f( {", "f", []);
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.kind, "infra");
+});
+
+test("AC34 runImpl failure kind: top-level throw → infra", () => {
+  const r = runImpl('throw new Error("top"); function f(){ return 1 }', "f", []);
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.kind, "infra");
+});
+
 test("AC7 stripImports removes import/export/require so a body runs bare", () => {
   const stripped = stripImports("import x from 'y';\nexport function f() { return 1; }");
   assert.ok(!/\bimport\b/.test(stripped));

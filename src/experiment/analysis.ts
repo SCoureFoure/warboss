@@ -160,3 +160,31 @@ export function evaluateCriteria(
     },
   };
 }
+
+/** Fail-closed wrapper: a verdict needs all three arms; any missing arm fails every criterion. */
+export function evaluateCriteriaOrFail(
+  armA: ArmAnalysis | undefined,
+  armB: ArmAnalysis | undefined,
+  armC: ArmAnalysis | undefined,
+): CriteriaResult {
+  if (armA !== undefined && armB !== undefined && armC !== undefined) {
+    return evaluateCriteria(armA, armB, armC);
+  }
+  const missing = (
+    [
+      ["A", armA],
+      ["B", armB],
+      ["C", armC],
+    ] as const
+  )
+    .filter(([, a]) => a === undefined)
+    .map(([id]) => `arm ${id} not run`)
+    .join(", ");
+  const failed: CriterionVerdict = { pass: false, detail: missing };
+  return {
+    criterion1: failed,
+    criterion2: failed,
+    criterion3: failed,
+    criterion4: failed,
+  };
+}

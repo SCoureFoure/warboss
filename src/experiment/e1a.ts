@@ -12,7 +12,7 @@ import {
   type RunRecord,
   analyzeArm,
   applyViabilityGate,
-  evaluateCriteria,
+  evaluateCriteriaOrFail,
   splits,
 } from "./analysis.ts";
 
@@ -207,17 +207,6 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<RunE1aResult> {
     byArm.get(r.arm as ArmId)!.push(r);
   }
 
-  const defaultAnalysis = (arm: string) => ({
-    arm,
-    clusterResult: { count: 0, sizes: [] as number[] },
-    modalShare: 0,
-    meanPassRate: 0,
-    coveredPassRate: 0,
-    uncoveredPassRate: 0,
-    notCoveredByCPassRate: 0,
-    totalCostUsd: 0,
-  });
-
   const analysisMap = Object.fromEntries(
     armIds.map((arm) => [
       arm,
@@ -225,10 +214,10 @@ export async function runE1a(opts: RunE1aOptions = {}): Promise<RunE1aResult> {
     ]),
   ) as Record<ArmId, ReturnType<typeof analyzeArm>>;
 
-  const criteria = evaluateCriteria(
-    analysisMap["A"] ?? defaultAnalysis("A"),
-    analysisMap["B"] ?? defaultAnalysis("B"),
-    analysisMap["C"] ?? defaultAnalysis("C"),
+  const criteria = evaluateCriteriaOrFail(
+    analysisMap["A"],
+    analysisMap["B"],
+    analysisMap["C"],
   );
 
   const totals = ledger.totals();

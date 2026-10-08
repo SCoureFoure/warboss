@@ -15,11 +15,12 @@ import {
   analyzeArm,
   applyViabilityGate,
   evaluateCriteria,
+  evaluateCriteriaOrFail,
   type RunRecord,
   type ArmAnalysis,
 } from "../src/experiment/analysis.ts";
 import { runE1a } from "../src/experiment/e1a.ts";
-import { rescore } from "../src/experiment/rescore.ts";
+import { rescore, rescoreCriteria } from "../src/experiment/rescore.ts";
 import { Contract } from "../src/contract.ts";
 import { judge, ContractHashMismatch } from "../src/runner.ts";
 import { TIERS } from "../src/models.ts";
@@ -605,6 +606,105 @@ test("AC18 rescore CLI: writes <base>-rescore-r3.json, sets provisional:true, do
   assert.ok(Math.abs(out.modalShares.A - 18 / 30) < 1e-9);
 
   assert.equal(resolve(out.sourceArtifact), resolve(artifactPath));
+});
+
+// ── AC19–AC24 (missing arm fails closed) ─────────────────────────────────────
+
+const mkArm = (
+  arm: string,
+  modalShare: number,
+  covPass: number,
+  notCovByCPass: number,
+): ArmAnalysis => ({
+  arm,
+  clusterResult: { count: 1, sizes: [1] },
+  modalShare,
+  meanPassRate: 0,
+  coveredPassRate: covPass,
+  uncoveredPassRate: 0,
+  notCoveredByCPassRate: notCovByCPass,
+  totalCostUsd: 0,
+});
+
+test("AC19 evaluateCriteriaOrFail with all three arms deep-equals evaluateCriteria", () => {
+  const a = mkArm("A", 0.6, 0.5, 0.5);
+  const b = mkArm("B", 0.95, 0.9, 0);
+  const c = mkArm("C", 0.5, 0, 0.4);
+  assert.deepEqual(evaluateCriteriaOrFail(a, b, c), evaluateCriteria(a, b, c));
+});
+
+test("AC20 evaluateCriteriaOrFail with arm A missing: every criterion fails with 'arm A not run'", () => {
+  const result = evaluateCriteriaOrFail(
+    undefined,
+    mkArm("B", 0.95, 0.9, 0),
+    mkArm("C", 0.5, 0, 0.4),
+  );
+  for (const v of Object.values(result)) {
+    assert.equal(v.pass, false);
+    assert.ok(v.detail.includes("arm A not run"));
+  }
+});
+
+test("AC21 evaluateCriteriaOrFail with arms A and B missing: every detail names both", () => {
+  const result = evaluateCriteriaOrFail(undefined, undefined, mkArm("C", 0.5, 0, 0.4));
+  for (const v of Object.values(result)) {
+    assert.equal(v.pass, false);
+    assert.ok(v.detail.includes("arm A not run"));
+    assert.ok(v.detail.includes("arm B not run"));
+  }
+});
+
+test("AC22 runE1a with arms B,C only (all-passing impls): every criterion fails", async () => {
+  const fencedImpl = "```js\n" + CORRECT_IMPL + "\n```";
+  const { artifact } = await runAndReadArtifact({
+    n: 1,
+    arms: ["B", "C"],
+    client: fakeClient(fencedImpl),
+  });
+  const criteria = artifact["criteria"] as Record<string, { pass: boolean }>;
+  for (const v of Object.values(criteria)) {
+    assert.equal(v.pass, false);
+  }
+});
+
+test("AC23 rescoreCriteria with analysis keys B and C only: every criterion fails", () => {
+  const entry = {
+    clusterResult: { count: 1, sizes: [30] },
+    meanPassRate: 1,
+    coveredPassRate: 1,
+    uncoveredPassRate: 1,
+    notCoveredByCPassRate: 0,
+    totalCostUsd: 0,
+  };
+  const result = rescoreCriteria({ analysis: { B: entry, C: entry } });
+  for (const v of Object.values(result)) {
+    assert.equal(v.pass, false);
+  }
+});
+
+test("AC24 rescoreCriteria with all three arms equals evaluateCriteria on the built analyses", () => {
+  const mkEntry = (sizes: number[], cov: number, notCov: number) => ({
+    clusterResult: { count: sizes.length, sizes },
+    meanPassRate: 0.5,
+    coveredPassRate: cov,
+    uncoveredPassRate: 0.5,
+    notCoveredByCPassRate: notCov,
+    totalCostUsd: 0,
+  });
+  const analysis = {
+    A: mkEntry([18, 12], 0.5, 0.5),
+    B: mkEntry([29, 1], 0.9, 0),
+    C: mkEntry([30], 0.4, 0.4),
+  };
+  const built = (arm: "A" | "B" | "C"): ArmAnalysis => ({
+    arm,
+    ...analysis[arm],
+    modalShare: analysis[arm].clusterResult.sizes[0]! / 30,
+  });
+  assert.deepEqual(
+    rescoreCriteria({ analysis }),
+    evaluateCriteria(built("A"), built("B"), built("C")),
+  );
 });
 
 // ── AC10 ────────────────────────────────────────────────────────────────────

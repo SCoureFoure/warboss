@@ -11,3 +11,16 @@
 {"ts":"2026-07-03T20:35:36.246Z","agent_id":"agent-a8b4432c29ca1a0f8","verdict":"green","round":1,"slice":"dashboard-replay-burn","tier_reason":"subtle_invariant","note":"verify run by WARBOSS - runner rung not installed yet"}
 {"ts":"2026-07-12T21:13:21.402Z","agent_id":"agent-a1c74b44161cd0a62","verdict":"green","round":1,"slice":"ledger-tier-accounting","tier_reason":"subtle_invariant"}
 {"ts":"2026-07-12T21:38:49.373Z","agent_id":"agent-a67f65bd5ee5b35a2","verdict":"green","round":1,"slice":"ledger-metric-fix+test","tier_reason":"subtle_invariant"}
+{"ts":"2026-10-08T19:44:07.792Z","agent_id":"a9dd168b658db881a","verdict":"green","round":1,"slice":"fix-contract-freeze","tier_reason":"subtle_invariant"}
+{"ts":"2026-10-08T19:44:07.859Z","agent_id":"a1b4f4b476a59580d","verdict":"green","round":1,"slice":"fix-e1a-missing-arm","tier_reason":"subtle_invariant"}
+{"ts":"2026-10-08T19:44:07.927Z","agent_id":"a6a6ff394f2cfd1ae","verdict":"green","round":1,"slice":"fix-meter-subagent","tier_reason":"subtle_invariant"}
+{"ts":"2026-10-08T19:44:07.996Z","agent_id":"a5437af72c0da883d","verdict":"green","round":1,"slice":"fix-e1b-cost-per-green"}
+{"ts":"2026-10-08T19:44:08.142Z","agent_id":"a8cade2e04790ed4f","verdict":"green","round":1,"slice":"fix-bash-gate"}
+{"ts":"2026-10-08T19:44:08.338Z","agent_id":"a85e65a6e10f77c01","verdict":"green","round":1,"slice":"fix-annotate-latest"}
+{"ts":"2026-10-08T19:44:08.509Z","agent_id":"a78b03431065f22c4","verdict":"green","round":1,"slice":"fix-kickback-validate"}
+{"ts":"2026-10-08T19:44:08.780Z","agent_id":"a69fa9f83d0a32880","verdict":"green","round":1,"slice":"fix-gate-zero-survivors"}
+{"ts":"2026-10-08T19:44:08.919Z","agent_id":"aad5ed7e972b01431","verdict":"green","round":1,"slice":"fix-gate-zero-survivors-outcome"}
+{"ts":"2026-10-08T19:45:49.020Z","agent_id":"ad83f7e7cbbcd6430","verdict":"green","round":1,"slice":"fix-throws-kind","tier_reason":"subtle_invariant"}
+{"ts":"2026-10-08T20:07:44.172Z","agent_id":"a3eaaeac01c264c2f","verdict":"green","round":1,"slice":"test-meter-orchestrator"}
+{"ts":"2026-10-08T20:07:44.241Z","agent_id":"a51bc5afc64cc049d","verdict":"green","round":1,"slice":"test-record-cost"}
+{"ts":"2026-10-08T20:07:44.330Z","agent_id":"a3e7ce2dc3ad74b5a","verdict":"green","round":1,"slice":"test-dashboard","tier_reason":"under_decided"}

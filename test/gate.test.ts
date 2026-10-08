@@ -1698,3 +1698,83 @@ test("temperature forwarded", async () => {
     }
   }
 });
+
+// ── AC22–AC23: zero survivors is never ready (fix-gate-zero-survivors) ─────────
+
+test("AC22 zero survivors not ready — Wilson rule with 0/0 thresholds", async () => {
+  // All k=4 generations fail the contract → survivors 0. Under the Wilson rule
+  // with minSurvivorLB 0 and minAgreementLB 0, both bounds would pass vacuously.
+  const responses = Array.from({ length: 4 }, () => fence(WRONG_IMPL));
+  const client = scriptedClient(responses);
+  const { agent } = makeAgent(client);
+
+  const verdict = await convergenceProbe({
+    agent,
+    contract: durationContract,
+    prompt: "Implement parseDuration.",
+    probes: durationProbes,
+    k: 4,
+    wilson: { minSurvivorLB: 0, minAgreementLB: 0 },
+  });
+
+  assert.equal(verdict.survivors, 0);
+  assert.equal(verdict.ready, false);
+});
+
+test("AC23 zero survivors not ready — default rule", async () => {
+  // Same generations as AC22, no wilson option → default point-estimate rule.
+  const responses = Array.from({ length: 4 }, () => fence(WRONG_IMPL));
+  const client = scriptedClient(responses);
+  const { agent } = makeAgent(client);
+
+  const verdict = await convergenceProbe({
+    agent,
+    contract: durationContract,
+    prompt: "Implement parseDuration.",
+    probes: durationProbes,
+    k: 4,
+  });
+
+  assert.equal(verdict.survivors, 0);
+  assert.equal(verdict.ready, false);
+});
+
+test("AC24 zero survivors not ready — outcome mode, Wilson rule with 0/0 thresholds", async () => {
+  // Same generations as AC22, outcome clustering. Zero survivors → no modal
+  // array, so modalWrong is empty; the survivor guard must still forbid ready.
+  const responses = Array.from({ length: 4 }, () => fence(WRONG_IMPL));
+  const client = scriptedClient(responses);
+  const { agent } = makeAgent(client);
+
+  const verdict = await convergenceProbe({
+    agent,
+    contract: durationContract,
+    prompt: "Implement parseDuration.",
+    probes: durationProbes,
+    k: 4,
+    clustering: "outcome",
+    wilson: { minSurvivorLB: 0, minAgreementLB: 0 },
+  });
+
+  assert.equal(verdict.survivors, 0);
+  assert.equal(verdict.ready, false);
+});
+
+test("AC25 zero survivors not ready — outcome mode, default rule", async () => {
+  // Same generations as AC24, no wilson option → default point-estimate rule.
+  const responses = Array.from({ length: 4 }, () => fence(WRONG_IMPL));
+  const client = scriptedClient(responses);
+  const { agent } = makeAgent(client);
+
+  const verdict = await convergenceProbe({
+    agent,
+    contract: durationContract,
+    prompt: "Implement parseDuration.",
+    probes: durationProbes,
+    k: 4,
+    clustering: "outcome",
+  });
+
+  assert.equal(verdict.survivors, 0);
+  assert.equal(verdict.ready, false);
+});

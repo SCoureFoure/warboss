@@ -152,7 +152,7 @@ test("throws without throwsMatch: any throw still passes (legacy pinned)", () =>
 test("judgeAsync: throws + throwsMatch pass (fake runner)", async () => {
   const fakeRunner: ImplRunner = async (_code, _entry, args) => {
     const x = args[0] as number;
-    if (x < 0) return { ok: false, error: `Invalid duration: ${x}` };
+    if (x < 0) return { ok: false, error: `Invalid duration: ${x}`, kind: "threw" };
     return { ok: true, value: x };
   };
   const v = await judgeAsync(durationContract, "unused", {
@@ -167,7 +167,7 @@ test("judgeAsync: throws + throwsMatch pass (fake runner)", async () => {
 test("judgeAsync: throws + throwsMatch mismatch fails (fake runner)", async () => {
   const fakeRunner: ImplRunner = async (_code, _entry, args) => {
     const x = args[0] as number;
-    if (x < 0) return { ok: false, error: "x is not a function" };
+    if (x < 0) return { ok: false, error: "x is not a function", kind: "threw" };
     return { ok: true, value: x };
   };
   const full = await judgeAsync(durationContract, "unused", {
@@ -188,6 +188,82 @@ test("judgeAsync: throws + throwsMatch mismatch fails (fake runner)", async () =
   });
   assert.match(passfail.feedback, /1 case/);
   assert.ok(!/did not match/.test(passfail.feedback));
+});
+
+const throwsOnly = Contract.freeze({
+  requirement: "f throws",
+  entry: "f",
+  version: "1",
+  examples: [{ input: [], expected: undefined, throws: true }],
+});
+const throwsMatchBad = Contract.freeze({
+  requirement: "f throws bad",
+  entry: "f",
+  version: "1",
+  examples: [{ input: [], expected: undefined, throws: true, throwsMatch: "bad" }],
+});
+const fixedRunner = (r: unknown): ImplRunner => async () => r as Awaited<ReturnType<ImplRunner>>;
+
+test("AC35 throws case: entry throw passes", () => {
+  assert.ok(judge(throwsOnly, 'function f(){ throw new Error("bad") }').pass);
+});
+
+test("AC36 throws case: timeout fails", () => {
+  assert.ok(!judge(throwsOnly, "function f(){ while(true){} }", { timeoutMs: 50 }).pass);
+});
+
+test("AC37 throws case: missing entry fails", () => {
+  assert.ok(!judge(throwsOnly, "function g(){}").pass);
+});
+
+test("AC38 throws case: returned value fails", () => {
+  assert.ok(!judge(throwsOnly, "function f(){ return 1 }").pass);
+});
+
+test("AC39 judgeAsync throws case: infra failure fails", async () => {
+  const v = await judgeAsync(throwsOnly, "unused", {
+    runner: fixedRunner({ ok: false, error: "sandbox crashed: spawn", kind: "infra" }),
+  });
+  assert.ok(!v.pass);
+});
+
+test("AC40 judgeAsync throws case: timeout kind fails", async () => {
+  const v = await judgeAsync(throwsOnly, "unused", {
+    runner: fixedRunner({ ok: false, error: "timeout", kind: "timeout" }),
+  });
+  assert.ok(!v.pass);
+});
+
+test("AC41 judgeAsync throws case: threw kind passes", async () => {
+  const v = await judgeAsync(throwsOnly, "unused", {
+    runner: fixedRunner({ ok: false, error: "bad", kind: "threw" }),
+  });
+  assert.ok(v.pass);
+});
+
+test("AC42 judgeAsync throws case: missing kind fails", async () => {
+  const v = await judgeAsync(throwsOnly, "unused", {
+    runner: fixedRunner({ ok: false, error: "bad" }),
+  });
+  assert.ok(!v.pass);
+});
+
+test("AC43 judgeAsync throwsMatch: matching message with non-threw kind fails", async () => {
+  const v = await judgeAsync(throwsMatchBad, "unused", {
+    runner: fixedRunner({ ok: false, error: "bad timeout", kind: "timeout" }),
+  });
+  assert.ok(!v.pass);
+});
+
+test("AC44 judgeAsync throwsMatch with threw kind: match passes, mismatch fails", async () => {
+  const hit = await judgeAsync(throwsMatchBad, "unused", {
+    runner: fixedRunner({ ok: false, error: "bad", kind: "threw" }),
+  });
+  assert.ok(hit.pass);
+  const miss = await judgeAsync(throwsMatchBad, "unused", {
+    runner: fixedRunner({ ok: false, error: "other", kind: "threw" }),
+  });
+  assert.ok(!miss.pass);
 });
 
 test("AC12 deepEqual is structural and treats NaN as equal", () => {

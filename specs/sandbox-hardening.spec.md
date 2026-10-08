@@ -130,10 +130,24 @@ test/sandbox-proc.test.ts  ACs below
 9. **AC9 — judgeAsync (membrane-core AC21).** `judgeAsync` enforces
    `expectedHash` (mismatch throws `ContractHashMismatch`), produces
    vector/score/feedback identical in shape to `judge`, and honors `throws`
-   cases (a rejecting/throwing impl passes a `throws` case).
+   cases (a throwing entry passes a `throws` case; a timeout, crash, or missing
+   entry does not — membrane-core AC16).
 10. **AC10 — task opt-in validation.** `task.json` with
     `"isolation": "container"` → `loadTask` throws naming the field; omitted →
     `TaskDef.isolation === "vm"`; `"process"` → surfaced as such.
+11. **AC11 — kind: threw.** `runImplProc` of an entry throwing `Error("bad")` →
+    `{ok:false, error:"bad", kind:"threw"}`.
+12. **AC12 — kind: no-entry.** `runImplProc` with a missing entry →
+    `kind:"no-entry"`.
+13. **AC13 — kind: timeout.** An async never-settling entry with a short wall
+    timeout → `kind:"timeout"`.
+14. **AC14 — kind: unserializable is infra.** An entry returning a function →
+    `ok:false`, `kind:"infra"`.
+15. **AC15 — child result validated.** `parseChildResult` of `##RESULT##null` and
+    of `##RESULT##{"ok":false,"error":"x"}` (no `kind`) →
+    `{ok:false, error:"no result from sandbox", kind:"infra"}`.
+16. **AC16 — valid child result passes through.** `parseChildResult` of
+    `##RESULT##{"ok":true,"value":3}` → `{ok:true, value:3}`.
 
 ## Verifies-with
 

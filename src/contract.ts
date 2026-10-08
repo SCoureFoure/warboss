@@ -24,7 +24,7 @@ export interface ContractCase {
   readonly input: readonly unknown[];
   /** Required return value (deep-equality compared). Ignored when throws is set. */
   readonly expected: unknown;
-  /** When true, the case passes iff the impl throws (any error). */
+  /** When true, the case passes iff the entry function itself throws. Timeout, crash, or a missing entry fail. */
   readonly throws?: true;
   /** Optional regex source tested against the error message. Only valid with throws. */
   readonly throwsMatch?: string;
@@ -39,6 +39,55 @@ export interface ContractInput {
   readonly examples: readonly ContractCase[];
   /** Bumped whenever any frozen field changes; part of the hash input. */
   readonly version: string;
+}
+
+function isPlainObject(v: object): boolean {
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+}
+
+/** Throws if `v` holds a value the canonical form cannot represent losslessly. */
+function assertSupported(v: unknown, path: string, label: string | number): void {
+  const bad = (): never => {
+    throw new Error(
+      `Contract.freeze: example ${label} contains unsupported value at ${path}`,
+    );
+  };
+  if (typeof v === "function" || typeof v === "symbol") bad();
+  if (typeof v !== "object" || v === null) return;
+  if (Array.isArray(v)) {
+    v.forEach((item, i) => assertSupported(item, `${path}[${i}]`, label));
+    return;
+  }
+  if (!isPlainObject(v)) bad();
+  if (Object.prototype.hasOwnProperty.call(v, "$nonjson")) bad();
+  for (const [k, item] of Object.entries(v)) {
+    assertSupported(item, `${path}.${k}`, label);
+  }
+}
+
+function deepFreeze(v: unknown): void {
+  if (typeof v !== "object" || v === null || Object.isFrozen(v)) return;
+  Object.freeze(v);
+  for (const item of Object.values(v)) deepFreeze(item);
+}
+
+/** Replaces values JSON.stringify would lose with tagged `$nonjson` objects. */
+function encodeLossless(v: unknown): unknown {
+  if (v === undefined) return { $nonjson: "undefined" };
+  if (typeof v === "bigint") return { $nonjson: `bigint:${v.toString()}` };
+  if (typeof v === "number") {
+    if (Number.isNaN(v)) return { $nonjson: "NaN" };
+    if (v === Infinity) return { $nonjson: "Infinity" };
+    if (v === -Infinity) return { $nonjson: "-Infinity" };
+    if (Object.is(v, -0)) return { $nonjson: "-0" };
+    return v;
+  }
+  if (typeof v !== "object" || v === null) return v;
+  if (Array.isArray(v)) return Array.from(v, (item) => encodeLossless(item));
+  const out: Record<string, unknown> = {};
+  for (const [k, item] of Object.entries(v)) out[k] = encodeLossless(item);
+  return out;
 }
 
 /**
@@ -70,13 +119,19 @@ export class Contract {
         );
       }
     });
+    input.examples.forEach((c, i) => {
+      const label = c.name ?? i;
+      assertSupported(c.input, "input", label);
+      assertSupported(c.expected, "expected", label);
+    });
+    const examples = structuredClone(input.examples) as ContractCase[];
+    deepFreeze(examples);
     this.requirement = input.requirement;
     this.entry = input.entry;
-    this.examples = input.examples;
+    this.examples = examples;
     this.version = input.version;
-    this.hash = Contract.computeHash(input);
+    this.hash = Contract.computeHash({ ...input, examples });
     Object.freeze(this);
-    Object.freeze(this.examples);
   }
 
   static freeze(input: ContractInput): Contract {
@@ -94,8 +149,8 @@ export class Contract {
       entry: input.entry,
       version: input.version,
       examples: input.examples.map((c) => ({
-        input: c.input,
-        expected: c.expected,
+        input: encodeLossless(c.input),
+        ...(c.expected !== undefined ? { expected: encodeLossless(c.expected) } : {}),
         ...(c.throws ? { throws: true as const } : {}),
         ...(c.throwsMatch !== undefined ? { throwsMatch: c.throwsMatch } : {}),
       })),

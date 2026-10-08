@@ -16,9 +16,11 @@
 
 import { runInNewContext } from "node:vm";
 
+export type SandboxFailureKind = "threw" | "timeout" | "no-entry" | "infra";
+
 export type SandboxResult =
   | { readonly ok: true; readonly value: unknown }
-  | { readonly ok: false; readonly error: string };
+  | { readonly ok: false; readonly error: string; readonly kind: SandboxFailureKind };
 
 /** Strip imports/requires/exports so a pure function body runs bare in the vm. */
 export function stripImports(code: string): string {
@@ -55,6 +57,7 @@ export function runImpl(
     __args: args,
     __result: undefined,
     __error: undefined,
+    __kind: undefined,
   };
 
   const script = `
@@ -62,12 +65,14 @@ export function runImpl(
     ;(function () {
       if (typeof ${entry} !== "function") {
         __error = "entry function '${entry}' is not defined";
+        __kind = "no-entry";
         return;
       }
       try {
         __result = ${entry}(...__args);
       } catch (e) {
         __error = e && e.message ? String(e.message) : String(e);
+        __kind = "threw";
       }
     })();
   `;
@@ -75,13 +80,22 @@ export function runImpl(
   try {
     runInNewContext(script, context, { timeout });
   } catch (e) {
-    // Thrown here means compile error or timeout (vm raises on timeout).
+    // Thrown here means compile error, top-level impl error, or timeout (vm raises on timeout).
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: msg };
+    const code = (e as { code?: unknown } | null)?.code;
+    return {
+      ok: false,
+      error: msg,
+      kind: code === "ERR_SCRIPT_EXECUTION_TIMEOUT" ? "timeout" : "infra",
+    };
   }
 
   if (context["__error"] !== undefined) {
-    return { ok: false, error: String(context["__error"]) };
+    return {
+      ok: false,
+      error: String(context["__error"]),
+      kind: context["__kind"] as SandboxFailureKind,
+    };
   }
   return { ok: true, value: context["__result"] };
 }

@@ -426,10 +426,13 @@ export async function convergenceProbe(
     }
   }
 
-  const ready = opts.wilson
-    ? wilsonLower(survivorCount, k, opts.wilson.z ?? 1.645) >= opts.wilson.minSurvivorLB &&
-      wilsonLower(largestCluster, survivorCount, opts.wilson.z ?? 1.645) >= opts.wilson.minAgreementLB
-    : survivorRate >= 0.5 && modalShare >= 0.9;
+  // Zero survivors is never ready (fail-closed): no evidence of agreement.
+  const ready =
+    survivorCount > 0 &&
+    (opts.wilson
+      ? wilsonLower(survivorCount, k, opts.wilson.z ?? 1.645) >= opts.wilson.minSurvivorLB &&
+        wilsonLower(largestCluster, survivorCount, opts.wilson.z ?? 1.645) >= opts.wilson.minAgreementLB
+      : survivorRate >= 0.5 && modalShare >= 0.9);
 
   return {
     ready,
@@ -766,7 +769,7 @@ function buildOutcomeVerdict(
       wilsonLower(largestCluster, survivorCount, wilson.z ?? 1.645) >= wilson.minAgreementLB
     : survivorRate >= 0.5 && modalShare >= 0.9;
 
-  const ready = thresholdsOk && modalWrong.length === 0;
+  const ready = survivorCount > 0 && thresholdsOk && modalWrong.length === 0;
 
   return {
     ready,

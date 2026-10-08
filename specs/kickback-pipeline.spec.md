@@ -293,6 +293,27 @@ new flags. **npm eats `--flags` on Windows** — invoke directly:
     `renderOwnerDecisions` delegation — see `e4-battery-authoring.spec.md` rev 4
     AC13; the live author-prompt effect is measured by the owner-gated e4 rerun,
     not asserted offline.)
+11. **AC11 — base valid file loads.** The base queue (`intent "do x"`, `context null`,
+    `artifact "a.json"`, one answer with escalation/requirementId/decision) → returns
+    the same values, no regression.
+12. **AC12 — answer missing `escalation`.** `answers: [{ "decision": "x" }]` → throws,
+    message names `answers[0]` and `escalation`.
+13. **AC13 — whitespace-only `escalation`.** `escalation: "   "` → throws, message
+    names `answers[0]` and `escalation`.
+14. **AC14 — non-string `escalation`.** `escalation: 7` → throws, message names
+    `answers[0]` and `escalation`.
+15. **AC15 — answer not an object.** `answers: ["q1"]` → throws, message names `answers[0]`.
+16. **AC16 — null answer.** `answers: [null]` → throws, message names `answers[0]`.
+17. **AC17 — bad second answer.** Valid answer followed by `{ "decision": "x" }` →
+    throws, message names `answers[1]`.
+18. **AC18 — non-string `requirementId`.** `requirementId: 5` → throws, message names
+    `requirementId`.
+19. **AC19 — `requirementId` absent.** Key removed → loads; returned `requirementId` is `""`.
+20. **AC20 — `intent` absent.** Key removed → throws, message names `intent`.
+21. **AC21 — blank `intent`.** `intent: ""` → throws, message names `intent`.
+22. **AC22 — non-string `artifact`.** `artifact: 3` → throws, message names `artifact`.
+23. **AC23 — non-string `context`.** `context: 3` → throws, message names `context`.
+24. **AC24 — `context` absent.** Key removed → loads; returned `context` is `null`.
 
 ## Verifies-with
 

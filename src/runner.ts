@@ -90,9 +90,12 @@ export function judge(
       ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
     });
     if (c.throws) {
-      // Case passes iff the impl threw (any error, including timeout/missing-entry),
-      // and, when throwsMatch is set, the error message matches it.
+      // Case passes iff the entry function itself threw (kind "threw"); timeout, crash,
+      // or a missing entry fail. When throwsMatch is set, the message must also match it.
       if (!run.ok) {
+        if (run.kind !== "threw") {
+          return { ...labelOf(c), pass: false, error: run.error };
+        }
         if (c.throwsMatch !== undefined) {
           const pass = new RegExp(c.throwsMatch).test(run.error ?? "");
           return {
@@ -200,9 +203,12 @@ export async function judgeAsync(
     battery.map(async (c) => {
       const run = await runner(code, contract.entry, c.input, opts.procOpts);
       if (c.throws) {
-        // Case passes iff the impl threw (any error, including timeout/missing-entry),
-        // and, when throwsMatch is set, the error message matches it.
+        // Case passes iff the entry function itself threw (kind "threw"); timeout, crash,
+        // or a missing entry fail. When throwsMatch is set, the message must also match it.
         if (!run.ok) {
+          if (run.kind !== "threw") {
+            return { ...labelOf(c), pass: false, error: run.error };
+          }
           if (c.throwsMatch !== undefined) {
             const pass = new RegExp(c.throwsMatch).test(run.error ?? "");
             return {

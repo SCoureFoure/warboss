@@ -334,6 +334,18 @@ src/experiment/rescore.ts   (rev 3) offline criteria re-evaluation over an
     modal shares, does not modify the source artifact (byte-identical after),
     and — run against the real r2 artifact's `analysis` numbers as a fixture
     (B modal 29/30, A modal 18/30) — reports criterion 1 PASS.
+18. **AC19 — fail-closed criteria, all arms.** `evaluateCriteriaOrFail(a, b, c)`
+    with three analyses deep-equals `evaluateCriteria(a, b, c)`.
+19. **AC20 — missing arm A.** `evaluateCriteriaOrFail(undefined, b, c)` →
+    every criterion `pass: false` and its `detail` includes `arm A not run`.
+20. **AC21 — multiple missing arms.** `evaluateCriteriaOrFail(undefined,
+    undefined, c)` → every `detail` includes `arm A not run` and `arm B not run`.
+21. **AC22 — runE1a with a missing arm.** `runE1a` with arms `["B","C"]` and
+    all-passing impls → every criterion in the artifact has `pass: false`.
+22. **AC23 — rescore with a missing arm.** `rescoreCriteria` on an artifact
+    whose `analysis` has only `B` and `C` → every criterion `pass: false`.
+23. **AC24 — rescore no regression.** `rescoreCriteria` on an artifact with all
+    three arms equals `evaluateCriteria` on the three built arm analyses.
 
 (AC16 of membrane-core — `throws` cases — is specified and indexed there;
 its tests live in `test/runner.test.ts` / `test/contract.test.ts`.)
