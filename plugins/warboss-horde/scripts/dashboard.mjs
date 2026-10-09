@@ -296,7 +296,7 @@ function donut(segments, { size = 160, stroke = 26 } = {}) {
 // Cumulative-cost area chart over time. One series = every costed dispatch,
 // summed in ts order. Decide vs do are drawn as two stacked cumulative areas.
 function costChart(series, { w = 720, h = 200, pad = 28 } = {}) {
-  const pts = series.filter((p) => p.usd > 0);
+  const pts = series.filter((p) => p.usd > 0 && !Number.isNaN(new Date(p.ts).getTime()));
   if (pts.length < 2) return '<p class="muted">Not enough costed dispatches yet to chart over time.</p>';
   let cumDo = 0, cumAll = 0;
   const t0 = new Date(pts[0].ts).getTime();

@@ -24,10 +24,10 @@
 //
 // Overrides:
 //   WARBOSS_BASH_GATE=off    never gate, even when armed
-//   WARBOSS_BASH_GATE=warn   allow, but return the reason as context
+//   WARBOSS_BASH_GATE=warn   no permission decision, return the reason as context
 //   WARBOSS_BASH_GATE=deny   force-arm without the marker file
 //
-// Escape hatch: a command containing WARBOSS_INLINE is always allowed. Step 5
+// Escape hatch: a command starting with WARBOSS_INLINE=1 is always allowed. Step 5
 // already permits running a check inline when dispatch is impossible, provided
 // you say so — this makes saying so explicit and greppable in the transcript.
 
@@ -40,7 +40,25 @@ const MARKER = path.join('.warboss-horde', 'gate.on');
 // runner would put a subagent dispatch between judging a slice and annotating
 // it, and `annotate latest` resolves against the newest un-judged row — a
 // dispatch in that window changes what `latest` means.
-const ALLOW = [/ledger\.mjs/, /dashboard\.mjs/];
+// Exempt only when the command is `node <ledger|dashboard>.mjs ...` with no shell
+// operator outside quotes, so `node ledger.mjs x && rm -rf y` is not waved through.
+const CONTROL_PLANE = /^node\s+(?:"(?:[^"]*[\\/])?(?:ledger|dashboard)\.mjs"|'(?:[^']*[\\/])?(?:ledger|dashboard)\.mjs'|(?:\S*[\\/])?(?:ledger|dashboard)\.mjs)(?=\s|$)/;
+const SHELL_OPERATORS = [';', '&', '|', '`', '$(', '>', '<', '\n'];
+const INLINE = /^WARBOSS_INLINE=1\s/;
+
+function isControlPlane(command) {
+  const cmd = command.trim();
+  if (!CONTROL_PLANE.test(cmd)) return false;
+  const unquoted = cmd.replace(/'[^']*'|"[^"]*"/g, '');
+  return !SHELL_OPERATORS.some((op) => unquoted.includes(op));
+}
+
+// A subagent's transcript is <...>/subagents/<file>. Split on either separator and
+// check the segment immediately before the file name.
+function fromSubagent(transcriptPath) {
+  const parts = String(transcriptPath || '').split(/[\\/]/);
+  return parts.length >= 2 && parts[parts.length - 2] === 'subagents';
+}
 
 const REASON = [
   'Blocked by the warboss ops rule: mechanical command execution belongs to the `runner` subagent, not to your context.',
@@ -71,16 +89,15 @@ function decide(hook) {
 
   // A subagent's transcript lives at <session>/subagents/agent-<id>.jsonl. The
   // runner is a subagent and must keep Bash; so must any doer that gains it.
-  // Path separator differs by platform, so match the directory name itself.
-  if (String(hook.transcript_path || '').includes('subagents')) return null;
+  if (fromSubagent(hook.transcript_path)) return null;
 
   const armed = mode === 'deny' || mode === 'warn' || findMarker(hook.cwd || process.cwd());
   if (!armed) return null;
 
   const command = String((hook.tool_input && hook.tool_input.command) || '');
   if (!command) return null;
-  if (command.includes('WARBOSS_INLINE')) return null;
-  if (ALLOW.some((re) => re.test(command))) return null;
+  if (INLINE.test(command.trimStart())) return null;
+  if (isControlPlane(command)) return null;
 
   return mode === 'warn' ? 'warn' : 'deny';
 }
@@ -94,13 +111,10 @@ process.stdin.on('end', () => {
     if (hook.tool_name && hook.tool_name !== 'Bash') return;
     const verdict = decide(hook);
     if (!verdict) return;
-    process.stdout.write(JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: verdict === 'warn' ? 'allow' : 'deny',
-        permissionDecisionReason: verdict === 'warn' ? `warboss ops rule (warn mode): ${REASON}` : REASON,
-      },
-    }));
+    const out = verdict === 'warn'
+      ? { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: `warboss ops rule (warn mode): ${REASON}` } }
+      : { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: REASON } };
+    process.stdout.write(JSON.stringify(out));
   } catch {
     // fail open — never break a turn over the gate
   } finally {

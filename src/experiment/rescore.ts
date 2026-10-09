@@ -1,7 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { evaluateCriteria, type ArmAnalysis, type ClusterResult } from "./analysis.ts";
+import {
+  evaluateCriteriaOrFail,
+  type ArmAnalysis,
+  type ClusterResult,
+  type CriteriaResult,
+} from "./analysis.ts";
 
 interface ArtifactArmEntry {
   readonly clusterResult: ClusterResult;
@@ -13,7 +18,7 @@ interface ArtifactArmEntry {
   readonly totalCostUsd?: number;
 }
 
-interface Artifact {
+export interface Artifact {
   readonly analysis: Record<string, ArtifactArmEntry>;
 }
 
@@ -39,17 +44,22 @@ function buildArmAnalysis(arm: string, entry: ArtifactArmEntry): ArmAnalysis {
   };
 }
 
+export function rescoreCriteria(artifact: Artifact): CriteriaResult {
+  const analysis = artifact.analysis;
+  const build = (arm: string): ArmAnalysis | undefined => {
+    const entry = analysis[arm];
+    return entry === undefined ? undefined : buildArmAnalysis(arm, entry);
+  };
+  return evaluateCriteriaOrFail(build("A"), build("B"), build("C"));
+}
+
 export async function rescore(artifactPath: string): Promise<void> {
   const absPath = resolve(artifactPath);
   const raw = await readFile(absPath, "utf8");
   const artifact = JSON.parse(raw) as Artifact;
 
   const analysis = artifact.analysis;
-  const armA = buildArmAnalysis("A", analysis["A"] ?? { clusterResult: { count: 0, sizes: [] } });
-  const armB = buildArmAnalysis("B", analysis["B"] ?? { clusterResult: { count: 0, sizes: [] } });
-  const armC = buildArmAnalysis("C", analysis["C"] ?? { clusterResult: { count: 0, sizes: [] } });
-
-  const criteria = evaluateCriteria(armA, armB, armC);
+  const criteria = rescoreCriteria(artifact);
 
   const modalShares: Record<string, number> = {};
   for (const [arm, entry] of Object.entries(analysis)) {

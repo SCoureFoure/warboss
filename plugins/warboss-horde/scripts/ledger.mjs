@@ -170,7 +170,7 @@ function latestUnjudgedAgentId(args) {
     die(`no ledger at ${file} — cannot resolve 'latest'`);
   }
   const judged = new Set(loadVerdicts(verdictsPath(args)).keys());
-  let best = null;
+  const candidates = [];
   for (const l of text.split('\n')) {
     if (!l.trim()) continue;
     let r;
@@ -183,10 +183,21 @@ function latestUnjudgedAgentId(args) {
     if (r.agent_type === 'warboss-orchestrator') continue; // judge doers, not the orchestrator
     if (String(r.agent_type || '').toLowerCase().includes('runner')) continue; // runner rows carry no verdict — 'latest' means the doer being judged
     if (judged.has(r.agent_id)) continue;
-    if (!best || String(r.ts || '') >= String(best.ts || '')) best = r;
+    candidates.push(r);
   }
-  if (!best) die("no un-judged doer dispatch found to annotate as 'latest'");
-  return best.agent_id;
+  if (candidates.length === 0) die("no un-judged doer dispatch found to annotate as 'latest'");
+  let maxTs = null;
+  for (const r of candidates) {
+    const ts = String(r.ts || '');
+    if (maxTs === null || ts > maxTs) maxTs = ts;
+  }
+  // Several distinct agents metered in one hook run can share the newest ts;
+  // refuse rather than let file order pick the verdict's target.
+  const tied = [...new Set(candidates.filter((r) => String(r.ts || '') === maxTs).map((r) => r.agent_id))];
+  if (tied.length > 1) {
+    die(`'latest' is ambiguous — ${tied.length} un-judged dispatches share ts ${maxTs}: ${tied.join(', ')}. Name one explicitly: annotate <agent_id> '<json>'`);
+  }
+  return tied[0];
 }
 
 function cmdAnnotate(args) {

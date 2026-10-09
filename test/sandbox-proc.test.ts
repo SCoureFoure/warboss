@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { Contract } from "../src/contract.ts";
 import { judge, judgeAsync, ContractHashMismatch } from "../src/runner.ts";
-import { runImplProc } from "../src/sandbox-proc.ts";
+import { runImplProc, parseChildResult } from "../src/sandbox-proc.ts";
 import { loadTask } from "../src/experiment/task.ts";
 
 const _thisDir = dirname(fileURLToPath(import.meta.url));
@@ -176,6 +176,49 @@ test("AC8 unserializable result: impl returning a function → {ok:false, error:
   if (!result.ok) {
     assert.equal(result.error, "unserializable result");
   }
+});
+
+// ── AC11–AC16: failure kinds + child result validation ───────────────────────
+test("AC11 kind: entry throw → threw", async () => {
+  const result = await runImplProc('function f(){ throw new Error("bad") }', "f", [], { timeoutMs: 3000 });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.kind, "threw");
+    assert.equal(result.error, "bad");
+  }
+});
+
+test("AC12 kind: missing entry → no-entry", async () => {
+  const result = await runImplProc("function g(){ return 1 }", "f", [], { timeoutMs: 3000 });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.kind, "no-entry");
+});
+
+test("AC13 kind: async never-settling entry → timeout", async () => {
+  const result = await runImplProc(
+    "async function f(){ await new Promise(() => {}) }",
+    "f",
+    [],
+    { timeoutMs: 500 },
+  );
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.kind, "timeout");
+});
+
+test("AC14 kind: unserializable return → infra", async () => {
+  const result = await runImplProc("function f(){ return () => 1 }", "f", [], { timeoutMs: 3000 });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.kind, "infra");
+});
+
+test("AC15 parseChildResult: invalid child results → no result from sandbox (infra)", () => {
+  const expected = { ok: false, error: "no result from sandbox", kind: "infra" };
+  assert.deepEqual(parseChildResult("##RESULT##null"), expected);
+  assert.deepEqual(parseChildResult('##RESULT##{"ok":false,"error":"x"}'), expected);
+});
+
+test("AC16 parseChildResult: valid ok result passes through", () => {
+  assert.deepEqual(parseChildResult('##RESULT##{"ok":true,"value":3}'), { ok: true, value: 3 });
 });
 
 // ── AC9: judgeAsync tests ─────────────────────────────────────────────────────

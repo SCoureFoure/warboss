@@ -21,7 +21,8 @@
 // growing parent on every fire — multi-counting a dispatch by 50-100x. So:
 //   - if transcript_path is the parent, redirect to its subagents/*.jsonl files;
 //   - meter each subagent transcript under its OWN model;
-//   - dedup by agent_id against the existing ledger so re-fires are no-ops.
+//   - dedup by (agent_id, model) token total against the ledger so unchanged
+//     re-fires are no-ops, while a grown transcript appends a corrected row.
 //
 // Invariant: a hook must NEVER break the session. Any error -> log to stderr and
 // exit 0. A metering failure is a lost data point, not a broken turn.
@@ -175,25 +176,27 @@ function resolveSubagentTranscripts(transcript, sessionId) {
     .map((f) => path.join(subDir, f));
 }
 
-// agent_ids already in the ledger -> re-fires become no-ops.
-function loggedAgentIds(ledgerFile) {
-  const ids = new Set();
+// Last-logged token total per `${agent_id}::${model}` -> an unchanged re-fire is
+// a no-op, but a sibling that was logged mid-run and has since grown is re-metered
+// (the ledger readers keep the LAST row per key).
+function loggedTokens(ledgerFile) {
+  const logged = new Map();
   let text;
   try {
     text = fs.readFileSync(ledgerFile, 'utf8');
   } catch {
-    return ids;
+    return logged;
   }
   for (const line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
     try {
       const r = JSON.parse(line);
-      if (r && r.agent_id) ids.add(r.agent_id);
+      if (r && r.agent_id) logged.set(`${r.agent_id}::${r.model}`, r.tokens);
     } catch {
       /* skip */
     }
   }
-  return ids;
+  return logged;
 }
 
 function main() {
@@ -225,12 +228,11 @@ function main() {
     : path.resolve(hook.cwd || process.cwd(), '.warboss-horde', 'ledger.jsonl');
   fs.mkdirSync(path.dirname(ledgerFile), { recursive: true });
 
-  const already = loggedAgentIds(ledgerFile);
+  const logged = loggedTokens(ledgerFile);
   const files = resolveSubagentTranscripts(transcript, hook.session_id);
 
   for (const file of files) {
     const agentId = agentIdFor(file);
-    if (already.has(agentId)) continue; // idempotent: skip dispatches already logged
 
     // agent_type: prefer the file's own meta.json; fall back to the hook payload.
     const agentType = agentTypeFor(file) || hook.agent_type || hook.subagent_type || '';
@@ -241,6 +243,8 @@ function main() {
 
     for (const [model, u] of byModel) {
       const tokens = u.input + u.output + u.cache_read + u.cache_creation;
+      const key = `${agentId}::${model}`;
+      if (logged.has(key) && logged.get(key) === tokens) continue; // idempotent: totals unchanged
       const tier = tierForModel(ladder, model);
       const line = {
         ts,
@@ -258,8 +262,8 @@ function main() {
         est_usd: usd(priceForModel(pricing, model), u),
       };
       fs.appendFileSync(ledgerFile, JSON.stringify(line) + '\n');
+      logged.set(key, tokens);
     }
-    already.add(agentId); // guard against multiple model rows re-adding within this run
   }
 }
 

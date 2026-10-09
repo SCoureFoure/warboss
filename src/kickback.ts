@@ -172,11 +172,61 @@ export async function loadOwnerAnswers(path: string): Promise<AnswerQueue> {
     );
   }
 
+  // Validate top-level intent / artifact / context shape
+  const intent = obj["intent"];
+  if (typeof intent !== "string" || intent.trim() === "") {
+    throw new Error(
+      `loadOwnerAnswers: "intent" must be a non-blank string in "${path}"`,
+    );
+  }
+  if (typeof obj["artifact"] !== "string") {
+    throw new Error(
+      `loadOwnerAnswers: "artifact" must be a string in "${path}"`,
+    );
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(obj, "context") &&
+    obj["context"] !== null &&
+    typeof obj["context"] !== "string"
+  ) {
+    throw new Error(
+      `loadOwnerAnswers: "context" must be a string or null in "${path}"`,
+    );
+  }
+
   // Validate each answer
   const seenEscalations = new Set<string>();
-  for (const answer of answers) {
-    const escalation = answer["escalation"] as string;
-    const decision = answer["decision"] as string;
+  for (let i = 0; i < answers.length; i++) {
+    const answer: unknown = answers[i];
+
+    // Check answer is a non-null, non-array object
+    if (typeof answer !== "object" || answer === null || Array.isArray(answer)) {
+      throw new Error(
+        `loadOwnerAnswers: answers[${i}] must be a non-null object in "${path}"`,
+      );
+    }
+    const rec = answer as Record<string, unknown>;
+
+    // Check for non-blank string escalation
+    const escalation = rec["escalation"];
+    if (typeof escalation !== "string" || escalation.trim() === "") {
+      throw new Error(
+        `loadOwnerAnswers: answers[${i}] "escalation" must be a non-blank string in "${path}"`,
+      );
+    }
+
+    // Check requirementId is a string when present
+    if (
+      Object.prototype.hasOwnProperty.call(rec, "requirementId") &&
+      rec["requirementId"] !== undefined &&
+      typeof rec["requirementId"] !== "string"
+    ) {
+      throw new Error(
+        `loadOwnerAnswers: answers[${i}] "requirementId" must be a string in "${path}"`,
+      );
+    }
+
+    const decision = rec["decision"] as string;
 
     // Check for blank / whitespace-only decision
     if (typeof decision !== "string" || decision.trim() === "") {
@@ -201,7 +251,7 @@ export async function loadOwnerAnswers(path: string): Promise<AnswerQueue> {
     artifact: obj["artifact"] as string,
     answers: answers.map((a) => ({
       escalation: a["escalation"] as string,
-      requirementId: a["requirementId"] as string ?? "",
+      requirementId: (a["requirementId"] ?? "") as string,
       decision: a["decision"] as string,
     })),
   };

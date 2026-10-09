@@ -401,6 +401,165 @@ test("AC4f loadOwnerAnswers — duplicate escalation string → throws", async (
   );
 });
 
+// ── AC11–AC24 (fix-kickback-validate): loadOwnerAnswers shape guards ─────────
+
+const baseAnswer = { escalation: "q1", requirementId: "R1", decision: "yes" };
+
+async function writeQueueFile(prefix: string, data: unknown): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  const path = join(dir, "answers-needed.json");
+  await writeFile(path, JSON.stringify(data));
+  return path;
+}
+
+test("AC11 loadOwnerAnswers — base valid file loads with the same values", async () => {
+  const path = await writeQueueFile("kickback-ac11-", {
+    intent: "do x",
+    context: null,
+    artifact: "a.json",
+    answers: [baseAnswer],
+  });
+  const result = await loadOwnerAnswers(path);
+  assert.equal(result.intent, "do x", "intent preserved");
+  assert.equal(result.context, null, "context null preserved");
+  assert.equal(result.artifact, "a.json", "artifact preserved");
+  assert.equal(result.answers.length, 1, "one answer");
+  assert.equal(result.answers[0]!.escalation, "q1", "escalation preserved");
+  assert.equal(result.answers[0]!.requirementId, "R1", "requirementId preserved");
+  assert.equal(result.answers[0]!.decision, "yes", "decision preserved");
+});
+
+test("AC12 loadOwnerAnswers — answer missing escalation → throws naming answers[0] and escalation", async () => {
+  const path = await writeQueueFile("kickback-ac12-", {
+    intent: "do x",
+    context: null,
+    artifact: "a.json",
+    answers: [{ decision: "x" }],
+  });
+  await assert.rejects(loadOwnerAnswers(path), /answers\[0\].*escalation/);
+});
+
+test("AC13 loadOwnerAnswers — whitespace-only escalation → throws naming answers[0] and escalation", async () => {
+  const path = await writeQueueFile("kickback-ac13-", {
+    intent: "do x",
+    context: null,
+    artifact: "a.json",
+    answers: [{ escalation: "   ", decision: "x" }],
+  });
+  await assert.rejects(loadOwnerAnswers(path), /answers\[0\].*escalation/);
+});
+
+test("AC14 loadOwnerAnswers — non-string escalation → throws naming answers[0] and escalation", async () => {
+  const path = await writeQueueFile("kickback-ac14-", {
+    intent: "do x",
+    context: null,
+    artifact: "a.json",
+    answers: [{ escalation: 7, decision: "x" }],
+  });
+  await assert.rejects(loadOwnerAnswers(path), /answers\[0\].*escalation/);
+});
+
+test("AC15 loadOwnerAnswers — answer that is a string (not object) → throws naming answers[0]", async () => {
+  const path = await writeQueueFile("kickback-ac15-", {
+    intent: "do x",
+    context: null,
+    artifact: "a.json",
+    answers: ["q1"],
+  });
+  await assert.rejects(loadOwnerAnswers(path), /answers\[0\]/);
+});
+
+test("AC16 loadOwnerAnswers — null answer → throws naming answers[0]", async () => {
+  const path = await writeQueueFile("kickback-ac16-", {
+    intent: "do x",
+    context: null,
+    artifact: "a.json",
+    answers: [null],
+  });
+  await assert.rejects(loadOwnerAnswers(path), /answers\[0\]/);
+});
+
+test("AC17 loadOwnerAnswers — bad second answer → throws naming answers[1]", async () => {
+  const path = await writeQueueFile("kickback-ac17-", {
+    intent: "do x",
+    context: null,
+    artifact: "a.json",
+    answers: [baseAnswer, { decision: "x" }],
+  });
+  await assert.rejects(loadOwnerAnswers(path), /answers\[1\]/);
+});
+
+test("AC18 loadOwnerAnswers — non-string requirementId → throws naming requirementId", async () => {
+  const path = await writeQueueFile("kickback-ac18-", {
+    intent: "do x",
+    context: null,
+    artifact: "a.json",
+    answers: [{ ...baseAnswer, requirementId: 5 }],
+  });
+  await assert.rejects(loadOwnerAnswers(path), /requirementId/);
+});
+
+test("AC19 loadOwnerAnswers — requirementId key absent → loads with requirementId ''", async () => {
+  const { requirementId: _omitted, ...noReqId } = baseAnswer;
+  const path = await writeQueueFile("kickback-ac19-", {
+    intent: "do x",
+    context: null,
+    artifact: "a.json",
+    answers: [noReqId],
+  });
+  const result = await loadOwnerAnswers(path);
+  assert.equal(result.answers[0]!.requirementId, "", "absent requirementId defaults to ''");
+});
+
+test("AC20 loadOwnerAnswers — intent key absent → throws naming intent", async () => {
+  const path = await writeQueueFile("kickback-ac20-", {
+    context: null,
+    artifact: "a.json",
+    answers: [baseAnswer],
+  });
+  await assert.rejects(loadOwnerAnswers(path), /intent/);
+});
+
+test("AC21 loadOwnerAnswers — blank intent '' → throws", async () => {
+  const path = await writeQueueFile("kickback-ac21-", {
+    intent: "",
+    context: null,
+    artifact: "a.json",
+    answers: [baseAnswer],
+  });
+  await assert.rejects(loadOwnerAnswers(path), /intent/);
+});
+
+test("AC22 loadOwnerAnswers — non-string artifact → throws naming artifact", async () => {
+  const path = await writeQueueFile("kickback-ac22-", {
+    intent: "do x",
+    context: null,
+    artifact: 3,
+    answers: [baseAnswer],
+  });
+  await assert.rejects(loadOwnerAnswers(path), /artifact/);
+});
+
+test("AC23 loadOwnerAnswers — non-string, non-null context → throws naming context", async () => {
+  const path = await writeQueueFile("kickback-ac23-", {
+    intent: "do x",
+    context: 3,
+    artifact: "a.json",
+    answers: [baseAnswer],
+  });
+  await assert.rejects(loadOwnerAnswers(path), /context/);
+});
+
+test("AC24 loadOwnerAnswers — context key absent → loads with context null", async () => {
+  const path = await writeQueueFile("kickback-ac24-", {
+    intent: "do x",
+    artifact: "a.json",
+    answers: [baseAnswer],
+  });
+  const result = await loadOwnerAnswers(path);
+  assert.equal(result.context, null, "absent context defaults to null");
+});
+
 // ── AC10 (rev 2): renderDecisionBlock authoring-diversity hint ────────────────
 
 const DIVERSITY_HINT =

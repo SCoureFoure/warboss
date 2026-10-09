@@ -142,7 +142,6 @@ export function analyzeE1bArm(
   const totalAttempts = sessions.reduce((s, r) => s + r.attempts, 0);
   const totalHiddenScore = sessions.reduce((s, r) => s + r.finalScore, 0);
   const totalCostUsd = sessions.reduce((s, r) => s + r.totalCostUsd, 0);
-  const greenCost = greenSessions.reduce((s, r) => s + r.totalCostUsd, 0);
 
   return {
     feedbackArm,
@@ -150,7 +149,7 @@ export function analyzeE1bArm(
     meanAttempts: totalAttempts / n,
     stallRate: stallCount / n,
     meanFinalHiddenScore: totalHiddenScore / n,
-    meanCostPerGreenSession: greenCount > 0 ? greenCost / greenCount : Infinity,
+    meanCostPerGreenSession: greenCount > 0 ? totalCostUsd / greenCount : Infinity,
     totalCostUsd,
   };
 }

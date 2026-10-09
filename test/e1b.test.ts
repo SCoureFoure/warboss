@@ -424,7 +424,7 @@ test("AC9 analysis: synthetic sessions compute correct aggregates", () => {
   assert.equal(a.stallRate, 0.25);             // 1/4
   assert.ok(Math.abs(a.meanFinalHiddenScore - 0.6) < 1e-9);  // (1+.8+.4+.2)/4
   assert.ok(Math.abs(a.totalCostUsd - 0.1) < 1e-9);
-  assert.ok(Math.abs(a.meanCostPerGreenSession - 0.02) < 1e-9); // (0.02+0.02)/2
+  assert.ok(Math.abs(a.meanCostPerGreenSession - 0.05) < 1e-9); // (0.02+0.02+0.01+0.05)/2 = 0.10/2
 
   // Zero green → Infinity
   const noGreen = [makeSession(false, false, 5, 0.2, 0.05)];

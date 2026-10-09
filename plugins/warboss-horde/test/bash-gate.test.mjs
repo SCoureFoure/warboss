@@ -97,9 +97,61 @@ test('WARBOSS_BASH_GATE=off disables the gate even when armed', () => {
 test('WARBOSS_BASH_GATE=deny arms without a marker; warn allows but still explains', () => {
   const dir = project(false);
   assert.equal(decision(run(bash(dir, 'npm test'), { WARBOSS_BASH_GATE: 'deny' })), 'deny');
+  // Warn mode emits no permission decision at all: context only.
   const warned = run(bash(dir, 'npm test'), { WARBOSS_BASH_GATE: 'warn' });
-  assert.equal(decision(warned), 'allow');
-  assert.match(warned.hookSpecificOutput.permissionDecisionReason, /runner/);
+  assert.match(warned.hookSpecificOutput.additionalContext, /^warboss ops rule \(warn mode\):/);
+  assert.match(warned.hookSpecificOutput.additionalContext, /runner/);
+  assert.doesNotMatch(JSON.stringify(warned), /permissionDecision/);
+});
+
+test('subagent detection: only a subagents segment directly before the file name counts', () => {
+  const dir = project(true);
+  const main = '/home/u/.claude/projects/p/abc.jsonl';
+  const denied = [
+    '/home/u/.claude/projects/-work-subagents-lab/abc.jsonl',
+    '/home/u/subagents/projects/p/abc.jsonl',
+  ];
+  const allowed = [
+    '/home/u/.claude/projects/p/abc/subagents/agent-1.jsonl',
+    'C:\\Users\\u\\.claude\\projects\\p\\abc\\subagents\\agent-1.jsonl',
+  ];
+  for (const tp of denied) {
+    assert.equal(decision(run(bash(dir, 'npm test', { transcript_path: tp }))), 'deny', tp);
+  }
+  for (const tp of allowed) {
+    assert.equal(decision(run(bash(dir, 'npm test', { transcript_path: tp }))), 'allow', tp);
+  }
+  assert.equal(decision(run(bash(dir, 'npm test', { transcript_path: main }))), 'deny', main);
+});
+
+test('inline escape: only a leading WARBOSS_INLINE=1 followed by whitespace', () => {
+  const dir = project(true);
+  const cases = [
+    ['WARBOSS_INLINE=1 npm test', 'allow'],
+    ['npm test # WARBOSS_INLINE', 'deny'],
+    ['WARBOSS_INLINE=0 npm test', 'deny'],
+    ['echo x && WARBOSS_INLINE=1 npm test', 'deny'],
+  ];
+  for (const [cmd, want] of cases) {
+    assert.equal(decision(run(bash(dir, cmd))), want, cmd);
+  }
+});
+
+test('control plane exemption: node ledger/dashboard only, with no shell operator outside quotes', () => {
+  const dir = project(true);
+  const cases = [
+    ['npm test; echo ledger.mjs', 'deny'],
+    ['cat ledger.mjs', 'deny'],
+    ['node /p/scripts/ledger.mjs summary && rm -rf x', 'deny'],
+    ['node /p/scripts/notledger.mjs summary', 'deny'],
+    ['node "/p/scripts/ledger.mjs" annotate latest \'{"verdict":"green","slice":"a;b|c"}\'', 'allow'],
+    ['node "C:/Users/u/x/scripts/dashboard.mjs" --out board.html', 'allow'],
+    ['node ledger.mjs summary', 'allow'],
+    ['node /p/scripts/dashboard.mjs > out.html', 'deny'],
+  ];
+  for (const [cmd, want] of cases) {
+    assert.equal(decision(run(bash(dir, cmd))), want, cmd);
+  }
 });
 
 test('non-Bash tools and malformed payloads pass through (fail open, always exit 0)', () => {

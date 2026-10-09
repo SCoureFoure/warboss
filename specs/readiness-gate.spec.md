@@ -369,10 +369,21 @@ src/gate.ts:
     `{minSurvivorLB: 0.5, minAgreementLB: 0.6}` → ready; 4/8 with the same →
     not ready. `temperature: 1.0` → every captured generation body carries it;
     unset → no temperature key.
+22. **AC22 — zero survivors not ready, Wilson rule (fix).** All k=4 generations
+    fail the contract; `wilson: {minSurvivorLB: 0, minAgreementLB: 0}` →
+    `survivors: 0`, `ready: false`.
+23. **AC23 — zero survivors not ready, default rule (fix).** Same generations,
+    no `wilson` option → `ready: false`.
+24. **AC24 — zero survivors not ready, outcome mode + Wilson (fix).** Same
+    generations as AC22 with `clustering: "outcome"` and
+    `wilson: {minSurvivorLB: 0, minAgreementLB: 0}` → `survivors: 0`,
+    `ready: false`.
+25. **AC25 — zero survivors not ready, outcome mode + default rule (fix).** Same
+    generations as AC24, no `wilson` option → `ready: false`.
 
 ## Verifies-with
 
-- Tests: `test/gate.test.ts` — AC1–AC21, offline, fake `MessagesClient`.
+- Tests: `test/gate.test.ts` — AC1–AC23, offline, fake `MessagesClient`.
 - Integration: gruntJudge calibration protocol — RAN, FAIL as gate
   (`archive/reports/gate-calibration-verdict.md`, `archive/reports/derive-calibration-verdict.md`).
   `intentProbe`'s first live run is E3 (Leader-gated,
