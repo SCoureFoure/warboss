@@ -1,0 +1,3 @@
+queue 1 runs, prior spend $0.00, cap $40
+e1b-A-r1-mvij55lz: green=true orch=$0.000 sub=$0.000 cli=$0.562438125
+done, total spend $0.56

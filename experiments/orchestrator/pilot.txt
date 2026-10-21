@@ -1,0 +1,29 @@
+queue 27 runs, prior spend $0.56, cap $40
+kick-X2-r1-mvij7xbe: green=true orch=$0.618 sub=$0.010 cli=$0.62783302
+kick-X1-r1-mvij7x22: green=true orch=$0.438 sub=$0.159 cli=$0.5973898
+kick-A-r1-mvij7wt2: green=true orch=$0.651 sub=$0.013 cli=$0.6638955950000001
+gate-A-r1-mvijamq8: green=false orch=$0.513 sub=$0.002 cli=$0.5148860449999999
+gate-X2-r1-mvijbjhf: green=false orch=$0.175 sub=$0.000 cli=$0.175009
+gate-X1-r1-mvijbcuu: green=false orch=$0.248 sub=$0.000 cli=$0.24772260000000002
+e1b-X1-r1-mvijbtc8: green=false orch=$0.000 sub=$0.000 cli=$0
+e1b-X2-r1-mvijbx46: green=false orch=$0.000 sub=$0.000 cli=$0
+e1b-A-r1-mvijbpj5: green=false orch=$0.000 sub=$0.000 cli=$0
+kick-A-r2-mvijc2no: green=false orch=$0.000 sub=$0.000 cli=$0
+kick-X2-r2-mvijcaha: green=false orch=$0.000 sub=$0.000 cli=$0
+kick-X1-r2-mvijc6jf: green=false orch=$0.000 sub=$0.000 cli=$0
+gate-A-r2-mvijcft7: green=false orch=$0.000 sub=$0.000 cli=$0
+gate-X2-r2-mvijcmy0: green=false orch=$0.000 sub=$0.000 cli=$0
+gate-X1-r2-mvijcje2: green=false orch=$0.000 sub=$0.000 cli=$0
+e1b-A-r2-mvijcs8a: green=false orch=$0.000 sub=$0.000 cli=$0
+e1b-X2-r2-mvijczxd: green=false orch=$0.000 sub=$0.000 cli=$0
+e1b-X1-r2-mvijcw1n: green=false orch=$0.000 sub=$0.000 cli=$0
+kick-X1-r3-mvijd9kz: green=false orch=$0.000 sub=$0.000 cli=$0
+kick-X2-r3-mvijdden: green=false orch=$0.000 sub=$0.000 cli=$0
+kick-A-r3-mvijd5lm: green=false orch=$0.000 sub=$0.000 cli=$0
+gate-A-r3-mvijdird: green=false orch=$0.000 sub=$0.000 cli=$0
+gate-X2-r3-mvijdq1z: green=false orch=$0.000 sub=$0.000 cli=$0
+gate-X1-r3-mvijdmle: green=false orch=$0.000 sub=$0.000 cli=$0
+e1b-X1-r3-mvijdypn: green=false orch=$0.000 sub=$0.000 cli=$0
+e1b-X2-r3-mvije2a3: green=false orch=$0.000 sub=$0.000 cli=$0
+e1b-A-r3-mvijdv65: green=false orch=$0.000 sub=$0.000 cli=$0
+done, total spend $3.39

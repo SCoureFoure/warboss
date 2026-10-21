@@ -1,0 +1,3 @@
+kick: hidden_exit=1 pass=21 fail=11 typecheck=0 -> bites
+gate: hidden_exit=1 pass=42 fail=2 typecheck=0 -> bites
+e1b: hidden_exit=1 pass=19 fail=1 typecheck=0 -> bites

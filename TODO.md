@@ -37,7 +37,7 @@ Finding ids below (`core F4`, `plugin F8`, ...) point into `.warboss-horde/out/r
    - **X5, stall noise-kick** (ants D5; replaces batching). On a stall, a fresh doer with a different framing and the
      same contract, versus a same-framing retry. Offline check on 2026-10-21: only 10 red verdicts in all ledgers
      (all trickshot), under the n >= 30 needed. Unresolved offline; needs a live arm.
-   - **X1/X2 pilot — DONE 2026-10-21** (`.warboss-horde/out/x12/report.md`; harness `run.mjs`, `report.mjs`,
+   - **X1/X2 pilot — DONE 2026-10-21** (`experiments/orchestrator/report.md`; harness `run.mjs`, `report.mjs`,
      `tasks.json`; 3 tasks x 3 arms x 3 reps, Opus orchestrator, hidden battery = real post-fix tests; ~$16.3 spent
      incl. runs lost to the usage limit).
      - A (baseline): 9/9 green, orchestrator $0.591/run, 11.1 calls, total $0.600/green.

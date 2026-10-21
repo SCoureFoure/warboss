@@ -24,3 +24,4 @@
 {"ts":"2026-10-08T20:07:44.172Z","agent_id":"a3eaaeac01c264c2f","verdict":"green","round":1,"slice":"test-meter-orchestrator"}
 {"ts":"2026-10-08T20:07:44.241Z","agent_id":"a51bc5afc64cc049d","verdict":"green","round":1,"slice":"test-record-cost"}
 {"ts":"2026-10-08T20:07:44.330Z","agent_id":"a3e7ce2dc3ad74b5a","verdict":"green","round":1,"slice":"test-dashboard","tier_reason":"under_decided"}
+{"ts":"2026-10-21T19:36:27.539Z","agent_id":"agent-a7d4c367fb48e44cd","verdict":"green","round":1,"slice":"audit-x0","tier_reason":"subtle_invariant"}

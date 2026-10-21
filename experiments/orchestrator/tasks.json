@@ -1,0 +1,19 @@
+{
+  "$comment": "X1/X2 task suite. Each task = a real fix from commit 71f3853, replayed from its parent. `hidden` = the post-fix test files, copied in only after the run (never visible to the arm). `intent` = the Leader-level request: the review finding plus the decisions the owner had already made.",
+  "base": "71f3853^",
+  "fix": "71f3853",
+  "tasks": {
+    "kick": {
+      "hidden": ["test/kickback.test.ts"],
+      "intent": "Fix this review finding in `src/kickback.ts`.\n\nF2 — loadOwnerAnswers does not type-check `escalation`, `requirementId`, `intent` or `artifact` (src/kickback.ts, near the answers validation loop). Only `decision` is type-checked. `{\"answers\":[{\"decision\":\"x\"}]}` has no `escalation` and passes; the returned queue then has `escalation: undefined`, hidden by an `as string` cast. `requirementId` passes through any non-string value. A non-object element in `answers` (for example `null`) throws a raw TypeError instead of a descriptive error. `intent` and `artifact` are passed through unchecked.\n\nOwner decisions already made: a malformed owner-answer file is rejected (fail closed). Every new error is an `Error` whose message starts with `loadOwnerAnswers: `, includes the file path the way the existing messages do, names the offending field in double quotes (e.g. `\"escalation\"`), and for a per-answer problem includes `answers[<i>]`. Keep every existing check and message unchanged. `intent` must be a non-blank string; `artifact` must be a string; `context` may be absent or null, otherwise a string; each answer must be a non-null, non-array object; `escalation` must be a non-blank string; `requirementId` is optional (absent means \"\"), otherwise a string.\n\nAdd regression tests in `test/kickback.test.ts`."
+    },
+    "gate": {
+      "hidden": ["test/gate.test.ts"],
+      "intent": "Fix this review finding in `src/gate.ts`.\n\nF3 — Wilson ready rule returns ready with zero survivors when the lower-bound thresholds are <= 0 (`convergenceProbe`). With zero survivors, `wilsonLower(0, k)` is 0 and `wilsonLower(0, 0)` returns 0 by definition. Passing `wilson: { minSurvivorLB: 0, minAgreementLB: 0 }` gives `ready: true` with no survivors. The default (non-wilson) rule happens to be fine because `NaN >= 0.5` is false. The same shape exists in the outcome probe mode further down the file. Nothing guards `survivorCount === 0`.\n\nOwner decision already made: zero survivors is never ready (fail closed), in both the vector and the outcome probe paths, Wilson and default rule alike. Change nothing else in the ready logic.\n\nAdd regression tests in `test/gate.test.ts` using the existing injected fake-agent pattern."
+    },
+    "e1b": {
+      "hidden": ["test/e1b.test.ts"],
+      "intent": "Fix a spec/code mismatch in `src/experiment/e1b.ts`.\n\n`specs/e1b-harness.spec.md` defines `meanCostPerGreenSession` as `totalCostUsd / greenCount` (Infinity if greenCount = 0), where `totalCostUsd` is the cost of ALL sessions. `analyzeE1bArm` currently divides only the green sessions' cost by the green count.\n\nOwner decision already made: the spec wins over the code — money spent on failed sessions is part of what a green costs. Change nothing else in `analyzeE1bArm`.\n\nUpdate the affected assertions in `test/e1b.test.ts` to the new definition."
+    }
+  }
+}

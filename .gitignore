@@ -34,3 +34,6 @@ Thumbs.db
 
 # Stray ledgers from a metering hook firing with its cwd inside the plugin.
 plugins/**/.warboss-horde/
+
+# Session scratch output (reports, run logs, probes) — local only.
+.warboss-horde/out/
