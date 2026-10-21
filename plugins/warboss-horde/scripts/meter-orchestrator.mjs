@@ -23,11 +23,13 @@
 //
 // Env knobs:
 //   WARBOSS_LEDGER  override ledger file path
+// Ledger location: the session's starting cwd (scripts/ledger-path.mjs), not the live cwd.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 import { priceForModel, messageUsd } from './pricing.mjs';
+import { ledgerFileFor } from './ledger-path.mjs';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
@@ -149,9 +151,7 @@ function main() {
   const ladder = Array.isArray(tiers.ladder) ? tiers.ladder : [];
   const ts = new Date().toISOString();
 
-  const ledgerFile = process.env.WARBOSS_LEDGER
-    ? path.resolve(process.env.WARBOSS_LEDGER)
-    : path.resolve(hook.cwd || process.cwd(), '.warboss-horde', 'ledger.jsonl');
+  const ledgerFile = ledgerFileFor(hook, process.env);
   fs.mkdirSync(path.dirname(ledgerFile), { recursive: true });
 
   const byModel = sumByModel(transcript, pricing);

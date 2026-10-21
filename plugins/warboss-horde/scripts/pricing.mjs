@@ -33,6 +33,17 @@ export function priceForModel(pricing, model) {
   return p && typeof p === 'object' ? p : null;
 }
 
+// Rates in force for one message: base, or base merged with `above` past the prompt threshold.
+export function ratesFor(price, usage) {
+  if (!price || typeof price !== 'object') return null;
+  const u = usage || {};
+  const prompt = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+  if (price.above && typeof price.above === 'object' && prompt > price.above.prompt_tokens) {
+    return { ...price, ...price.above };
+  }
+  return price;
+}
+
 // Unrounded USD for ONE message; null if the price is unusable.
 export function messageUsd(price, usage) {
   if (!price || typeof price !== 'object') return null;
@@ -43,11 +54,7 @@ export function messageUsd(price, usage) {
   const create = u.cache_creation_input_tokens || 0;
   const w1h = (u.cache_creation && u.cache_creation.ephemeral_1h_input_tokens) || 0;
   const w5m = Math.max(0, create - w1h);
-  const prompt = inp + read + create;
-  let rates = price;
-  if (price.above && typeof price.above === 'object' && prompt > price.above.prompt_tokens) {
-    rates = { ...price, ...price.above };
-  }
+  const rates = ratesFor(price, u);
   for (const f of ['input', 'output', 'cache_read', 'cache_write', 'cache_write_1h']) {
     if (typeof rates[f] !== 'number' || !Number.isFinite(rates[f])) return null;
   }
