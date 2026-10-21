@@ -213,6 +213,145 @@ export function toolLifetimes(text) {
   return out;
 }
 
+const HORDE_RE = /(^|\/)\.warboss-horde\//;
+const SLICES_RE = /(^|\/)\.warboss-horde\/slices\//;
+const fwd = (p) => String(p ?? '').replace(/\\/g, '/');
+
+// One entry per block entering the prefix, arrival order: class, size, calls it stays live for (to next compact
+// boundary), and whether the model authored it (pays output price).
+export function prefixAttribution(text) {
+  const recs = [];
+  for (const ln of String(text).split(/\r?\n/)) {
+    if (!ln.trim()) continue;
+    let rec;
+    try { rec = JSON.parse(ln); } catch { continue; }
+    recs.push(rec);
+  }
+  const blocksOf = (msg) => {
+    const c = msg && msg.content;
+    if (typeof c === 'string') return [{ type: 'text', text: c }];
+    return Array.isArray(c) ? c.filter((b) => b && typeof b === 'object') : [];
+  };
+  const counted = (msg) => msg.usage && typeof msg.usage === 'object' && !(typeof msg.model === 'string' && msg.model.startsWith('<'));
+  const finalUsage = new Map();
+  for (const rec of recs) {
+    const msg = rec && rec.message;
+    if (msg && msg.role === 'assistant' && counted(msg)) finalUsage.set(msg.id || rec.uuid, msg.usage);
+  }
+  const out = [];
+  const pending = [];
+  const uses = new Map();
+  const seenCalls = new Set();
+  const seenUses = new Set();
+  const seenTexts = new Set();
+  const seenResults = new Set();
+  let calls = 0;
+  const flush = () => {
+    for (const p of pending) out[p.k].liveCalls = calls - p.at;
+    pending.length = 0;
+  };
+  const emit = (cls, sizeTokens, authored) => {
+    out.push({ cls, sizeTokens, liveCalls: 0, authored });
+    pending.push({ k: out.length - 1, at: calls });
+  };
+  for (const rec of recs) {
+    if (!rec) continue;
+    if (rec.type === 'system' && rec.subtype === 'compact_boundary') { flush(); continue; }
+    const msg = rec.message;
+    if (!msg) continue;
+    const id = msg.id || rec.uuid;
+    if (msg.role === 'assistant') {
+      if (counted(msg) && !seenCalls.has(id)) {
+        seenCalls.add(id);
+        calls++;
+        const fu = finalUsage.get(id);
+        const th = (fu && fu.output_tokens_details && fu.output_tokens_details.thinking_tokens) || 0;
+        if (th > 0) emit('thinking', th, true);
+      }
+      for (const b of blocksOf(msg)) {
+        if (b.type === 'text') {
+          const key = id + JSON.stringify(b);
+          if (seenTexts.has(key)) continue;
+          seenTexts.add(key);
+          emit('assistant_text', Math.ceil(String(b.text ?? '').length / 4), true);
+        } else if (b.type === 'tool_use') {
+          if (seenUses.has(b.id)) continue;
+          seenUses.add(b.id);
+          uses.set(b.id, b);
+          let cls;
+          if (b.name === 'Write') {
+            const p = fwd(b.input && b.input.file_path);
+            cls = SLICES_RE.test(p) ? 'use:Write:slices' : HORDE_RE.test(p) ? 'use:Write:horde' : 'use:Write:src';
+          } else if (b.name === 'Edit' || b.name === 'MultiEdit' || b.name === 'NotebookEdit') cls = 'use:Edit';
+          else if (b.name === 'Agent' || b.name === 'Task') cls = 'use:Agent';
+          else if (b.name === 'Bash') cls = 'use:Bash';
+          else cls = 'use:other';
+          emit(cls, Math.ceil(JSON.stringify(b.input).length / 4), true);
+        }
+      }
+    } else if (msg.role === 'user') {
+      for (const b of blocksOf(msg)) {
+        if (b.type === 'text') {
+          emit('user_text', Math.ceil(String(b.text ?? '').length / 4), false);
+        } else if (b.type === 'tool_result') {
+          if (seenResults.has(b.tool_use_id)) continue;
+          seenResults.add(b.tool_use_id);
+          const u = uses.get(b.tool_use_id);
+          const name = u && u.name;
+          let cls;
+          if (name === 'Read') cls = HORDE_RE.test(fwd(u.input && u.input.file_path)) ? 'result:Read:horde' : 'result:Read:src';
+          else if (name === 'Agent' || name === 'Task') cls = 'result:Agent';
+          else if (name === 'Bash' || name === 'Grep' || name === 'Glob') cls = 'result:' + name;
+          else cls = 'result:other';
+          let txt = '';
+          let images = 0;
+          if (typeof b.content === 'string') txt = b.content;
+          else if (Array.isArray(b.content)) {
+            const parts = [];
+            for (const it of b.content) {
+              if (it && it.type === 'text' && typeof it.text === 'string') parts.push(it.text);
+              else if (it && it.type === 'image') images++;
+            }
+            txt = parts.join('\n');
+          }
+          emit(cls, Math.ceil(txt.length / 4) + IMAGE_TOKENS * images, false);
+        }
+      }
+    }
+  }
+  flush();
+  return out;
+}
+
+// Per-class totals; `out` is $/MTok paid once on authored blocks.
+export function attributionUsd(entries, { r, w, out }) {
+  const res = {};
+  for (const e of entries) {
+    const a = res[e.cls] || (res[e.cls] = { n: 0, tokens: 0, lifeUsd: 0, authUsd: 0 });
+    a.n++;
+    a.tokens += e.sizeTokens;
+    a.lifeUsd += lifetimeUsd(e.sizeTokens, e.liveCalls, r, w);
+    a.authUsd += e.authored ? (e.sizeTokens * out) / 1e6 : 0;
+  }
+  return res;
+}
+
+const GROUPS = {
+  'result:Read:src': 'file', 'result:Read:horde': 'file', 'use:Write:slices': 'file', 'use:Write:horde': 'file',
+  'use:Write:src': 'file', 'use:Edit': 'file', 'use:Agent': 'file', 'result:Agent': 'file',
+  'use:Bash': 'exec', 'result:Bash': 'exec', 'result:Grep': 'search', 'result:Glob': 'search',
+  thinking: 'reasoning', assistant_text: 'reasoning', user_text: 'user', 'use:other': 'other', 'result:other': 'other',
+};
+const GROUP_ROWS = ['file', 'exec', 'search', 'reasoning', 'user', 'other'];
+export function groupOf(cls) {
+  return Object.hasOwn(GROUPS, cls) ? GROUPS[cls] : 'other';
+}
+
+export function x0Verdict(share) {
+  if (!Number.isFinite(share) || share < 0.2) return 'KILL';
+  return share >= 0.4 ? 'PASS' : 'MIDDLE';
+}
+
 export function lifetimeUsd(sizeTokens, liveCalls, r, w) {
   return liveCalls >= 1 ? (sizeTokens * (w + (liveCalls - 1) * r)) / 1e6 : 0;
 }
@@ -235,7 +374,7 @@ const median = (xs) => {
 const fmt = (x) => (x === null || x === undefined ? '' : Number.isInteger(x) ? String(x) : x.toFixed(4));
 const pct = (x, tot) => (tot > 0 ? ((100 * x) / tot).toFixed(2) + '%' : 'n/a');
 
-function analyse(calls, price, lifetimes = []) {
+function analyse(calls, price, lifetimes = [], attribution = []) {
   const s = { usd_read: 0, usd_write: 0, usd_input: 0, usd_output: 0 };
   for (const c of calls) {
     const rt = ratesFor(price, c.usage);
@@ -314,6 +453,8 @@ function analyse(calls, price, lifetimes = []) {
     s.think_usd += (th * ratesFor(price, c.usage).output) / 1e6;
     if (th > c.output) s.think_gt_out++;
   }
+  const outRate = s.out_tokens > 0 ? (s.usd_output * 1e6) / s.out_tokens : price.output;
+  s.attr = attributionUsd(attribution, { r: s.r_eff, w: s.w_eff, out: outRate });
   return s;
 }
 
@@ -356,7 +497,7 @@ function main(argv) {
     const price = priceForModel(tiers.pricing, model);
     if (!price) { skippedUnpriced++; continue; }
     const rel = path.relative(root, file).split(path.sep).join('/').replace(/,/g, ';');
-    rows.push({ file: rel, model, ...analyse(calls, price, toolLifetimes(fileText)) });
+    rows.push({ file: rel, model, ...analyse(calls, price, toolLifetimes(fileText), prefixAttribution(fileText)) });
   }
 
   const cols = ['file', 'model', 'n', 'B', 'Pmax', 'g', 'r2', 'usd_read', 'usd_write', 'usd_input', 'usd_output',
@@ -433,6 +574,27 @@ function main(argv) {
   L.push(`- think usd / usd_total: ${p1(thinkUsd, total)}`);
   L.push(`- think usd: $${thinkUsd.toFixed(2)}`);
   L.push(`- calls with thinking > output: ${sum(rows.map((r) => r.think_gt_out))}`);
+  const pooled = {};
+  for (const r of rows) {
+    for (const [cls, a] of Object.entries(r.attr)) {
+      const t = pooled[cls] || (pooled[cls] = { n: 0, tokens: 0, lifeUsd: 0, authUsd: 0 });
+      t.n += a.n; t.tokens += a.tokens; t.lifeUsd += a.lifeUsd; t.authUsd += a.authUsd;
+    }
+  }
+  const attrTotal = sum(Object.values(pooled).map((a) => a.lifeUsd + a.authUsd));
+  const attrLife = sum(Object.values(pooled).map((a) => a.lifeUsd));
+  const groupUsd = Object.fromEntries(GROUP_ROWS.map((g) => [g, 0]));
+  for (const [cls, a] of Object.entries(pooled)) groupUsd[groupOf(cls)] += a.lifeUsd + a.authUsd;
+  L.push('', '## Prefix attribution (X0)', '');
+  L.push(`- coverage (attributed lifetime / (read+write)): ${p1(attrLife, rw)}`);
+  L.push(`- file share: ${p1(groupUsd.file, attrTotal)} -> ${x0Verdict(attrTotal > 0 ? groupUsd.file / attrTotal : NaN)}`);
+  for (const g of GROUP_ROWS) L.push(`- group ${g}: $${groupUsd[g].toFixed(4)} (${p1(groupUsd[g], attrTotal)})`);
+  L.push('', '| class | blocks | tokens | lifetime usd | authoring usd | total usd | share |', '| --- | --- | --- | --- | --- | --- | --- |');
+  const byTotal = Object.entries(pooled).sort((a, b) => b[1].lifeUsd + b[1].authUsd - (a[1].lifeUsd + a[1].authUsd));
+  for (const [cls, a] of byTotal) {
+    L.push(`| ${cls} | ${a.n} | ${a.tokens} | $${a.lifeUsd.toFixed(4)} | $${a.authUsd.toFixed(4)} | ` +
+      `$${(a.lifeUsd + a.authUsd).toFixed(4)} | ${p1(a.lifeUsd + a.authUsd, attrTotal)} |`);
+  }
   fs.writeFileSync(path.join(out, 'summary.md'), L.slice(0, 120).join('\n') + '\n');
   process.stdout.write(path.join(out, 'summary.md') + '\n');
 }
