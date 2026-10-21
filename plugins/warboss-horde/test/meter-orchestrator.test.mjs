@@ -13,7 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const meter = path.resolve(here, '..', 'scripts', 'meter-orchestrator.mjs');
 const ledgerScript = path.resolve(here, '..', 'scripts', 'ledger.mjs');
 const tiers = JSON.parse(fs.readFileSync(path.resolve(here, '..', 'tiers.json'), 'utf8'));
-const p = tiers.pricing.haiku;
+const p = tiers.pricing['haiku-4-5'];
 
 const asst = (id, usage, model = 'claude-haiku-4-5') =>
   JSON.stringify({
@@ -67,7 +67,7 @@ test('one message logs one orchestrator row with the expected fields', () => {
   assert.equal(r[0].cache_creation, 0);
 });
 
-test('est_usd is priced from tiers.json pricing.haiku', () => {
+test("est_usd is priced from tiers.json pricing['haiku-4-5']", () => {
   const fx = fixture();
   fs.writeFileSync(fx.transcript, asst('m1', io(100, 10)));
   fire(fx);

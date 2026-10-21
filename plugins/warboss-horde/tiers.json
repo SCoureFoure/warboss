@@ -9,11 +9,27 @@
     "opus": 45.0
   },
   "pricing": {
-    "$comment": "ACCURATE per-class $/MILLION-tokens, used by BOTH automatic meters: scripts/meter-subagent.mjs (SubagentStop -> the doer/'do' band) and scripts/meter-orchestrator.mjs (Stop -> the WARBOSS/'decide' band). Each transcript carries the real input/output/cache split, so USD here is precise — not blended. Keys are matched to a transcript's model id by SUBSTRING (e.g. 'claude-sonnet-4-6' -> 'sonnet'); the same match maps a model to its ladder `tier` for the summary board. VERIFY against current Anthropic pricing before trusting the dollar figures; as of authoring, cache_read is ~0.1x input and cache_write ~1.25x input. Set a model to null to log tokens only.",
-    "fable":  { "input": 10, "output": 50, "cache_read": 1,   "cache_write": 12.5 },
-    "haiku":  { "input": 1,  "output": 5,  "cache_read": 0.1, "cache_write": 1.25 },
-    "sonnet": { "input": 3,  "output": 15, "cache_read": 0.3, "cache_write": 3.75 },
-    "opus":   { "input": 15, "output": 75, "cache_read": 1.5, "cache_write": 18.75 }
+    "$comment": "Per-class $/MILLION-tokens from the Anthropic price sheet fetched 2026-10-21 (see .warboss-horde/out/research-official.md). Used by both automatic meters via scripts/pricing.mjs, which prices EACH message: keys match a model id case-insensitively, longest key wins, and a key must end at a version boundary (end of id, '[', '@', or '-YYYYMMDD'), so an unlisted version prices as null instead of borrowing a neighbour's rate. cache_write is the 5-minute write, cache_write_1h the 1-hour write. `above` swaps in its rates when one request's prompt (input + cache read + cache write) exceeds prompt_tokens. Add every new model id here before driving it.",
+    "fable-5-1": { "input": 10, "output": 50, "cache_read": 0.25, "cache_write": 12.5, "cache_write_1h": 20 },
+    "fable-5": { "input": 10, "output": 50, "cache_read": 1, "cache_write": 12.5, "cache_write_1h": 20 },
+    "mythos-5-1": { "input": 10, "output": 50, "cache_read": 0.25, "cache_write": 12.5, "cache_write_1h": 20 },
+    "mythos-5": { "input": 10, "output": 50, "cache_read": 1, "cache_write": 12.5, "cache_write_1h": 20 },
+    "opus-5-5": { "input": 4, "output": 20, "cache_read": 0.2, "cache_write": 5, "cache_write_1h": 8 },
+    "opus-5": { "input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25, "cache_write_1h": 10 },
+    "opus-4-8": { "input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25, "cache_write_1h": 10 },
+    "opus-4-7": { "input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25, "cache_write_1h": 10 },
+    "opus-4-6": { "input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25, "cache_write_1h": 10 },
+    "opus-4-5": { "input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25, "cache_write_1h": 10 },
+    "opus-4-1": { "input": 15, "output": 75, "cache_read": 1.5, "cache_write": 18.75, "cache_write_1h": 30 },
+    "opus-4": { "input": 15, "output": 75, "cache_read": 1.5, "cache_write": 18.75, "cache_write_1h": 30 },
+    "sonnet-5-5": { "input": 2, "output": 10, "cache_read": 0.1, "cache_write": 2.5, "cache_write_1h": 4 },
+    "sonnet-5": { "input": 2, "output": 10, "cache_read": 0.2, "cache_write": 2.5, "cache_write_1h": 4 },
+    "sonnet-4-6": { "input": 3, "output": 15, "cache_read": 0.3, "cache_write": 3.75, "cache_write_1h": 6 },
+    "sonnet-4-5": { "input": 3, "output": 15, "cache_read": 0.3, "cache_write": 3.75, "cache_write_1h": 6 },
+    "sonnet-4": { "input": 3, "output": 15, "cache_read": 0.3, "cache_write": 3.75, "cache_write_1h": 6 },
+    "haiku-5-5": { "input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_write": 0.125, "cache_write_1h": 0.2, "above": { "prompt_tokens": 100000, "input": 0.5, "output": 2.5, "cache_read": 0.05, "cache_write": 0.625, "cache_write_1h": 1 } },
+    "haiku-4-5": { "input": 1, "output": 5, "cache_read": 0.1, "cache_write": 1.25, "cache_write_1h": 2 },
+    "haiku-3-5": { "input": 0.8, "output": 4, "cache_read": 0.08, "cache_write": 1, "cache_write_1h": 1.6 }
   },
   "ladder": [
     {

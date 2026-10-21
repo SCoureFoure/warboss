@@ -35,6 +35,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
+import { priceForModel, messageUsd } from './pricing.mjs';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
@@ -52,20 +53,6 @@ function loadTiers() {
   } catch {
     return {};
   }
-}
-
-// Match a full model id ('claude-sonnet-4-6') to a pricing key by substring.
-function priceForModel(pricing, model) {
-  if (!model) return null;
-  const m = model.toLowerCase();
-  for (const key of Object.keys(pricing)) {
-    if (key === '$comment') continue;
-    if (m.includes(key.toLowerCase())) {
-      const p = pricing[key];
-      return p && typeof p === 'object' ? p : null;
-    }
-  }
-  return null;
 }
 
 // Map a transcript model id to its ladder tier ('LOW'|'MID'|'HIGH'|...). The
@@ -94,22 +81,12 @@ function tierForModel(ladder, model) {
   return null;
 }
 
-function usd(price, u) {
-  if (!price) return null;
-  const v =
-    (u.input / 1e6) * (price.input || 0) +
-    (u.output / 1e6) * (price.output || 0) +
-    (u.cache_read / 1e6) * (price.cache_read || 0) +
-    (u.cache_creation / 1e6) * (price.cache_write || 0);
-  return Number(v.toFixed(6));
-}
-
 // Sum usage per model across the assistant messages of one transcript file.
 // One API response with N content blocks is written as N JSONL lines sharing
 // one message.id, each repeating the full usage — summing raw lines counts a
 // response N times (~2x inflation vs /cost). Dedupe by message id; the LAST
 // line per id carries the final streamed usage.
-function sumByModel(file) {
+function sumByModel(file, pricing) {
   const byModel = new Map();
   let text;
   try {
@@ -133,11 +110,15 @@ function sumByModel(file) {
     byId.set(msg.id || rec.uuid, { model, usage: msg.usage });
   }
   for (const { model, usage } of byId.values()) {
-    const acc = byModel.get(model) || { input: 0, output: 0, cache_read: 0, cache_creation: 0 };
+    const acc = byModel.get(model) || { input: 0, output: 0, cache_read: 0, cache_creation: 0, cache_creation_1h: 0, usd: 0 };
     acc.input += usage.input_tokens || 0;
     acc.output += usage.output_tokens || 0;
     acc.cache_read += usage.cache_read_input_tokens || 0;
     acc.cache_creation += usage.cache_creation_input_tokens || 0;
+    acc.cache_creation_1h += usage.cache_creation?.ephemeral_1h_input_tokens || 0;
+    // Price per message (tier thresholds apply per message); one null poisons the row.
+    const cost = messageUsd(priceForModel(pricing, model), usage);
+    acc.usd = acc.usd === null || cost === null ? null : acc.usd + cost;
     byModel.set(model, acc);
   }
   return byModel;
@@ -238,7 +219,7 @@ function main() {
     const agentType = agentTypeFor(file) || hook.agent_type || hook.subagent_type || '';
     if (doerOnly && !String(agentType).toLowerCase().includes('doer')) continue;
 
-    const byModel = sumByModel(file);
+    const byModel = sumByModel(file, pricing);
     if (byModel.size === 0) continue;
 
     for (const [model, u] of byModel) {
@@ -259,7 +240,8 @@ function main() {
         output: u.output,
         cache_read: u.cache_read,
         cache_creation: u.cache_creation,
-        est_usd: usd(priceForModel(pricing, model), u),
+        cache_creation_1h: u.cache_creation_1h,
+        est_usd: u.usd === null ? null : Number(u.usd.toFixed(6)),
       };
       fs.appendFileSync(ledgerFile, JSON.stringify(line) + '\n');
       logged.set(key, tokens);
