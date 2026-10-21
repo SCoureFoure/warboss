@@ -54,15 +54,20 @@ export function fitLine(ys) {
 }
 
 // Modeled input-side cost of cutting the session every `segment` calls (output excluded).
-export function simulate(calls, { segment, handoff, r, w }) {
+export function simulate(calls, { segment, handoff, r, w, starts, rewrites }) {
   if (!calls.length) return 0;
   const B = calls[0].P;
+  const startSet = new Set(starts || []);
+  const rewriteSet = new Set(rewrites || []);
   let cost = 0;
   let prevQ = 0;
+  let lastStart = 0;
   for (let j = 0; j < calls.length; j++) {
-    const a = Number.isFinite(segment) ? Math.floor(j / segment) * segment : 0;
+    if (startSet.has(j)) lastStart = j;
+    const segA = Number.isFinite(segment) ? Math.floor(j / segment) * segment : 0;
+    const a = Math.max(segA, lastStart);
     const Q = Math.max(B, calls[j].P - calls[a].P + B + (a > 0 ? handoff : 0));
-    const W = j === a ? Q : Math.max(0, Q - prevQ);
+    const W = j === a || rewriteSet.has(j) ? Q : Math.max(0, Q - prevQ);
     cost += r * (Q - W) + w * W;
     prevQ = Q;
   }
@@ -95,6 +100,16 @@ export function classifyMisses(calls) {
     const min = 60 * 1000;
     const bucket = gapMs === null ? 'unknown' : gapMs < 5 * min ? '<5m' : gapMs <= 60 * min ? '5-60m' : '>60m';
     out.push({ k, gapMs, bucket, create: c.create });
+  }
+  return out;
+}
+
+export function idleIndices(calls, minGapMs = 3600000) {
+  const out = [];
+  for (let k = 1; k < calls.length; k++) {
+    const a = calls[k - 1].ts;
+    const b = calls[k].ts;
+    if (Number.isFinite(a) && Number.isFinite(b) && b - a > minGapMs) out.push(k);
   }
   return out;
 }
@@ -144,6 +159,26 @@ function analyse(calls, price) {
     s['best_seg_' + H] = o.bestSegment;
     s['saving_' + H] = o.saving;
   }
+  const idle = idleIndices(calls);
+  s.idle_gaps = idle.length;
+  const baseIdle = simulate(calls, { segment: Infinity, handoff: 0, r: s.r_eff, w: s.w_eff, rewrites: idle });
+  s.baseIdle = baseIdle;
+  const actual = s.usd_read + s.usd_write + s.usd_input;
+  s.actualIn = actual;
+  s.model_err = actual > 0 ? baseIdle / 1e6 / actual - 1 : null;
+  s.relayCost = {};
+  s.comboCost = {};
+  for (const H of HANDOFFS) {
+    const relay = simulate(calls, { segment: Infinity, handoff: H, r: s.r_eff, w: s.w_eff, starts: idle });
+    const bs = s['best_seg_' + H];
+    const combo = simulate(calls, { segment: bs ?? Infinity, handoff: H, r: s.r_eff, w: s.w_eff, starts: idle });
+    s.relayCost[H] = relay;
+    s.comboCost[H] = combo;
+    s['idle_saving_' + H] = baseIdle > 0 ? 1 - relay / baseIdle : 0;
+    s['idle_usd_' + H] = (baseIdle - relay) / 1e6;
+    s['combo_saving_' + H] = baseIdle > 0 ? 1 - combo / baseIdle : 0;
+    s['combo_usd_' + H] = (baseIdle - combo) / 1e6;
+  }
   return s;
 }
 
@@ -191,6 +226,8 @@ function main(argv) {
   const cols = ['file', 'model', 'n', 'B', 'Pmax', 'g', 'r2', 'usd_read', 'usd_write', 'usd_input', 'usd_output',
     'usd_total', 'r_eff', 'w_eff', 'miss_count', 'miss_usd_lt5m', 'miss_usd_5to60m', 'miss_usd_gt60m', 'miss_usd_unknown'];
   for (const H of HANDOFFS) cols.push('nstar_' + H, 'best_seg_' + H, 'saving_' + H);
+  cols.push('model_err', 'idle_gaps');
+  for (const H of HANDOFFS) cols.push('idle_saving_' + H, 'idle_usd_' + H, 'combo_saving_' + H, 'combo_usd_' + H);
   const csv = [cols.join(','), ...rows.map((r) => cols.map((c) => (typeof r[c] === 'string' ? r[c] : fmt(r[c]))).join(','))];
   fs.mkdirSync(out, { recursive: true });
   fs.writeFileSync(path.join(out, 'sessions.csv'), csv.join('\n') + '\n');
@@ -222,7 +259,20 @@ function main(argv) {
     const v = sum(rows.map((r) => r['miss_usd_' + col]));
     L.push(`- ${b}: $${v.toFixed(4)} (${pct(v, total)} of total)`);
   }
-  fs.writeFileSync(path.join(out, 'summary.md'), L.slice(0, 60).join('\n') + '\n');
+  L.push('', '## Balance check (E0)', '');
+  const sumBase = sum(rows.map((r) => r.baseIdle));
+  const sumActual = sum(rows.map((r) => r.actualIn));
+  L.push(`- median model_err: ${fmt(median(rows.map((r) => r.model_err))) || 'n/a'}`);
+  L.push(`- pooled model_err: ${sumActual > 0 ? (sumBase / 1e6 / sumActual - 1).toFixed(4) : 'n/a'}`);
+  L.push('', '## Idle relay (gap > 60 min)', '');
+  L.push(`- sessions with idle gaps: ${rows.filter((r) => r.idle_gaps >= 1).length}`);
+  L.push(`- total idle gaps: ${sum(rows.map((r) => r.idle_gaps))}`);
+  const ps = (k, H) => (sumBase > 0 ? (100 * sum(rows.map((r) => r.baseIdle - r[k][H])) / sumBase).toFixed(1) + '%' : 'n/a');
+  for (const H of HANDOFFS) {
+    L.push(`- H=${H}: idle saving ${ps('relayCost', H)}, $${sum(rows.map((r) => r['idle_usd_' + H])).toFixed(2)}; ` +
+      `combo saving ${ps('comboCost', H)}, $${sum(rows.map((r) => r['combo_usd_' + H])).toFixed(2)}`);
+  }
+  fs.writeFileSync(path.join(out, 'summary.md'), L.slice(0, 80).join('\n') + '\n');
   process.stdout.write(path.join(out, 'summary.md') + '\n');
 }
 

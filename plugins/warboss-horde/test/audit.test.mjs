@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { loadCalls, simulate, optimum, classifyMisses, fitLine } from '../scripts/audit.mjs';
+import { loadCalls, simulate, optimum, classifyMisses, fitLine, idleIndices } from '../scripts/audit.mjs';
 import { ratesFor } from '../scripts/pricing.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -56,6 +56,28 @@ test('simulate: a compaction drop carries into the segment and P\' never falls b
   close(simulate(mk([100, 300, 150, 160]), { segment: 2, handoff: 0, r: 1, w: 10 }), 4300);
   // baseline: 1000 + 2100 + (drop: no write, read 150) 150 + (100*... P 160, growth 10) 150 + 100 = 3500
   close(simulate(mk([100, 300, 150, 160]), { segment: Infinity, handoff: 0, r: 1, w: 10 }), 3500);
+});
+
+test('simulate: rewrites force a full-prefix write without resetting the prefix', () => {
+  // k2 rewrites all 120 at w: 1000 + 200 + 1200 + 220
+  close(simulate(mk([100, 110, 120, 130]), { segment: Infinity, handoff: 5, r: 1, w: 10, rewrites: [2] }), 2620);
+  // a rewrite on a segment start is already a full write: no change
+  close(simulate(mk([100, 110, 120, 130]), { segment: 2, handoff: 5, r: 1, w: 10, rewrites: [2] }), 2455);
+});
+
+test('simulate: explicit starts re-seed like segment boundaries and merge with them', () => {
+  close(simulate(mk([100, 110, 120, 130]), { segment: Infinity, handoff: 5, r: 1, w: 10, starts: [2] }), 2455);
+  // starts {0,3} from segment 3, plus 2: [0,1] 1200, [2] 1050, [3] Q=105 -> 1050
+  close(simulate(mk([100, 110, 120, 130]), { segment: 3, handoff: 5, r: 1, w: 10, starts: [2] }), 3300);
+});
+
+test('idleIndices: calls after a gap strictly over the threshold, both timestamps known', () => {
+  const m = 60 * 1000;
+  const calls = [0, 61 * m, 62 * m, null, 200 * m, 260 * m].map((ts) => ({ ts }));
+  assert.deepEqual(idleIndices(calls), [1]);
+  assert.deepEqual(idleIndices([{ ts: 0 }, { ts: 60 * m }]), []);
+  assert.deepEqual(idleIndices(calls, 30 * m), [1, 5]);
+  assert.deepEqual(idleIndices([{ ts: 0 }, { ts: 31 * m }], 30 * m), [1]);
 });
 
 test('fitLine: least-squares slope and r2 of P on call index', () => {
@@ -121,10 +143,12 @@ test('CLI: writes sessions.csv and summary.md, skipping subagent files and short
   const csv = fs.readFileSync(path.join(out, 'sessions.csv'), 'utf8').trim().split(/\r?\n/);
   assert.equal(csv.length, 2, 'header + exactly one session row');
   const head = csv[0].split(',');
-  for (const col of ['file', 'model', 'n', 'B', 'g', 'usd_read', 'usd_write', 'usd_total', 'saving_15000', 'best_seg_15000', 'nstar_15000', 'miss_usd_gt60m'])
+  for (const col of ['file', 'model', 'n', 'B', 'g', 'usd_read', 'usd_write', 'usd_total', 'saving_15000', 'best_seg_15000', 'nstar_15000', 'miss_usd_gt60m',
+    'model_err', 'idle_gaps', 'idle_saving_5000', 'idle_usd_15000', 'combo_saving_15000', 'combo_usd_30000'])
     assert.ok(head.includes(col), `missing column ${col}`);
   const row = Object.fromEntries(head.map((h, i) => [h, csv[1].split(',')[i]]));
   assert.equal(row.n, '30');
+  assert.equal(row.idle_gaps, '0');
   assert.equal(row.model, 'claude-opus-5-5');
   assert.ok(fs.readFileSync(path.join(out, 'summary.md'), 'utf8').length > 0);
 });
