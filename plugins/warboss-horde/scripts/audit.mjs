@@ -114,6 +114,115 @@ export function idleIndices(calls, minGapMs = 3600000) {
   return out;
 }
 
+const TOKEN_RE = /[A-Za-z0-9_][A-Za-z0-9_.\/:-]{7,}/g;
+const IMAGE_TOKENS = 1600;
+const TOOL_NAMES = new Set(['Read', 'Bash', 'Grep', 'Glob', 'Agent']);
+
+// One entry per tool_result block, file order: size, calls it stays live for (to next compact boundary), and
+// whether a token that was novel on arrival is later cited in assistant output.
+export function toolLifetimes(text) {
+  const recs = [];
+  for (const ln of String(text).split(/\r?\n/)) {
+    if (!ln.trim()) continue;
+    let rec;
+    try { rec = JSON.parse(ln); } catch { continue; }
+    recs.push(rec);
+  }
+  const blocksOf = (msg) => {
+    const c = msg && msg.content;
+    if (typeof c === 'string') return [{ type: 'text', text: c }];
+    return Array.isArray(c) ? c.filter((b) => b && typeof b === 'object') : [];
+  };
+  const tokensOf = (s) => String(s).match(TOKEN_RE) || [];
+  // Pass 1: token -> last record index where it appears in assistant output.
+  const lastIdx = new Map();
+  recs.forEach((rec, i) => {
+    const msg = rec && rec.message;
+    if (!msg || msg.role !== 'assistant') return;
+    for (const b of blocksOf(msg)) {
+      let s = '';
+      if (b.type === 'text') s = b.text;
+      else if (b.type === 'thinking') s = b.thinking;
+      else if (b.type === 'tool_use') s = JSON.stringify(b.input);
+      if (typeof s !== 'string') continue;
+      for (const t of tokensOf(s)) lastIdx.set(t, i);
+    }
+  });
+  // Pass 2: walk in order.
+  const out = [];
+  const pending = [];
+  const names = new Map();
+  const seenCalls = new Set();
+  const seenResults = new Set();
+  const seen = new Set();
+  let calls = 0;
+  const flush = () => {
+    for (const p of pending) out[p.k].liveCalls = calls - p.at;
+    pending.length = 0;
+  };
+  recs.forEach((rec, i) => {
+    if (!rec) return;
+    if (rec.type === 'system' && rec.subtype === 'compact_boundary') { flush(); return; }
+    const msg = rec.message;
+    if (!msg) return;
+    if (msg.role === 'assistant') {
+      if (msg.usage && typeof msg.usage === 'object' && !(typeof msg.model === 'string' && msg.model.startsWith('<'))) {
+        const id = msg.id || rec.uuid;
+        if (!seenCalls.has(id)) { seenCalls.add(id); calls++; }
+      }
+      for (const b of blocksOf(msg)) {
+        let s = '';
+        if (b.type === 'text') s = b.text;
+        else if (b.type === 'thinking') s = b.thinking;
+        else if (b.type === 'tool_use') { names.set(b.id, b.name); s = JSON.stringify(b.input); }
+        if (typeof s !== 'string') continue;
+        for (const t of tokensOf(s)) seen.add(t);
+      }
+    } else if (msg.role === 'user') {
+      for (const b of blocksOf(msg)) {
+        if (b.type === 'text') {
+          if (typeof b.text === 'string') for (const t of tokensOf(b.text)) seen.add(t);
+        } else if (b.type === 'tool_result') {
+          if (seenResults.has(b.tool_use_id)) continue;
+          seenResults.add(b.tool_use_id);
+          let name = names.get(b.tool_use_id);
+          if (name === 'Task') name = 'Agent';
+          const tool = TOOL_NAMES.has(name) ? name : 'other';
+          let txt = '';
+          let images = 0;
+          if (typeof b.content === 'string') txt = b.content;
+          else if (Array.isArray(b.content)) {
+            const parts = [];
+            for (const it of b.content) {
+              if (it && it.type === 'text' && typeof it.text === 'string') parts.push(it.text);
+              else if (it && it.type === 'image') images++;
+            }
+            txt = parts.join('\n');
+          }
+          const toks = tokensOf(txt);
+          const novel = toks.filter((t) => !seen.has(t));
+          for (const t of toks) seen.add(t);
+          const referenced = novel.some((t) => (lastIdx.get(t) ?? -1) > i);
+          out.push({ tool, sizeTokens: Math.ceil(txt.length / 4) + IMAGE_TOKENS * images, liveCalls: 0, referenced });
+          pending.push({ k: out.length - 1, at: calls });
+        }
+      }
+    }
+  });
+  flush();
+  return out;
+}
+
+export function lifetimeUsd(sizeTokens, liveCalls, r, w) {
+  return liveCalls >= 1 ? (sizeTokens * (w + (liveCalls - 1) * r)) / 1e6 : 0;
+}
+
+export function sizeBucket(t) {
+  return t < 1000 ? '<1k' : t < 5000 ? '1k-5k' : t < 20000 ? '5k-20k' : '>=20k';
+}
+
+const TOOL_ROWS = ['Read', 'Bash', 'Grep', 'Glob', 'Agent', 'other'];
+const BUCKET_ROWS = ['<1k', '1k-5k', '5k-20k', '>=20k'];
 const HANDOFFS = [5000, 15000, 30000];
 const BUCKET_COL = { '<5m': 'lt5m', '5-60m': '5to60m', '>60m': 'gt60m', unknown: 'unknown' };
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
@@ -126,7 +235,7 @@ const median = (xs) => {
 const fmt = (x) => (x === null || x === undefined ? '' : Number.isInteger(x) ? String(x) : x.toFixed(4));
 const pct = (x, tot) => (tot > 0 ? ((100 * x) / tot).toFixed(2) + '%' : 'n/a');
 
-function analyse(calls, price) {
+function analyse(calls, price, lifetimes = []) {
   const s = { usd_read: 0, usd_write: 0, usd_input: 0, usd_output: 0 };
   for (const c of calls) {
     const rt = ratesFor(price, c.usage);
@@ -179,6 +288,32 @@ function analyse(calls, price) {
     s['combo_saving_' + H] = baseIdle > 0 ? 1 - combo / baseIdle : 0;
     s['combo_usd_' + H] = (baseIdle - combo) / 1e6;
   }
+  s.tool_usd = 0;
+  s.dead_usd = 0;
+  const agg = () => ({ n: 0, dead: 0, usd: 0, deadUsd: 0 });
+  s.byTool = Object.fromEntries(TOOL_ROWS.map((k) => [k, agg()]));
+  s.byBucket = Object.fromEntries(BUCKET_ROWS.map((k) => [k, agg()]));
+  for (const l of lifetimes) {
+    const usd = lifetimeUsd(l.sizeTokens, l.liveCalls, s.r_eff, s.w_eff);
+    s.tool_usd += usd;
+    if (!l.referenced) s.dead_usd += usd;
+    for (const a of [s.byTool[l.tool], s.byBucket[sizeBucket(l.sizeTokens)]]) {
+      a.n++;
+      a.usd += usd;
+      if (!l.referenced) { a.dead++; a.deadUsd += usd; }
+    }
+  }
+  s.think_tokens = 0;
+  s.out_tokens = 0;
+  s.think_usd = 0;
+  s.think_gt_out = 0;
+  for (const c of calls) {
+    const th = (c.usage.output_tokens_details && c.usage.output_tokens_details.thinking_tokens) || 0;
+    s.think_tokens += th;
+    s.out_tokens += c.output;
+    s.think_usd += (th * ratesFor(price, c.usage).output) / 1e6;
+    if (th > c.output) s.think_gt_out++;
+  }
   return s;
 }
 
@@ -210,7 +345,8 @@ function main(argv) {
   let skippedShort = 0;
   let skippedUnpriced = 0;
   for (const file of listSessionFiles(root)) {
-    const calls = loadCalls(fs.readFileSync(file, 'utf8'));
+    const fileText = fs.readFileSync(file, 'utf8');
+    const calls = loadCalls(fileText);
     if (calls.length < minCalls) { skippedShort++; continue; }
     const counts = new Map();
     for (const c of calls) counts.set(c.model, (counts.get(c.model) || 0) + 1);
@@ -220,7 +356,7 @@ function main(argv) {
     const price = priceForModel(tiers.pricing, model);
     if (!price) { skippedUnpriced++; continue; }
     const rel = path.relative(root, file).split(path.sep).join('/').replace(/,/g, ';');
-    rows.push({ file: rel, model, ...analyse(calls, price) });
+    rows.push({ file: rel, model, ...analyse(calls, price, toolLifetimes(fileText)) });
   }
 
   const cols = ['file', 'model', 'n', 'B', 'Pmax', 'g', 'r2', 'usd_read', 'usd_write', 'usd_input', 'usd_output',
@@ -228,6 +364,7 @@ function main(argv) {
   for (const H of HANDOFFS) cols.push('nstar_' + H, 'best_seg_' + H, 'saving_' + H);
   cols.push('model_err', 'idle_gaps');
   for (const H of HANDOFFS) cols.push('idle_saving_' + H, 'idle_usd_' + H, 'combo_saving_' + H, 'combo_usd_' + H);
+  cols.push('tool_usd', 'dead_usd', 'think_tokens', 'out_tokens', 'think_usd');
   const csv = [cols.join(','), ...rows.map((r) => cols.map((c) => (typeof r[c] === 'string' ? r[c] : fmt(r[c]))).join(','))];
   fs.mkdirSync(out, { recursive: true });
   fs.writeFileSync(path.join(out, 'sessions.csv'), csv.join('\n') + '\n');
@@ -272,7 +409,31 @@ function main(argv) {
     L.push(`- H=${H}: idle saving ${ps('relayCost', H)}, $${sum(rows.map((r) => r['idle_usd_' + H])).toFixed(2)}; ` +
       `combo saving ${ps('comboCost', H)}, $${sum(rows.map((r) => r['combo_usd_' + H])).toFixed(2)}`);
   }
-  fs.writeFileSync(path.join(out, 'summary.md'), L.slice(0, 80).join('\n') + '\n');
+  const p1 = (x, tot) => (tot > 0 ? ((100 * x) / tot).toFixed(1) + '%' : 'n/a');
+  const rw = sum(rows.map((r) => r.usd_read + r.usd_write));
+  const toolUsd = sum(rows.map((r) => r.tool_usd));
+  const deadUsd = sum(rows.map((r) => r.dead_usd));
+  L.push('', '## Dead tool output (E2)', '');
+  L.push(`- tool output cost / (read+write): ${p1(toolUsd, rw)}`);
+  L.push(`- dead tool output cost / (read+write): ${p1(deadUsd, rw)}`);
+  const table = (label, keys, field) => {
+    L.push('', `| ${label} | results | dead | usd | dead usd | dead % of read+write |`, '| --- | --- | --- | --- | --- | --- |');
+    for (const k of keys) {
+      const a = rows.map((r) => r[field][k]);
+      L.push(`| ${k} | ${sum(a.map((x) => x.n))} | ${sum(a.map((x) => x.dead))} | $${sum(a.map((x) => x.usd)).toFixed(2)} | ` +
+        `$${sum(a.map((x) => x.deadUsd)).toFixed(2)} | ${p1(sum(a.map((x) => x.deadUsd)), rw)} |`);
+    }
+  };
+  table('tool', TOOL_ROWS, 'byTool');
+  table('size', BUCKET_ROWS, 'byBucket');
+  const thinkUsd = sum(rows.map((r) => r.think_usd));
+  L.push('', '## Thinking share', '');
+  L.push(`- thinking tokens / output tokens: ${p1(sum(rows.map((r) => r.think_tokens)), sum(rows.map((r) => r.out_tokens)))}`);
+  L.push(`- think usd / usd_output: ${p1(thinkUsd, sum(rows.map((r) => r.usd_output)))}`);
+  L.push(`- think usd / usd_total: ${p1(thinkUsd, total)}`);
+  L.push(`- think usd: $${thinkUsd.toFixed(2)}`);
+  L.push(`- calls with thinking > output: ${sum(rows.map((r) => r.think_gt_out))}`);
+  fs.writeFileSync(path.join(out, 'summary.md'), L.slice(0, 120).join('\n') + '\n');
   process.stdout.write(path.join(out, 'summary.md') + '\n');
 }
 
