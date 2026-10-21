@@ -3,6 +3,9 @@
 // The ledger root is the session's STARTING cwd (first `cwd` recorded in the
 // parent transcript), so one session writes to one ledger even if the live cwd
 // drifts. Falls back to the hook cwd when the parent transcript is unavailable.
+// That root is then resolved upward to the nearest directory owning a
+// `.warboss-horde/` directory, so a session started in a subdirectory uses its
+// project's ledger.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -58,6 +61,51 @@ function startingCwd(hook) {
   return null;
 }
 
+// True when `dir/.warboss-horde` exists and is a directory; never throws.
+function ownsWarbossHorde(dir) {
+  try {
+    return fs.statSync(path.join(dir, '.warboss-horde')).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+// True when `dir/.git` exists (directory or file, as in worktrees and submodules); never throws.
+function hasGitEntry(dir) {
+  try {
+    fs.statSync(path.join(dir, '.git'));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Nearest ancestor-or-self of `s` containing `.git`, or null when none up to the filesystem root.
+function gitRootOf(s) {
+  let dir = s;
+  for (;;) {
+    if (hasGitEntry(dir)) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+// Nearest ancestor-or-self of `start`, bounded by its git repository root, that owns a
+// `.warboss-horde/` directory. Returns `path.resolve(start)` when there is no owner
+// between `start` and the repo root, or when `start` is not inside a git repository.
+export function ownerDir(start) {
+  const s = path.resolve(start);
+  const root = gitRootOf(s);
+  if (root === null) return s;
+  let dir = s;
+  for (;;) {
+    if (ownsWarbossHorde(dir)) return dir;
+    if (dir === root) return s;
+    dir = path.dirname(dir);
+  }
+}
+
 // Absolute path of the ledger file for this hook payload and env.
 export function ledgerFileFor(hook, env) {
   if (typeof env.WARBOSS_LEDGER === 'string' && env.WARBOSS_LEDGER) {
@@ -68,7 +116,7 @@ export function ledgerFileFor(hook, env) {
     hook.session_id && typeof hook.session_id === 'string'
   ) {
     const root = startingCwd(hook);
-    if (root) return path.resolve(root, '.warboss-horde', 'ledger.jsonl');
+    if (root) return path.resolve(ownerDir(root), '.warboss-horde', 'ledger.jsonl');
   }
-  return path.resolve(hook.cwd || process.cwd(), '.warboss-horde', 'ledger.jsonl');
+  return path.resolve(ownerDir(hook.cwd || process.cwd()), '.warboss-horde', 'ledger.jsonl');
 }

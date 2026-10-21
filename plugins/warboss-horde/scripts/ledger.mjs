@@ -34,6 +34,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
+import { ownerDir } from './ledger-path.mjs';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
@@ -52,7 +53,7 @@ function parseArgs(argv) {
 function ledgerPath(args) {
   if (args.file) return path.resolve(args.file);
   if (process.env.WARBOSS_LEDGER) return path.resolve(process.env.WARBOSS_LEDGER);
-  return path.resolve(process.cwd(), '.warboss-horde', 'ledger.jsonl');
+  return path.resolve(ownerDir(process.cwd()), '.warboss-horde', 'ledger.jsonl');
 }
 
 function verdictsPath(args) {

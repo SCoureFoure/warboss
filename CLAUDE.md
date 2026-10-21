@@ -151,32 +151,10 @@ agent files. The mapping:
 | residual-entropy → tier | the rung (and its model) you pick from `tiers.json` for each slice |
 | escalate fiat to Leader | ambiguity you can't resolve from code/spec → ask the user, never guess |
 
-**The loop, when a task is decided enough to delegate** (run `/warboss-horde:delegate`):
-
-1. **Author the entropy out first** (this is the expensive, non-delegable part).
-   Write the task as a dense contract: exact entry point / files, ACs as concrete
-   `input → expected`, and kill any second reading with a case that fails under
-   it. If you can't make it falsifiable, it's not ready to dispatch — decompose
-   further or escalate to the user.
-2. **Dispatch to `doer`** via the Agent tool, with the per-call `model` set to the
-   rung you picked from `tiers.json`. Hand it the contract, not your reasoning. Do
-   not give it the verify command output up front — that's the membrane it must
-   satisfy blind.
-3. **Judge mechanically.** Run `npm run typecheck` then the relevant tests
-   yourself. Green is green; the doer's prose doesn't count.
-4. **Retry with feedback**, bounded. On red, re-dispatch with the exact failure
-   output. If two rounds produce materially the same code (stall) or the doer
-   reports `// UNDECIDED:` gaps, **stop** — that's an authoring defect, not a
-   worker failure. Fix the contract or escalate, don't grind.
-
-**Tier follows residual entropy, not task size.** A gnarly, underdetermined slice
-stays with you (the top rung) or goes to a MID rung; only push to the cheapest
-rung what a literal machine could satisfy. A worker implementing a coherent
-misreading of an ambiguous sentence is **your** defect as author — same rule the
-harness enforces on grunts (`GRUNT_DOGMA`).
-
-Spec-feature work still goes through the `/spec` skill; this delegation loop is
-for the implementation step *after* a feature's ACs are decided.
+The loop itself (author the contract, dispatch, judge via the `runner`, bounded
+retry) lives in the `/warboss-horde:delegate` skill; run it rather than restating
+it here. Spec-feature work still goes through the `/spec` skill; delegation is for
+the implementation step *after* a feature's ACs are decided.
 
 ## Conventions
 
