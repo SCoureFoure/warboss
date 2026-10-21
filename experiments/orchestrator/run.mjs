@@ -50,6 +50,16 @@ Experiment arm X2 (contract = test file). This overrides Step 3 of the skill whe
 - Your contract is the test file. Write the acceptance cases directly as tests in the module's test file (concrete input -> expected, at least one that fails under a wrong reading). That test file is also the verify target.
 - The slice file under \`.warboss-horde/slices/\` holds only: files to touch, entry point, the test file path, and the fork tags. Do not restate the cases in prose.
 - The implementing doer may read the test file. Continue with the skill from Step 4.`,
+  X6: `
+Experiment arm X6 (code-run doer loop). This overrides the dispatch-and-judge steps of the skill where they conflict:
+- Author the slice contract as the skill says, into \`.warboss-horde/slices/<slice>.md\`, and choose one verify command.
+- Do NOT dispatch the implementing doer with the Agent tool, and do not judge its rounds yourself. Instead dispatch the
+  \`runner\` with exactly: \`node ${path.join(here, 'doer-loop.mjs').replace(/\\/g, '/')} --slice .warboss-horde/slices/<slice>.md --verify "<verify command>" --model haiku --tries 3\`
+  Tell the runner to give that Bash call the maximum timeout (600000 ms).
+  The script runs fresh haiku doers, judges each try with the verify command and feeds failures back by itself.
+- Exit 0 = green. Exit 2 = the doer marked an UNDECIDED fork: decide it, amend the slice, run the loop again.
+  Exit 1 = red after its tries: improve the slice (or split it) and run the loop again, at most twice more.
+  Exit 3 = crash or usage error: fix the command and run again.`,
 };
 
 const sh = (cmd, args, opts = {}) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
@@ -105,7 +115,27 @@ function findSession(sid) {
   return null;
 }
 
-function meter(sid, keepDir) {
+// X6: the doer loop runs its doers as separate headless sessions, so they are not under the orchestrator's
+// subagents dir. Read their session ids from the loop's log in the worktree, price them, and move them out too.
+function meterLoopDoers(wt, keepDir) {
+  const logf = path.join(wt, '.warboss-horde', 'doer-loop.jsonl');
+  if (!fs.existsSync(logf)) return [];
+  const rows = fs.readFileSync(logf, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  fs.mkdirSync(keepDir, { recursive: true });
+  fs.copyFileSync(logf, path.join(keepDir, 'doer-loop.jsonl'));
+  const subs = [];
+  for (const row of rows) {
+    const s = row.session && findSession(row.session);
+    if (!s) { subs.push({ file: `loop:${row.session}`, models: [], usd: 0, calls: 0, unpriced: 1 }); continue; }
+    const t = fs.readFileSync(s.file, 'utf8');
+    const models = [...new Set(loadCalls(t).map((c) => c.model))];
+    subs.push({ file: `loop:${row.session}`, models, outcome: row.outcome, ...callsUsd(t) });
+    fs.renameSync(s.file, path.join(keepDir, `${row.session}.jsonl`));
+  }
+  return subs;
+}
+
+function meter(sid, keepDir, loopSubs = []) {
   const s = findSession(sid);
   if (!s) return { error: 'transcript not found' };
   const text = fs.readFileSync(s.file, 'utf8');
@@ -113,7 +143,7 @@ function meter(sid, keepDir) {
   const cls = {};
   for (const e of prefixAttribution(text)) cls[e.cls] = (cls[e.cls] || 0) + e.sizeTokens;
   const subDir = path.join(s.dir, sid, 'subagents');
-  const subs = [];
+  const subs = [...loopSubs];
   if (fs.existsSync(subDir)) {
     for (const f of fs.readdirSync(subDir).filter((x) => x.endsWith('.jsonl'))) {
       const t = fs.readFileSync(path.join(subDir, f), 'utf8');
@@ -175,10 +205,13 @@ async function one(task, arm, rep) {
   const j = judge(wt, task);
   fs.writeFileSync(path.join(runDir, 'hidden.txt'), j.hidden_out);
   delete j.hidden_out;
-  const m = r.res && r.res.session_id ? meter(r.res.session_id, runDir) : { error: 'no session id' };
+  const loopSubs = meterLoopDoers(wt, path.join(runDir, 'doers'));
+  const m = r.res && r.res.session_id ? meter(r.res.session_id, runDir, loopSubs) : { error: 'no session id' };
+  // The loop's doers are billed outside the orchestrator's CLI total; count them toward the spend cap.
+  const loop_cli_usd = loopSubs.reduce((a, b) => a + (b.usd || 0), 0);
   const row = {
     ts: new Date().toISOString(), id, task, arm, rep, exit: r.code, secs: r.secs,
-    session: r.res && r.res.session_id, cli_cost_usd: r.res && r.res.total_cost_usd, num_turns: r.res && r.res.num_turns,
+    session: r.res && r.res.session_id, cli_cost_usd: r.res && r.res.total_cost_usd, loop_cli_usd, num_turns: r.res && r.res.num_turns,
     final: r.res && typeof r.res.result === 'string' ? r.res.result.slice(0, 1500) : null,
     green: j.hidden_exit === 0 && j.typecheck_exit === 0, ...j, ...m, stderr: r.code === 0 ? undefined : r.err,
   };
@@ -202,7 +235,7 @@ if (CONTROL) {
 let halted = null;
 let spent = 0;
 const prior = fs.existsSync(RESULTS) ? fs.readFileSync(RESULTS, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
-for (const p of prior) spent += Number(p.cli_cost_usd) || 0;
+for (const p of prior) spent += (Number(p.cli_cost_usd) || 0) + (Number(p.loop_cli_usd) || 0);
 // Resumable: a (task, arm, rep) that already has a recorded row is not run again.
 const done = new Set(prior.map((p) => `${p.task}|${p.arm}|${p.rep}`));
 const queue = [];
@@ -215,7 +248,7 @@ async function worker() {
     if (halted) { console.log(`halted: ${halted}`); return; }
     if (spent >= CAP) { console.log(`cap reached ($${spent.toFixed(2)}), stopping`); return; }
     const [task, arm, rep] = queue.shift();
-    try { const row = await one(task, arm, rep); spent += Number(row.cli_cost_usd) || 0; }
+    try { const row = await one(task, arm, rep); spent += (Number(row.cli_cost_usd) || 0) + (Number(row.loop_cli_usd) || 0); }
     catch (e) { console.log(`${task}-${arm}-r${rep}: ERROR ${e.message}`); }
   }
 }

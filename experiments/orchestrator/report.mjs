@@ -36,12 +36,18 @@ for (const r of rows) {
     r.sub += usdOf(fs.readFileSync(path.join(sd, f), 'utf8')).usd;
     r.subN++;
   }
+  // X6 loop doers are separate headless sessions, kept under runs/<id>/doers/.
+  const dd = path.join(dir, 'doers');
+  if (fs.existsSync(dd)) for (const f of fs.readdirSync(dd).filter((x) => x.endsWith('.jsonl') && x !== 'doer-loop.jsonl')) {
+    r.sub += usdOf(fs.readFileSync(path.join(dd, f), 'utf8')).usd;
+    r.subN++;
+  }
 }
 const ok = rows.filter((r) => !r.bad);
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
 const f3 = (x) => (Number.isFinite(x) ? x.toFixed(3) : 'n/a');
 const tok = (r, k) => r.cls[k] || 0;
-const L = ['# X1/X2 pilot report', '', `runs: ${ok.length} (unmetered: ${rows.length - ok.length})`, ''];
+const L = ['# Orchestrator-tier report (X1/X2 pilot, X6)', '', `runs: ${ok.length} (unmetered: ${rows.length - ok.length})`, ''];
 const line = (label, rs) => {
   const greens = rs.filter((r) => r.green).length;
   const orch = rs.reduce((a, r) => a + r.orch, 0);
