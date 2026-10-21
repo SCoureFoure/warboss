@@ -14,7 +14,7 @@
 // exists to run commands; gating it would brick the very escape hatch).
 //
 // Hook contract: reads the PreToolUse payload on stdin
-//   { tool_name, tool_input: { command }, transcript_path, cwd, ... }
+//   { tool_name, tool_input: { command }, transcript_path, cwd, agent_id, ... }
 // and writes a permission decision on stdout. Always exits 0 — a metering or
 // gating failure must never break the turn (same rule as the meters).
 //
@@ -55,8 +55,9 @@ function isControlPlane(command) {
 
 // A subagent's transcript is <...>/subagents/<file>. Split on either separator and
 // check the segment immediately before the file name.
-function fromSubagent(transcriptPath) {
-  const parts = String(transcriptPath || '').split(/[\\/]/);
+function fromSubagent(hook) {
+  if (typeof hook.agent_id === 'string' && hook.agent_id !== '') return true;
+  const parts = String(hook.transcript_path || '').split(/[\\/]/);
   return parts.length >= 2 && parts[parts.length - 2] === 'subagents';
 }
 
@@ -87,9 +88,10 @@ function decide(hook) {
   const mode = String(process.env.WARBOSS_BASH_GATE || '').toLowerCase();
   if (mode === 'off') return null;
 
-  // A subagent's transcript lives at <session>/subagents/agent-<id>.jsonl. The
-  // runner is a subagent and must keep Bash; so must any doer that gains it.
-  if (fromSubagent(hook.transcript_path)) return null;
+  // A subagent is recognised by the `agent_id` hook-input field, or by a transcript
+  // under `subagents/`; the path alone failed once because a runner's hook input
+  // carried the parent transcript path. The runner must keep Bash.
+  if (fromSubagent(hook)) return null;
 
   const armed = mode === 'deny' || mode === 'warn' || findMarker(hook.cwd || process.cwd());
   if (!armed) return null;
