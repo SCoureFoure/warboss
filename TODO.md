@@ -48,7 +48,18 @@ Finding ids below (`core F4`, `plugin F8`, ...) point into `.warboss-horde/out/r
        orchestrator still wrote a prose contract.
      - All 3 reds are one fork in my kick intent: the escalation error message order vs the hidden regex
        `/answers\[0\].*escalation/` (A 0/3, X1 1/3, X2 2/3 hit it). Author defect (under_decided), not an arm
-       effect at n=3; pin the order in `tasks.json` before reps 4+.
+       effect at n=3; pin the order in `tasks.json` before reps 4+. (Pinned 2026-10-21.)
+   - **X6, code-run doer loop — MIDDLE, 2026-10-21** (branch `exp/orchestrator-tier`; `experiments/orchestrator/
+     doer-loop.mjs`). The orchestrator authors the slice; a script runs fresh haiku doers, judges each try with the
+     verify command and feeds failures back; the orchestrator sees one verdict. PASS: total $/green <= $0.42 (-30%)
+     with >= 8/9 green. KILL: <= 6/9 green, or orchestrator $/run not below A.
+     - 5 of 9 runs before the session limit (gate r2, r3 and kick r3 not run): 5/5 green, total $/green $0.548
+       (-9% vs A), orchestrator $/run $0.536 (-9%), 8.8 calls vs 11.1. The 4 missing runs cannot reach -30%.
+     - **Every haiku doer went green on try 1.** The loop never retried, so it had no judge rounds to remove; the
+       -9% is only fewer orchestrator calls. On these tasks the cost is a per-slice orchestrator floor (~$0.45:
+       authoring, src reads, base prefix), not judging. Also answers "can haiku do the doing": 5/5 on try 1.
+     - Next: the floor, not the loop. X7 (slicer predicts the slice's diff: files, size, outcome; doer-loop flags a
+       mismatch; prediction vs actual logged for rung calibration). The loop only pays on tasks hard enough to retry.
    - X1-X3 and X5 spend API money: paired runs on past slices, >= 3 reps per arm, owner-gated.
 
 ## Next
