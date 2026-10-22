@@ -70,6 +70,19 @@ Finding ids below (`core F4`, `plugin F8`, ...) point into `.warboss-horde/out/r
 
 ## Next
 
+- **Cache TTL for interactive sessions** (parked 2026-10-22). Offline, free: reprice every real session under
+  1h TTL, 5m TTL, 5m + keep-warm pings (cache-maxxer's approach, ~$0.04/ping at 200k on Opus 5.5) and the idle
+  relay, using the audit's idle gaps. Decides whether the plugin sets `FORCE_PROMPT_CACHING_5M=1` by default. Then
+  one live A `--ttl5m` check (~$1.40) to confirm the -24% offline repricing.
+- **LOW-first rung gate** (parked 2026-10-22). Doers ran MID 24 times vs LOW 19 with no LOW red; X6 haiku went
+  green on try 1 in 8/9. A PreToolUse hook on Agent could block a doer above haiku unless the slice names a reason
+  or the slice already went red at LOW. Doer spend is ~8% of the bill, so the ceiling is ~6%.
+- **Resume skill vs bash gate.** `/warboss-horde:resume` says run `resume-brief.mjs` inline; the gate blocks it.
+  Exempt the script in `bash-gate.mjs`.
+- **Cache hit rate + rebuild cause on the dashboard** (idea from cache-maxxer): both computable from transcripts
+  the meter already reads.
+- **Grunt calls send no `cache_control`** (`src/agent.ts:104`). One top-level field; small win (haiku, short
+  prompts, parallel probes miss anyway).
 - **Stream-split double count** (`src/hooks/cost-from-transcript.ts:119`, core F4). Two transcript records sharing
   one `requestId` across hook runs may be billed twice. Unconfirmed.
 - **Backfill `est_usd: null` rows** in `.warboss-horde/ledger.jsonl`. About 57.8M `claude-fable-5` tokens are
