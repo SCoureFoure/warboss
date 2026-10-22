@@ -41,7 +41,8 @@ const contract = fs.readFileSync(SLICE, 'utf8');
 const tail = (s, n) => s.split('\n').slice(-n).join('\n');
 // The loop is itself started from inside a Claude Code session (the runner's Bash); drop the marker that makes a
 // nested `claude` refuse to start.
-const env = { ...process.env };
+// Each doer session lasts a minute or two, so pin the 5-minute cache TTL instead of Claude Code's 1-hour default.
+const env = { ...process.env, FORCE_PROMPT_CACHING_5M: '1' };
 delete env.CLAUDECODE;
 const sh = (cmd, input) => spawnSync(cmd, { shell: true, encoding: 'utf8', input, env, maxBuffer: 64 * 1024 * 1024 });
 

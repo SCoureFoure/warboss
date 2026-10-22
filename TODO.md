@@ -53,11 +53,17 @@ Finding ids below (`core F4`, `plugin F8`, ...) point into `.warboss-horde/out/r
      doer-loop.mjs`). The orchestrator authors the slice; a script runs fresh haiku doers, judges each try with the
      verify command and feeds failures back; the orchestrator sees one verdict. PASS: total $/green <= $0.42 (-30%)
      with >= 8/9 green. KILL: <= 6/9 green, or orchestrator $/run not below A.
-     - 5 of 9 runs before the session limit (gate r2, r3 and kick r3 not run): 5/5 green, total $/green $0.548
-       (-9% vs A), orchestrator $/run $0.536 (-9%), 8.8 calls vs 11.1. The 4 missing runs cannot reach -30%.
-     - **Every haiku doer went green on try 1.** The loop never retried, so it had no judge rounds to remove; the
-       -9% is only fewer orchestrator calls. On these tasks the cost is a per-slice orchestrator floor (~$0.45:
-       authoring, src reads, base prefix), not judging. Also answers "can haiku do the doing": 5/5 on try 1.
+     - 9/9 runs (4 finished 2026-10-22 after the session limit): 9/9 green, total $/green $0.568 (-5% vs A),
+       orchestrator $/run $0.553 (-6%), 8.9 calls vs 11.1. gate alone was +4% vs A.
+     - **Haiku went green on try 1 in 8 of 9; kick r3 went red then green on try 2 inside the loop**, with no
+       orchestrator round. So the loop works, but these tasks rarely need retries: the cost is a per-slice
+       orchestrator floor (~$0.45: authoring, src reads, base prefix), not judging.
+     - **Cache TTL finding (2026-10-22).** Every orchestrator cache write in every A and X6 run is billed at the
+       1-hour rate ($8/M on Opus 5.5); writes are 60-70% of each run's cost. `FORCE_PROMPT_CACHING_5M=1` flips
+       Claude Code to 5-minute writes ($5/M), verified on a live haiku call (-32%). Repriced offline, orchestrator
+       $/run drops ~24% for A ($0.591 -> $0.450) and X6 ($0.575 -> $0.426), with no behaviour change. `run.mjs
+       --ttl5m` and doer-loop now pin it. Not yet confirmed live on a full run; not yet decided for interactive
+       sessions, where gaps over 5 minutes turn reads into rewrites (replay the audit's idle gaps to price that).
      - Next: the floor, not the loop. X7 (slicer predicts the slice's diff: files, size, outcome; doer-loop flags a
        mismatch; prediction vs actual logged for rung calibration). The loop only pays on tasks hard enough to retry.
    - X1-X3 and X5 spend API money: paired runs on past slices, >= 3 reps per arm, owner-gated.

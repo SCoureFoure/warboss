@@ -27,6 +27,10 @@ const REPS = Number(arg('--reps', 1));
 const CONC = Number(arg('--conc', 3));
 const CAP = Number(arg('--cap', 40));
 const CONTROL = argv.includes('--control');
+// Claude Code writes the prompt cache with the 1-hour TTL by default ($8/M on Opus 5.5 vs $5/M for 5 minutes).
+// A run lasts minutes, so the hour buys nothing; --ttl5m pins the 5-minute TTL for the orchestrator and loop doers.
+const TTL5M = argv.includes('--ttl5m');
+const childEnv = TTL5M ? { ...process.env, FORCE_PROMPT_CACHING_5M: '1' } : process.env;
 const WT_ROOT = 'C:/tmp/x12';
 const RESULTS = path.join(here, 'results.jsonl');
 const projRoot = path.join(os.homedir(), '.claude', 'projects');
@@ -165,7 +169,7 @@ function runClaude(wt, prompt) {
   return new Promise((resolve) => {
     const t0 = Date.now();
     const p = spawn('claude', ['-p', '--output-format', 'json', '--model', 'opus', '--permission-mode', 'bypassPermissions'],
-      { cwd: wt, shell: true });
+      { cwd: wt, shell: true, env: childEnv });
     let out = '', err = '';
     p.stdout.on('data', (d) => { out += d; });
     p.stderr.on('data', (d) => { err += d; });
@@ -210,7 +214,7 @@ async function one(task, arm, rep) {
   // The loop's doers are billed outside the orchestrator's CLI total; count them toward the spend cap.
   const loop_cli_usd = loopSubs.reduce((a, b) => a + (b.usd || 0), 0);
   const row = {
-    ts: new Date().toISOString(), id, task, arm, rep, exit: r.code, secs: r.secs,
+    ts: new Date().toISOString(), id, task, arm: TTL5M ? `${arm}+5m` : arm, rep, ttl: TTL5M ? '5m' : '1h', exit: r.code, secs: r.secs,
     session: r.res && r.res.session_id, cli_cost_usd: r.res && r.res.total_cost_usd, loop_cli_usd, num_turns: r.res && r.res.num_turns,
     final: r.res && typeof r.res.result === 'string' ? r.res.result.slice(0, 1500) : null,
     green: j.hidden_exit === 0 && j.typecheck_exit === 0, ...j, ...m, stderr: r.code === 0 ? undefined : r.err,
@@ -240,7 +244,7 @@ for (const p of prior) spent += (Number(p.cli_cost_usd) || 0) + (Number(p.loop_c
 const done = new Set(prior.map((p) => `${p.task}|${p.arm}|${p.rep}`));
 const queue = [];
 for (let rep = 1; rep <= REPS; rep++) for (const task of TASKS) for (const arm of ARMS) {
-  if (!done.has(`${task}|${arm}|${rep}`)) queue.push([task, arm, rep]);
+  if (!done.has(`${task}|${TTL5M ? `${arm}+5m` : arm}|${rep}`)) queue.push([task, arm, rep]);
 }
 console.log(`queue ${queue.length} runs (${done.size} already recorded), prior spend $${spent.toFixed(2)}, cap $${CAP}`);
 async function worker() {
